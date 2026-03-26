@@ -42,7 +42,7 @@ fi
 # ── Dependency check ──────────────────────────────────────────────────────────
 log_section "Python dependencies"
 
-DEPS=("yaml" "rich" "dataclasses" "pytest")
+DEPS=("yaml" "dataclasses" "pytest")
 for dep in "${DEPS[@]}"; do
     if python -c "import $dep" 2>/dev/null; then
         log_ok "import $dep"
