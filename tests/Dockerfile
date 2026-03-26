@@ -16,7 +16,8 @@ RUN pacman -S --noconfirm --needed \
     findutils \
     grep \
     coreutils \
-    util-linux && \
+    util-linux \
+    openssl && \
     pacman -Scc --noconfirm
 
 # Install Python tools via pip (newer versions than Arch repos for dev tools)

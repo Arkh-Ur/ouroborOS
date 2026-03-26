@@ -79,12 +79,17 @@ def _lsblk_disks() -> list[dict[str, str]]:
 def _hash_password(password: str) -> str:
     """Return a SHA-512 crypt hash of the given password.
 
-    Uses the same format as /etc/shadow: $6$<salt>$<hash>
+    Uses the same format as /etc/shadow: $6$<salt>$<hash>.
+    The Python crypt module was removed in Python 3.13; uses openssl instead.
     """
     salt = os.urandom(16).hex()[:16]
-    # Python 3.13 removed the crypt module; use hashlib directly
-    import crypt as _crypt  # noqa: PLC0415
-    return _crypt.crypt(password, f"$6${salt}$")
+    result = subprocess.run(
+        ["openssl", "passwd", "-6", "-salt", salt, password],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 class TUI:

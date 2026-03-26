@@ -112,10 +112,16 @@ class TestHashPassword:
         assert h1 != h2
 
     def test_hash_is_verifiable(self) -> None:
-        import crypt
+        import subprocess
         password = "testpass123"
         hashed = _hash_password(password)
-        assert crypt.crypt(password, hashed) == hashed
+        # Extract salt from $6$<salt>$<hash> and re-hash to verify
+        salt = hashed.split("$")[2]
+        result = subprocess.run(
+            ["openssl", "passwd", "-6", "-salt", salt, password],
+            capture_output=True, text=True, check=True,
+        )
+        assert result.stdout.strip() == hashed
 
 
 # ---------------------------------------------------------------------------
