@@ -65,7 +65,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace:ro" \
             -e WORKSPACE=/workspace \
-            --tmpfs /tmp \
+            --tmpfs /tmp:exec \
             ouroboros-test:ci \
             bash /workspace/tests/scripts/test-build-dry-run.sh
 

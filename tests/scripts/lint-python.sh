@@ -20,7 +20,6 @@ set -euo pipefail
 #   0 — no violations (or no Python files)
 #   1 — ruff violations found
 # =============================================================================
-set -euo pipefail
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -69,6 +68,7 @@ RUFF_RULES="E,W,F,I,UP,ANN001,ANN201,E722"
 if ruff check \
     --select "$RUFF_RULES" \
     --output-format grouped \
+    --no-cache \
     "${PY_FILES[@]}" 2>&1; then
     log_ok "ruff: all ${#PY_FILES[@]} file(s) pass (0 violations)"
     echo ""
