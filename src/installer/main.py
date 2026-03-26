@@ -9,10 +9,10 @@ import argparse
 import sys
 from pathlib import Path
 
+import yaml
+
 from installer.config import validate_config
 from installer.state_machine import Installer
-
-import yaml
 
 
 def _build_parser() -> argparse.ArgumentParser:

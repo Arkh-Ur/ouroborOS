@@ -19,10 +19,10 @@ import logging
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import asdict
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, Optional
 
 from installer.config import InstallerConfig, find_unattended_config, load_config
 from installer.tui import TUI
@@ -104,7 +104,7 @@ def _is_completed(state: State) -> bool:
     return _checkpoint_path(state).exists()
 
 
-def _load_config_checkpoint() -> Optional[InstallerConfig]:
+def _load_config_checkpoint() -> InstallerConfig | None:
     """Load a previously-saved InstallerConfig from the checkpoint directory."""
     config_path = CHECKPOINT_DIR / "config.json"
     if not config_path.exists():
@@ -151,10 +151,10 @@ class Installer:
         tui:    TUI interface (or None in unattended mode).
     """
 
-    def __init__(self, resume: bool = False, config_path: Optional[Path] = None) -> None:
+    def __init__(self, resume: bool = False, config_path: Path | None = None) -> None:
         self.state: State = State.INIT
         self.config: InstallerConfig = InstallerConfig()
-        self.tui: Optional[TUI] = None
+        self.tui: TUI | None = None
         self._resume = resume
         self._config_path = config_path
         self._handler_map: dict[State, Callable[[], None]] = {
@@ -213,7 +213,9 @@ class Installer:
                         if self.tui:
                             retry = self.tui.show_error(str(exc), recoverable=True)
                             if not retry:
-                                raise FatalError(f"User aborted at state {state.name}.") from exc
+                                raise FatalError(
+                                    f"User aborted at state {state.name}."
+                                ) from exc
                         else:
                             log.error("Unattended mode: aborting on error.")
                             raise FatalError(str(exc)) from exc
@@ -228,7 +230,9 @@ class Installer:
             self.state = State.FATAL
             log.warning("Installation interrupted by user.")
             if self.tui:
-                self.tui.show_error("Installation cancelled by user.", recoverable=False)
+                self.tui.show_error(
+                    "Installation cancelled by user.", recoverable=False
+                )
             return 1
 
         return 0
@@ -258,7 +262,9 @@ class Installer:
         ]
 
         if self.tui:
-            self.tui.show_progress("Preflight Checks", "Verifying system requirements...", 0)
+            self.tui.show_progress(
+                "Preflight Checks", "Verifying system requirements...", 0
+            )
 
         failed = []
         for i, (name, check_fn) in enumerate(checks):
@@ -301,11 +307,15 @@ class Installer:
                 self.config.disk.luks_passphrase = self.tui.show_passphrase_input()
             self.tui.show_partition_preview(disk, use_luks)
             confirmed = self.tui.show_confirmation(
-                "WARNING: All data on {} will be destroyed. Continue?".format(disk)
+                f"WARNING: All data on {disk} will be destroyed. Continue?"
             )
             if not confirmed:
                 raise InstallerError("User did not confirm disk wipe. Aborting.")
-        log.info("Target disk: %s (LUKS: %s)", self.config.disk.device, self.config.disk.use_luks)
+        log.info(
+            "Target disk: %s (LUKS: %s)",
+            self.config.disk.device,
+            self.config.disk.use_luks,
+        )
 
     def _handle_format(self) -> None:
         """FORMAT — partition, format, create subvolumes, mount, fstab."""
@@ -370,7 +380,9 @@ class Installer:
             self.config.user.password_hash = user_cfg["password_hash"]
 
         if self.tui:
-            self.tui.show_progress("System Configuration", "Configuring installed system...", 0)
+            self.tui.show_progress(
+                "System Configuration", "Configuring installed system...", 0
+            )
 
         configure_script = OPS_DIR / "configure.sh"
         env = os.environ.copy()
@@ -398,12 +410,16 @@ class Installer:
             )
 
         if self.tui:
-            self.tui.show_progress("System Configuration", "Configuration complete.", 100)
+            self.tui.show_progress(
+                "System Configuration", "Configuration complete.", 100
+            )
 
     def _handle_snapshot(self) -> None:
         """SNAPSHOT — create baseline Btrfs snapshot."""
         if self.tui:
-            self.tui.show_progress("Creating Snapshot", "Snapshotting install baseline...", 0)
+            self.tui.show_progress(
+                "Creating Snapshot", "Snapshotting install baseline...", 0
+            )
 
         result = subprocess.run(
             [
@@ -440,7 +456,9 @@ class Installer:
             raise InstallerError("Installer must be run as root.")
 
     def _check_tools(self) -> None:
-        required = ["sgdisk", "mkfs.btrfs", "mkfs.fat", "pacstrap", "arch-chroot", "genfstab"]
+        required = [
+            "sgdisk", "mkfs.btrfs", "mkfs.fat", "pacstrap", "arch-chroot", "genfstab",
+        ]
         missing = [t for t in required if not self._which(t)]
         if missing:
             raise InstallerError(f"Missing required tools: {', '.join(missing)}")

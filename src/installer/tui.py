@@ -13,14 +13,14 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from typing import Any, Optional
+from typing import Any
 
 
 class TUIError(Exception):
     """Raised when a TUI operation fails (e.g. whiptail not available)."""
 
 
-def _whiptail(*args: str, input_text: Optional[str] = None) -> tuple[int, str]:
+def _whiptail(*args: str, input_text: str | None = None) -> tuple[int, str]:
     """Run a whiptail command and return (returncode, stdout).
 
     Args:
@@ -232,7 +232,8 @@ class TUI:
                 "--yesno",
                 "Enable LUKS2 full-disk encryption?\n\n"
                 "You will be asked to set a passphrase.\n"
-                "Without encryption, data on the disk is accessible to anyone with physical access.",
+                "Without encryption, data on the disk is accessible"
+                " to anyone with physical access.",
                 str(self._HEIGHT), str(self._WIDTH),
             )
         )
@@ -258,7 +259,9 @@ class TUI:
             )
             if passphrase == confirm:
                 if len(passphrase) < 8:
-                    self.show_error("Passphrase must be at least 8 characters.", recoverable=True)
+                    self.show_error(
+                        "Passphrase must be at least 8 characters.", recoverable=True
+                    )
                     continue
                 return passphrase
             self.show_error(
@@ -317,7 +320,9 @@ class TUI:
             confirm = self._password_box("User Account", "Confirm password:")
             if password == confirm:
                 if len(password) < 6:
-                    self.show_error("Password must be at least 6 characters.", recoverable=True)
+                    self.show_error(
+                        "Password must be at least 6 characters.", recoverable=True
+                    )
                     continue
                 return {"username": username, "password_hash": _hash_password(password)}
             self.show_error(

@@ -9,10 +9,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -35,7 +33,9 @@ class UserConfig:
 
     username: str = ""
     password_hash: str = ""          # SHA-512 crypt hash — never plaintext
-    groups: list[str] = field(default_factory=lambda: ["wheel", "audio", "video", "input"])
+    groups: list[str] = field(
+        default_factory=lambda: ["wheel", "audio", "video", "input"]
+    )
     shell: str = "/bin/bash"
     create_home: bool = True
 
@@ -128,7 +128,8 @@ def validate_config(data: dict) -> None:
         )
     if re.match(r"^/dev/sd[a-z]\d+", str(device)):
         raise ConfigValidationError(
-            "disk.device must reference a whole disk, not a partition (e.g. /dev/sda not /dev/sda1)"
+            "disk.device must reference a whole disk, not a partition"
+            " (e.g. /dev/sda not /dev/sda1)"
         )
 
     # locale section
@@ -141,7 +142,9 @@ def validate_config(data: dict) -> None:
     network = data["network"]
     hostname = _require(network, "hostname", "network")
     if not _HOSTNAME_RE.match(str(hostname)):
-        raise ConfigValidationError(f"network.hostname is not a valid hostname: {hostname!r}")
+        raise ConfigValidationError(
+            f"network.hostname is not a valid hostname: {hostname!r}"
+        )
 
     # user section
     user = data["user"]
@@ -182,7 +185,9 @@ def load_config(path: Path) -> InstallerConfig:
         data = yaml.safe_load(fh)
 
     if not isinstance(data, dict):
-        raise ConfigValidationError("Config file must be a YAML mapping at the top level.")
+        raise ConfigValidationError(
+            "Config file must be a YAML mapping at the top level."
+        )
 
     validate_config(data)
 
@@ -224,7 +229,7 @@ def load_config(path: Path) -> InstallerConfig:
     return cfg
 
 
-def find_unattended_config() -> Optional[Path]:
+def find_unattended_config() -> Path | None:
     """Search standard locations for an unattended install config.
 
     Search order:

@@ -12,7 +12,6 @@ import pytest
 
 from installer.tui import TUI, TUIError, _hash_password, _lsblk_disks, _whiptail
 
-
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -59,8 +58,14 @@ class TestLsblkDisks:
         lsblk_output = json.dumps(
             {
                 "blockdevices": [
-                    {"name": "sda", "size": "500G", "model": "Samsung SSD", "type": "disk", "hotplug": False},
-                    {"name": "sda1", "size": "512M", "model": None, "type": "part", "hotplug": False},
+                    {
+                        "name": "sda", "size": "500G", "model": "Samsung SSD",
+                        "type": "disk", "hotplug": False,
+                    },
+                    {
+                        "name": "sda1", "size": "512M", "model": None,
+                        "type": "part", "hotplug": False,
+                    },
                 ]
             }
         )
@@ -195,8 +200,10 @@ class TestTUIShowDiskSelection:
 
 class TestTUIShowLocaleMenu:
     def test_returns_locale_dict(self, tui: TUI) -> None:
-        with patch.object(tui, "_select_from_list", side_effect=["en_US.UTF-8", "us"]), \
-             patch.object(tui, "_input_box", return_value="America/New_York"):
+        with (
+            patch.object(tui, "_select_from_list", side_effect=["en_US.UTF-8", "us"]),
+            patch.object(tui, "_input_box", return_value="America/New_York"),
+        ):
             result = tui.show_locale_menu()
         assert result["locale"] == "en_US.UTF-8"
         assert result["keymap"] == "us"
@@ -205,8 +212,12 @@ class TestTUIShowLocaleMenu:
 
 class TestTUIShowUserCreation:
     def test_successful_user_creation(self, tui: TUI) -> None:
-        with patch.object(tui, "_input_box", return_value="alice"), \
-             patch.object(tui, "_password_box", side_effect=["password123", "password123"]):
+        with (
+            patch.object(tui, "_input_box", return_value="alice"),
+            patch.object(
+                tui, "_password_box", side_effect=["password123", "password123"]
+            ),
+        ):
             result = tui.show_user_creation()
         assert result["username"] == "alice"
         assert result["password_hash"].startswith("$6$")

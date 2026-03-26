@@ -11,13 +11,12 @@ import pytest
 from installer.config import InstallerConfig
 from installer.state_machine import (
     FatalError,
-    InstallerError,
     Installer,
+    InstallerError,
     State,
     _is_completed,
     _save_checkpoint,
 )
-
 
 # ---------------------------------------------------------------------------
 # Checkpoint system tests
@@ -25,7 +24,9 @@ from installer.state_machine import (
 
 
 class TestCheckpointSystem:
-    def test_save_and_detect_checkpoint(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_save_and_detect_checkpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr("installer.state_machine.CHECKPOINT_DIR", tmp_path)
         monkeypatch.setattr(
             "installer.state_machine._checkpoint_path",
@@ -35,14 +36,18 @@ class TestCheckpointSystem:
         _save_checkpoint(State.LOCALE, cfg)
         assert (tmp_path / "locale.done").exists()
 
-    def test_is_completed_false_when_no_checkpoint(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_is_completed_false_when_no_checkpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(
             "installer.state_machine._checkpoint_path",
             lambda s: tmp_path / f"{s.name.lower()}.done",
         )
         assert _is_completed(State.PARTITION) is False
 
-    def test_save_checkpoint_creates_config_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_save_checkpoint_creates_config_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr("installer.state_machine.CHECKPOINT_DIR", tmp_path)
         monkeypatch.setattr(
             "installer.state_machine._checkpoint_path",
@@ -303,7 +308,9 @@ class TestInstallerRun:
 
         with patch("installer.state_machine._is_completed") as mock_done, \
              patch("installer.state_machine._save_checkpoint"), \
-             patch("installer.state_machine._load_config_checkpoint", return_value=None):
+             patch(
+                 "installer.state_machine._load_config_checkpoint", return_value=None
+             ):
             mock_done.side_effect = lambda s: s in (State.INIT, State.PREFLIGHT)
             installer.run()
 
