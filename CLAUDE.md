@@ -24,34 +24,37 @@ ouroborOS/
 ├── CLAUDE.md                    ← You are here
 ├── IMPLEMENTATION_PLAN.md       ← Full phased roadmap
 ├── README.md                    ← Public project README
-├── docs/
+├── src/                         ← All source code
+│   ├── scripts/                 ← Build and setup scripts
+│   │   ├── build-iso.sh         ← Build the live ISO
+│   │   ├── setup-dev-env.sh     ← Set up the dev environment
+│   │   └── flash-usb.sh         ← Write ISO to USB drive
+│   ├── installer/               ← Python installer
+│   │   ├── config.py            ← InstallerConfig + YAML loader
+│   │   ├── state_machine.py     ← FSM with checkpoints
+│   │   ├── tui.py               ← whiptail TUI layer
+│   │   ├── main.py              ← CLI entrypoint
+│   │   ├── ops/                 ← Bash operations
+│   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab
+│   │   │   ├── snapshot.sh      ← Btrfs snapshot management
+│   │   │   └── configure.sh     ← Chroot post-install config
+│   │   └── tests/               ← pytest test suite
+│   └── ouroborOS-profile/       ← archiso profile
+│       ├── profiledef.sh
+│       ├── packages.x86_64
+│       ├── pacman.conf
+│       ├── airootfs/            ← Files copied into the live ISO
+│       └── efiboot/             ← systemd-boot entries
+├── docs/                        ← Documentation only (no scripts)
 │   ├── architecture/            ← System design decisions
-│   │   ├── overview.md
-│   │   ├── immutability-strategy.md
-│   │   ├── systemd-integration.md
-│   │   └── installer-phases.md
 │   ├── build/                   ← ISO build process
-│   │   ├── build-process.md
-│   │   └── archiso-profile.md
 │   ├── installer/               ← Installer architecture
-│   │   ├── state-machine.md
-│   │   └── configuration-format.md
 │   ├── messages/                ← Project log and decisions
-│   │   ├── 000-project-origin.md
-│   │   ├── 001-initial-readme.md
-│   │   └── 002-project-structure-decisions.md
-│   └── scripts/                 ← Build and setup scripts
-│       ├── build-iso.sh
-│       └── setup-dev-env.sh
-├── ouroborOS-profile/           ← archiso profile (to be created)
-├── installer/                   ← Installer source code (to be created)
+│   ├── build-and-flash.md       ← How to build ISO and flash USB
+│   └── user-guide.md            ← End-user installation guide
+├── tests/                       ← CI test scripts
+├── agents/                      ← Multi-agent role definitions
 └── skills/                      ← Claude Code expert skill definitions
-    ├── systemd-expert.md
-    ├── immutable-systems-expert.md
-    ├── archiso-builder.md
-    ├── installer-developer.md
-    ├── filesystem-storage-expert.md
-    └── bootloader-uefi-expert.md
 ```
 
 ---
@@ -153,12 +156,17 @@ build(archiso): add python-rich to packages.x86_64
 
 ### Setting up
 ```bash
-bash docs/scripts/setup-dev-env.sh
+bash src/scripts/setup-dev-env.sh
 ```
 
 ### Building the ISO
 ```bash
-sudo bash docs/scripts/build-iso.sh --clean
+sudo bash src/scripts/build-iso.sh --clean
+```
+
+### Flashing to USB
+```bash
+sudo bash src/scripts/flash-usb.sh --iso out/ouroborOS-*.iso
 ```
 
 ### Testing in QEMU
@@ -170,7 +178,7 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
 
 ### Running installer tests
 ```bash
-pytest installer/tests/ -v
+pytest src/installer/tests/ -v
 ```
 
 ---
@@ -179,7 +187,7 @@ pytest installer/tests/ -v
 
 See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
-**Current phase:** Phase 1 — Build Environment and archiso Profile
+**Current phase:** Phase 3 complete — Installer TUI and State Machine
 
 ---
 
@@ -192,6 +200,13 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 | `docs/architecture/installer-phases.md` | All installer states, actions, rollback |
 | `docs/installer/state-machine.md` | FSM spec and Python skeleton |
 | `docs/installer/configuration-format.md` | YAML schema for unattended install |
+| `docs/build-and-flash.md` | How to build the ISO and write to USB |
+| `docs/user-guide.md` | End-user installation and usage guide |
+| `src/scripts/build-iso.sh` | ISO build script (mkarchiso wrapper) |
+| `src/scripts/flash-usb.sh` | Safe dd wrapper for USB flashing |
+| `src/installer/state_machine.py` | FSM implementation with checkpoints |
+| `src/installer/config.py` | InstallerConfig dataclass + YAML validation |
+| `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
 | `IMPLEMENTATION_PLAN.md` | Phased roadmap with milestones |
 
 ---

@@ -33,12 +33,12 @@ The plan is divided into **5 phases**. Each phase has defined milestones, delive
 ### Milestones
 
 #### 1.1 Host environment setup
-- [ ] `docs/scripts/setup-dev-env.sh` installs all required tools without error
+- [ ] `src/scripts/setup-dev-env.sh` installs all required tools without error
 - [ ] QEMU with OVMF (UEFI firmware) available for testing
 - [ ] `shellcheck` and `shfmt` available for code quality
 
 #### 1.2 archiso profile skeleton
-- [ ] Create `ouroborOS-profile/` directory with all required files
+- [ ] Create `src/ouroborOS-profile/` directory with all required files
 - [ ] `profiledef.sh` with correct metadata (`iso_name`, `iso_label`, `bootmodes`)
 - [ ] `packages.x86_64` with minimal base: `base`, `linux-zen`, `linux-firmware`, `btrfs-progs`, `arch-install-scripts`, `dialog`, `python`, `python-yaml`
 - [ ] `pacman.conf` using ArchLinux mirrors
@@ -59,12 +59,12 @@ The plan is divided into **5 phases**. Each phase has defined milestones, delive
 - [ ] `systemd-resolved` enabled, `/etc/resolv.conf` symlinked
 
 #### 1.5 Build pipeline
-- [ ] `docs/scripts/build-iso.sh` builds the ISO without errors
+- [ ] `src/scripts/build-iso.sh` builds the ISO without errors
 - [ ] SHA256 checksum generated alongside ISO
 - [ ] ISO size < 800 MB
 
 **Phase 1 Acceptance Criteria:**
-- `sudo bash docs/scripts/build-iso.sh` completes without error
+- `sudo bash src/scripts/build-iso.sh` completes without error
 - ISO boots in QEMU (UEFI mode) and shows a login prompt or installer placeholder
 - `systemctl status systemd-networkd` shows active in live environment
 

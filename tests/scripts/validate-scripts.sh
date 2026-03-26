@@ -66,10 +66,10 @@ assert_help() {
 # ── build-iso.sh ──────────────────────────────────────────────────────────────
 log_section "Validating build-iso.sh"
 
-BUILD_ISO="$WORKSPACE/docs/scripts/build-iso.sh"
+BUILD_ISO="$WORKSPACE/src/scripts/build-iso.sh"
 
 if [[ ! -f "$BUILD_ISO" ]]; then
-    log_fail "docs/scripts/build-iso.sh not found"
+    log_fail "src/scripts/build-iso.sh not found"
     FAILURES=$((FAILURES + 1))
 else
     assert_executable "$BUILD_ISO"
@@ -94,10 +94,10 @@ fi
 # ── setup-dev-env.sh ──────────────────────────────────────────────────────────
 log_section "Validating setup-dev-env.sh"
 
-SETUP="$WORKSPACE/docs/scripts/setup-dev-env.sh"
+SETUP="$WORKSPACE/src/scripts/setup-dev-env.sh"
 
 if [[ ! -f "$SETUP" ]]; then
-    log_fail "docs/scripts/setup-dev-env.sh not found"
+    log_fail "src/scripts/setup-dev-env.sh not found"
     FAILURES=$((FAILURES + 1))
 else
     assert_executable "$SETUP"

@@ -23,7 +23,7 @@ log_skip()    { echo -e "${YELLOW}[SKIP]${RESET}  $*"; }
 log_section() { echo -e "\n${BOLD}── $* ──────────────────────────────────${RESET}"; }
 
 WORKSPACE="${WORKSPACE:-/workspace}"
-PROFILE="$WORKSPACE/ouroborOS-profile"
+PROFILE="$WORKSPACE/src/ouroborOS-profile"
 FAILURES=0
 
 # Helper: assert file exists and is non-empty
@@ -84,8 +84,8 @@ assert_not_contains() {
 
 # ── Phase gate ────────────────────────────────────────────────────────────────
 if [[ ! -d "$PROFILE" ]]; then
-    log_skip "ouroborOS-profile/ directory does not exist yet"
-    log_skip "Smoke test will run automatically once the profile is created (Phase 1)"
+    log_skip "src/ouroborOS-profile/ directory does not exist yet"
+    log_skip "Smoke test will run automatically once src/ouroborOS-profile/ is created (Phase 1)"
     echo ""
     echo -e "${YELLOW}${BOLD}SKIP — archiso profile not yet created.${RESET}"
     exit 0

@@ -25,11 +25,11 @@ log_fail()  { echo -e "${RED}[FAIL]${RESET} $*"; }
 log_test()  { echo -e "${BOLD}[TEST]${RESET} $*"; }
 
 WORKSPACE="${WORKSPACE:-/workspace}"
-BUILD_ISO="$WORKSPACE/docs/scripts/build-iso.sh"
+BUILD_ISO="$WORKSPACE/src/scripts/build-iso.sh"
 FAILURES=0
 
 if [[ ! -f "$BUILD_ISO" ]]; then
-    log_fail "docs/scripts/build-iso.sh not found at $BUILD_ISO"
+    log_fail "src/scripts/build-iso.sh not found at $BUILD_ISO"
     exit 1
 fi
 

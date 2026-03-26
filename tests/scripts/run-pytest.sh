@@ -56,9 +56,9 @@ done
 # ── Phase gate: installer/ must exist ─────────────────────────────────────────
 log_section "Installer tests"
 
-if [[ ! -d "$WORKSPACE/installer" ]]; then
-    log_skip "installer/ directory does not exist yet (expected in Phase 1)"
-    log_skip "Tests will run automatically once installer/ is created"
+if [[ ! -d "$WORKSPACE/src/installer" ]]; then
+    log_skip "src/installer/ directory does not exist yet (expected in Phase 1)"
+    log_skip "Tests will run automatically once src/installer/ is created"
     echo ""
     if [[ $FAILURES -eq 0 ]]; then
         echo -e "${GREEN}${BOLD}SKIP (phase-gated) — Python environment OK.${RESET}"
@@ -73,10 +73,10 @@ fi
 log_section "Running pytest"
 cd "$WORKSPACE"
 
-if ! pytest installer/tests/ \
+if ! pytest src/installer/tests/ \
         -v \
         --tb=short \
-        --cov=installer \
+        --cov=src/installer \
         --cov-report=term-missing \
         --cov-report=xml:coverage.xml \
         2>&1; then
