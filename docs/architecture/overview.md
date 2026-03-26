@@ -14,24 +14,59 @@ ouroborOS takes its name from the ouroboros, the ancient symbol of a serpent con
 
 ## System Layer Diagram
 
+```mermaid
+graph TB
+    subgraph UserSpace["🧑 User Space"]
+        Apps["User Applications\nFlatpak / pacman packages"]
+        Home["/home\nsystemd-homed · per-user LUKS encryption"]
+    end
+
+    subgraph Mutable["✏️ Writable System Layer  (Btrfs subvolumes)"]
+        Var["/var\n@var subvolume · rw"]
+        Etc["/etc\n@etc subvolume · rw"]
+        Tmp["/tmp\ntmpfs · cleared on reboot"]
+    end
+
+    subgraph ImmutableRoot["🔒 Read-Only Immutable Root  /"]
+        Root["Btrfs @ subvolume\nmounted with ro,noatime,compress=zstd"]
+        Snap["/.snapshots\n@snapshots · rollback targets"]
+    end
+
+    subgraph BootLayer["⚡ Boot Layer"]
+        UEFI["UEFI Firmware"]
+        SDBoot["systemd-boot\n/boot/loader/entries/*.conf"]
+        Kernel["linux-zen + initramfs\nmkinitcpio · btrfs hook"]
+    end
+
+    Apps --> Home
+    Home --> Var & Etc & Tmp
+    Var & Etc --> Root
+    Root --> Snap
+    UEFI --> SDBoot --> Kernel --> Root
 ```
-┌──────────────────────────────────────────────────────────┐
-│                     User Applications                     │
-│              (Flatpak / native pacman packages)           │
-├──────────────────────────────────────────────────────────┤
-│                  Writable User Layer                       │
-│         /home  (systemd-homed, per-user encryption)       │
-├──────────────────────────────────────────────────────────┤
-│                  Writable System Layer                     │
-│     /var  /etc  /tmp  (overlayfs or Btrfs subvolume)     │
-├──────────────────────────────────────────────────────────┤
-│              Read-Only Immutable Root (/)                  │
-│          Btrfs snapshot, mounted read-only                │
-│    systemd-boot → kernel → initramfs → mount root RO     │
-├──────────────────────────────────────────────────────────┤
-│              Hardware Abstraction / Firmware               │
-│         UEFI → systemd-boot → kernel (linux-zen)         │
-└──────────────────────────────────────────────────────────┘
+
+---
+
+## Component Relationships
+
+```mermaid
+graph LR
+    archiso["archiso\nISO build"] -->|produces| ISO["ouroborOS.iso"]
+    ISO -->|boots| Live["Live Environment\ntty1 autologin"]
+    Live -->|launches| Installer["TUI Installer\nPython + Bash"]
+
+    Installer -->|partitions| REPART["systemd-repart\nGPT layout"]
+    Installer -->|formats| BTRFS["Btrfs\nsubvolumes"]
+    Installer -->|installs| PACSTRAP["pacstrap\nbase packages"]
+    Installer -->|configures| NSPAWN["systemd-nspawn\nchroot"]
+
+    NSPAWN -->|bootloader| SDBOOT["systemd-boot\nbootctl install"]
+    NSPAWN -->|network| NETWORKD["systemd-networkd\n+ iwd"]
+    NSPAWN -->|dns| RESOLVED["systemd-resolved\nDoT + DNSSEC"]
+    NSPAWN -->|users| HOMED["systemd-homed\nencrypted homes"]
+    NSPAWN -->|snapshot| SNAP["Btrfs snapshot\n@snapshots/install"]
+
+    SDBOOT -->|boot entry| RO_ROOT["/ mounted ro\nBtrfs @ subvol"]
 ```
 
 ---

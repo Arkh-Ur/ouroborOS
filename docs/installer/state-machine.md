@@ -12,14 +12,40 @@ The ouroborOS installer is implemented as an explicit finite state machine (FSM)
 
 ## States
 
-```
-PREFLIGHT → LOCALE → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
-                                  │
-                                  ▼
-                            ERROR_RECOVERABLE
-                                  │
-                                  ▼
-                            ERROR_FATAL
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> PREFLIGHT
+
+    PREFLIGHT --> LOCALE : pass
+    PREFLIGHT --> ERROR_FATAL : fail
+
+    LOCALE --> PARTITION : next
+
+    PARTITION --> FORMAT : next (confirmed)
+    PARTITION --> LOCALE : back
+
+    FORMAT --> INSTALL : next
+    FORMAT --> PARTITION : back
+    FORMAT --> ERROR_RECOVERABLE : fail
+
+    INSTALL --> CONFIGURE : next
+    INSTALL --> FORMAT : back
+    INSTALL --> ERROR_RECOVERABLE : fail
+
+    CONFIGURE --> SNAPSHOT : next
+    CONFIGURE --> INSTALL : back
+    CONFIGURE --> ERROR_RECOVERABLE : fail
+
+    SNAPSHOT --> FINISH : next
+    SNAPSHOT --> ERROR_RECOVERABLE : fail
+
+    FINISH --> [*] : reboot / stay
+
+    ERROR_RECOVERABLE --> FORMAT : retry
+    ERROR_RECOVERABLE --> ERROR_FATAL : abort
+
+    ERROR_FATAL --> [*]
 ```
 
 | State | ID | Description |
@@ -195,13 +221,37 @@ The state machine is **independent of the UI**. The TUI is a thin wrapper that:
 2. Renders state-specific screens using `dialog` or `whiptail`
 3. Passes user input back to the state handler
 
-```
-InstallerState.run()
-    └── _handle_locale()
-            └── tui.show_locale_menu()   ← whiptail/dialog call
-                    └── returns user selection
-            └── config.locale = selection
-            └── return State.PARTITION
+```mermaid
+graph TD
+    subgraph Core["🧠 State Machine Core (state_machine.py)"]
+        FSM["Installer.run()\nstate loop"]
+        HANDLERS["State Handlers\n_handle_preflight()\n_handle_locale()\n_handle_partition()\n..."]
+        CONFIG["InstallerConfig\ndataclass"]
+        CHECKPOINT["Checkpoint System\n/tmp/ouroborOS-checkpoint/"]
+    end
+
+    subgraph TUI["🖥️ TUI Layer (tui.py · whiptail)"]
+        SCREENS["Screen Functions\nshow_welcome()\nshow_locale_menu()\nshow_disk_selection()\nshow_progress()\nshow_error()"]
+    end
+
+    subgraph Ops["⚙️ Operations (ops/)"]
+        DISK["disk.sh\npartition · format · mount"]
+        CONFIGURE["configure.sh/py\nchroot · bootloader · users"]
+        SNAPSHOT["snapshot.sh\nbtrfs snapshot"]
+    end
+
+    subgraph Modes["🚀 Run Modes"]
+        INTERACTIVE["Interactive\n(default)"]
+        UNATTENDED["Unattended\n--config config.yaml"]
+    end
+
+    FSM --> HANDLERS
+    HANDLERS --> CONFIG
+    HANDLERS --> CHECKPOINT
+    HANDLERS <-->|"input/display"| SCREENS
+    HANDLERS --> DISK & CONFIGURE & SNAPSHOT
+    INTERACTIVE --> FSM
+    UNATTENDED -->|"skip TUI screens"| FSM
 ```
 
 This separation allows:

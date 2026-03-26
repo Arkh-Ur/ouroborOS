@@ -8,50 +8,64 @@ The ouroborOS installer is a multi-phase, stateful process. Each phase has a def
 
 ## State Machine Diagram
 
-```
-┌─────────┐
-│  START  │
-└────┬────┘
-     │
-     ▼
-┌──────────┐     fail     ┌────────────────┐
-│ PREFLIGHT├─────────────►│  ERROR_FATAL   │
-└────┬─────┘              └────────────────┘
-     │ pass
-     ▼
-┌──────────┐
-│  LOCALE  │  (language, keyboard, timezone)
-└────┬─────┘
-     │
-     ▼
-┌──────────────┐
-│  PARTITION   │  (detect disks, define layout)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│    FORMAT    │  (mkfs.btrfs, create subvolumes, mount)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   INSTALL    │  (pacstrap base packages)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   CONFIGURE  │  (bootloader, network, users, firstboot)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   SNAPSHOT   │  (btrfs snapshot of clean install)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   FINISH     │  (unmount, reboot prompt)
-└──────────────┘
+```mermaid
+flowchart TD
+    START(["▶ START"])
+
+    PREFLIGHT["0 · PREFLIGHT\nUEFI check · RAM · disk size\nnetwork · clock sync"]
+
+    LOCALE["1 · LOCALE\nlanguage · keymap · timezone"]
+
+    PARTITION["2 · PARTITION\ndisk selection · layout plan\nLUKS option · confirmation"]
+
+    FORMAT["3 · FORMAT\nsgdisk GPT · mkfs.btrfs\nBtrfs subvolumes · mount\n📌 checkpoint: FORMATTED"]
+
+    INSTALL["4 · INSTALL\npacstrap base packages\ngenfstab · fstab validation\n📌 checkpoint: INSTALLED"]
+
+    CONFIGURE["5 · CONFIGURE\nlocale · hostname · initramfs\nsystemd-boot · network units\nusers · sudoers\n📌 checkpoint: CONFIGURED"]
+
+    SNAPSHOT["6 · SNAPSHOT\nbtrfs snapshot -r @ → @snapshots/install\nsystemd-boot baseline entry\n📌 checkpoint: SNAPSHOT"]
+
+    FINISH(["7 · FINISH\nunmount · summary\nReboot / Stay"])
+
+    ERR_REC["⚠️ ERROR_RECOVERABLE\nretry / back / abort"]
+    ERR_FATAL(["💀 ERROR_FATAL\nexit"])
+
+    START --> PREFLIGHT
+    PREFLIGHT -- pass --> LOCALE
+    PREFLIGHT -- fail --> ERR_FATAL
+
+    LOCALE -- next --> PARTITION
+    PARTITION -- next --> FORMAT
+    PARTITION -- back --> LOCALE
+    PARTITION -- fail --> ERR_REC
+
+    FORMAT -- next --> INSTALL
+    FORMAT -- back --> PARTITION
+    FORMAT -- fail --> ERR_REC
+
+    INSTALL -- next --> CONFIGURE
+    INSTALL -- back --> FORMAT
+    INSTALL -- fail --> ERR_REC
+
+    CONFIGURE -- next --> SNAPSHOT
+    CONFIGURE -- back --> INSTALL
+    CONFIGURE -- fail --> ERR_REC
+
+    SNAPSHOT -- next --> FINISH
+    SNAPSHOT -- fail --> ERR_REC
+
+    ERR_REC -- retry --> FORMAT
+    ERR_REC -- abort --> ERR_FATAL
+
+    style START fill:#2d6a4f,color:#fff
+    style FINISH fill:#2d6a4f,color:#fff
+    style ERR_FATAL fill:#d62828,color:#fff
+    style ERR_REC fill:#f4a261,color:#000
+    style FORMAT fill:#023e8a,color:#fff
+    style INSTALL fill:#023e8a,color:#fff
+    style CONFIGURE fill:#023e8a,color:#fff
+    style SNAPSHOT fill:#023e8a,color:#fff
 ```
 
 ---

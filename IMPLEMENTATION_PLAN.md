@@ -291,12 +291,67 @@ The plan is divided into **5 phases**. Each phase has defined milestones, delive
 
 ## Dependency Graph
 
+```mermaid
+flowchart LR
+    P1["📦 Phase 1\nBuild Environment\narciso profile\nBootable ISO"]
+    P2["💾 Phase 2\nImmutable Filesystem\nBtrfs layout\nDisk ops library"]
+    P3["🖥️ Phase 3\nInstaller TUI\nState machine\nPython + Bash"]
+    P4["⚙️ Phase 4\nsystemd Integration\nNetwork · Boot\nRead-only root"]
+    P5["🚀 Phase 5\nTesting & Release\nCI/CD · v0.1.0\nGitHub Release"]
+
+    P1 -->|"ISO boots in QEMU"| P2
+    P2 -->|"Manual install succeeds"| P3
+    P3 -->|"Full install via TUI"| P4
+    P4 -->|"Installed system boots cleanly"| P5
+
+    style P1 fill:#457b9d,color:#fff
+    style P2 fill:#457b9d,color:#fff
+    style P3 fill:#457b9d,color:#fff
+    style P4 fill:#457b9d,color:#fff
+    style P5 fill:#2d6a4f,color:#fff
 ```
-Phase 1 (ISO boots)
-    └── Phase 2 (disk ops work)
-            └── Phase 3 (TUI installer complete)
-                    └── Phase 4 (systemd integration clean)
-                                └── Phase 5 (tests + release)
+
+## Roadmap Timeline
+
+```mermaid
+gantt
+    title ouroborOS v0.1 — Development Roadmap
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+
+    section Phase 1 · Build Env
+    Host setup & deps         :p1a, 2026-03-26, 3d
+    archiso profile skeleton  :p1b, after p1a, 4d
+    Boot configuration        :p1c, after p1b, 2d
+    Live environment baseline :p1d, after p1c, 2d
+    Build pipeline script     :p1e, after p1d, 1d
+
+    section Phase 2 · Btrfs
+    Disk ops library (Bash)   :p2a, after p1e, 5d
+    fstab generation & validate :p2b, after p2a, 2d
+    LUKS optional layer       :p2c, after p2b, 3d
+    Snapshot module           :p2d, after p2c, 2d
+    Manual install test       :p2e, after p2d, 2d
+
+    section Phase 3 · Installer
+    State machine core        :p3a, after p2e, 5d
+    TUI layer (whiptail)      :p3b, after p3a, 4d
+    State handlers            :p3c, after p3b, 5d
+    Chroot config module      :p3d, after p3c, 3d
+    Unattended install mode   :p3e, after p3d, 2d
+
+    section Phase 4 · systemd
+    Network config            :p4a, after p3e, 3d
+    systemd-boot polish       :p4b, after p4a, 3d
+    Read-only root compat     :p4c, after p4b, 4d
+    zram + timesyncd          :p4d, after p4c, 1d
+    pacman snapshot hooks     :p4e, after p4d, 3d
+
+    section Phase 5 · Release
+    Test suite                :p5a, after p4e, 5d
+    CI/CD pipeline            :p5b, after p5a, 3d
+    Documentation completion  :p5c, after p5b, 3d
+    v0.1.0 release            :milestone, after p5c, 0d
 ```
 
 ---

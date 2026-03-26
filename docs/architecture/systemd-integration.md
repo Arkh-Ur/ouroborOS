@@ -4,6 +4,77 @@ ouroborOS is built entirely around the systemd ecosystem. This document describe
 
 ---
 
+## systemd Ecosystem Map
+
+```mermaid
+graph LR
+    subgraph Boot["⚡ Boot"]
+        SDBOOT["systemd-boot\nUEFI bootloader"]
+        INITRAMFS["initramfs\nbtrfs hook"]
+    end
+
+    subgraph Network["🌐 Network"]
+        NETWORKD["systemd-networkd\nIP addressing"]
+        IWD["iwd\nWiFi auth"]
+        RESOLVED["systemd-resolved\nDNS + DoT"]
+    end
+
+    subgraph Storage["💾 Storage"]
+        REPART["systemd-repart\npartition layout"]
+        BTRFS["Btrfs\nimmutable root"]
+        HOMED["systemd-homed\nencrypted homes"]
+    end
+
+    subgraph Init["🔧 Init & Config"]
+        FIRSTBOOT["systemd-firstboot\nfirst-run setup"]
+        NSPAWN["systemd-nspawn\ninstall chroot"]
+        TMPFILES["systemd-tmpfiles\ncompat symlinks"]
+        OOMD["systemd-oomd\nOOM handling"]
+        TIMESYNCD["systemd-timesyncd\nNTP"]
+        ZRAM["systemd-zram-generator\ncompressed swap"]
+    end
+
+    UEFI["UEFI Firmware"] --> SDBOOT
+    SDBOOT --> INITRAMFS --> BTRFS
+    NETWORKD <--> IWD
+    NETWORKD --> RESOLVED
+    REPART --> BTRFS
+    BTRFS --> HOMED
+    NSPAWN --> FIRSTBOOT
+    NSPAWN --> TMPFILES
+```
+
+---
+
+## Boot Sequence
+
+```mermaid
+sequenceDiagram
+    participant FW as UEFI Firmware
+    participant SDB as systemd-boot
+    participant KRN as linux-zen kernel
+    participant INIT as initramfs
+    participant SD as systemd (PID 1)
+    participant NET as systemd-networkd
+    participant DNS as systemd-resolved
+
+    FW->>SDB: load /EFI/systemd/systemd-bootx64.efi
+    SDB->>SDB: read /boot/loader/loader.conf
+    SDB-->>KRN: load vmlinuz-linux-zen + initramfs
+    KRN->>INIT: execute init hooks
+    INIT->>INIT: load btrfs module
+    INIT->>INIT: mount / (subvol=@, ro)
+    INIT->>SD: exec /sbin/init (systemd)
+    SD->>SD: process unit files
+    SD->>NET: start systemd-networkd.service
+    SD->>DNS: start systemd-resolved.service
+    NET-->>SD: network configured ✓
+    DNS-->>SD: DNS ready ✓
+    SD-->>SD: multi-user.target reached ✓
+```
+
+---
+
 ## Bootloader: systemd-boot
 
 **Package:** `systemd` (included)
