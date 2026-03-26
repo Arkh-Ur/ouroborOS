@@ -68,6 +68,13 @@ exit 0
 MOCK_EOF
 chmod +x "$MOCK_DIR/mksquashfs"
 
+# Mock xorriso (required by build-iso.sh preflight check)
+cat > "$MOCK_DIR/xorriso" << 'MOCK_EOF'
+#!/usr/bin/env bash
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/xorriso"
+
 # Inject mocks into PATH
 export PATH="$MOCK_DIR:$PATH"
 
