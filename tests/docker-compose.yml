@@ -27,7 +27,7 @@ services:
   dry-run-build:
     <<: *test-base
     tmpfs:
-      - /tmp:mode=1777    # Writable /tmp for mock binaries and temp dirs
+      - /tmp:exec,mode=1777    # Writable+executable /tmp for mock binaries
     command: bash /workspace/tests/scripts/test-build-dry-run.sh
 
   # ── Python lint with ruff ───────────────────────────────────────────────────
@@ -56,7 +56,7 @@ services:
   full-suite:
     <<: *test-base
     tmpfs:
-      - /tmp:mode=1777
+      - /tmp:exec,mode=1777
     volumes:
       - ..:/workspace     # Read-WRITE for pytest coverage output
     command: >
