@@ -11,8 +11,8 @@ set -euo pipefail
 #   bash tests/run-local.sh pytest       # single suite
 #   bash tests/run-local.sh build        # build image only
 #
-# Available suite names:
-#   shellcheck  validate  dry-run  lint  pytest  smoke  full (default)
+# Available suite names (pass as first argument):
+#   shellcheck | validate | dry-run | lint | pytest | smoke | full (default)
 # =============================================================================
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
