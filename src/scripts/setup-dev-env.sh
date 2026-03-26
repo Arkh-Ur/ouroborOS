@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 INSTALL_QEMU=true
-INSTALL_AUR=true
 DRY_RUN=false
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -47,7 +46,6 @@ run() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-qemu)   INSTALL_QEMU=false; shift ;;
-        --no-aur)    INSTALL_AUR=false; shift ;;
         --dry-run)   DRY_RUN=true; shift ;;
         -h|--help)   sed -n '/^# Usage/,/^# =====/p' "$0" | grep -v '^# =====' | sed 's/^# //'; exit 0 ;;
         *) log_error "Unknown option: $1"; exit 1 ;;

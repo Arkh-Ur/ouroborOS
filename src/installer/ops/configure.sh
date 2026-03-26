@@ -262,10 +262,6 @@ EOF
 configure_users() {
     log_info "Creating user account: ${USERNAME}"
 
-    # Convert comma-separated groups to -G argument
-    local groups_arg
-    groups_arg=$(echo "$USER_GROUPS" | tr ',' ' ')
-
     # Create user
     in_chroot useradd \
         --create-home \

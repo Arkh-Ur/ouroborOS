@@ -73,8 +73,8 @@ export PATH="$MOCK_DIR:$PATH"
 
 # ── Test 1: --help exits 0 with output ───────────────────────────────────────
 log_test "1. --help exits 0 and produces output"
-help_output=$(bash "$BUILD_ISO" --help 2>&1) || true
-if [[ $? -eq 0 ]] && [[ -n "$help_output" ]]; then
+help_output=$(bash "$BUILD_ISO" --help 2>&1) && help_rc=0 || help_rc=$?
+if [[ $help_rc -eq 0 ]] && [[ -n "$help_output" ]]; then
     log_ok "  --help exits 0 with output"
 else
     # help() calls exit 0 but may appear as non-zero in subshell; check output

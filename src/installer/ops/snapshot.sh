@@ -200,6 +200,7 @@ prune_snapshots() {
         if [[ "$name" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}$ ]]; then
             local snap_date="${name:0:16}"  # YYYY-MM-DDTHH:MM (rearrange for date)
             local formatted_date
+            # shellcheck disable=SC2001  # backreference substitution not possible with ${//}
             formatted_date=$(echo "$snap_date" | sed 's/T\(..\)\(..\)\(..\)/T\1:\2:\3/')
             local snap_epoch
             snap_epoch=$(date -d "$formatted_date" +%s 2>/dev/null || echo 0)

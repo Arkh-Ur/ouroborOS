@@ -14,11 +14,10 @@
 set -euo pipefail
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
+BOLD='\033[1m'; RESET='\033[0m'
 
 log_ok()      { echo -e "${GREEN}[OK]${RESET}    $*"; }
 log_fail()    { echo -e "${RED}[FAIL]${RESET}  $*"; }
-log_info()    { echo -e "${BLUE}[INFO]${RESET}  $*"; }
 log_skip()    { echo -e "${YELLOW}[SKIP]${RESET}  $*"; }
 log_section() { echo -e "\n${BOLD}── $* ──────────────────────────────────${RESET}"; }
 
