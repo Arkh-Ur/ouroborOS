@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # configure.sh — ouroborOS post-install chroot configuration
 #
 # Called by the installer after pacstrap completes.

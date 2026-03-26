@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # smoke-test.sh — Validate archiso profile structure (ouroborOS-profile/)
 # =============================================================================
@@ -12,7 +13,6 @@
 #   0 — all checks pass (or profile not yet created)
 #   1 — one or more profile structure violations
 # =============================================================================
-set -euo pipefail
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 BOLD='\033[1m'; RESET='\033[0m'

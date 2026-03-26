@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # run-pytest.sh — Run Python test suite with coverage
 # =============================================================================
@@ -11,7 +12,6 @@
 #   0 — tests pass (or phase-gated skip)
 #   1 — tests fail or coverage below gate
 # =============================================================================
-set -euo pipefail
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 BOLD='\033[1m'; RESET='\033[0m'

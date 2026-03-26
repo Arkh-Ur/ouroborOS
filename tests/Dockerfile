@@ -20,7 +20,7 @@ RUN pacman -S --noconfirm --needed \
     pacman -Scc --noconfirm
 
 # Install Python tools via pip (newer versions than Arch repos for dev tools)
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --break-system-packages \
     ruff \
     pytest \
     pytest-cov

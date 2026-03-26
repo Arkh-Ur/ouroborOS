@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # validate-scripts.sh — Validate structure, permissions, and APIs of scripts
 # =============================================================================
@@ -12,7 +13,6 @@
 #   0 — all validations pass
 #   1 — one or more validation failures
 # =============================================================================
-set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
 BOLD='\033[1m'; RESET='\033[0m'

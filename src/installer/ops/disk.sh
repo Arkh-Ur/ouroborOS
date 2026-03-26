@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # disk.sh — ouroborOS disk operations library
 #
 # Provides functions for partitioning, formatting, mounting, and generating

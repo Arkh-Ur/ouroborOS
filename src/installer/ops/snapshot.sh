@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # snapshot.sh — ouroborOS Btrfs snapshot management
 #
 # Provides functions for creating, listing, and pruning Btrfs snapshots.
@@ -10,7 +11,6 @@
 #
 # Boot entries for snapshots are written to the ESP under /boot/loader/entries/.
 #
-set -euo pipefail
 
 # --- Logging helpers --------------------------------------------------------
 

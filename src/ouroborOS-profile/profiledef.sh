@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # profiledef.sh — ouroborOS archiso profile definition
 # shellcheck disable=SC2034
 

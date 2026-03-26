@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # test-build-dry-run.sh — Dry-run test for build-iso.sh with mocked mkarchiso
 # =============================================================================
@@ -16,7 +17,6 @@
 #   0 — all tests pass
 #   1 — any test fails
 # =============================================================================
-set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BOLD='\033[1m'; RESET='\033[0m'
 
