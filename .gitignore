@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.whl
+
+# Test artifacts
+.coverage
+coverage.xml
+.pytest_cache/
+htmlcov/
+
+# Build artifacts
+out/
+work/
+*.iso
+*.sha256
+*.sig
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Checkpoints (runtime)
+/tmp/ouroborOS-checkpoints/
