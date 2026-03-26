@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 set -euo pipefail
 # profiledef.sh — ouroborOS archiso profile definition
-# shellcheck disable=SC2034
 
 iso_name="ouroborOS"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"

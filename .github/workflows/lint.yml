@@ -84,7 +84,7 @@ jobs:
           pacman-key --populate archlinux
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed python python-pip git findutils
-          pip install --no-cache-dir ruff
+          pip install --no-cache-dir --break-system-packages ruff
 
       - name: Checkout
         uses: actions/checkout@v4
