@@ -1,0 +1,149 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev, master]
+
+jobs:
+  build-test-image:
+    name: Build test image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ouroborOS-test:ci tests/
+
+      - name: Export image as artifact
+        run: docker save ouroborOS-test:ci | gzip > /tmp/test-image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-image
+          path: /tmp/test-image.tar.gz
+          retention-days: 1
+
+  test-shell-validation:
+    name: Shell validation
+    needs: build-test-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download test image
+        uses: actions/download-artifact@v4
+        with:
+          name: test-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load < /tmp/test-image.tar.gz
+
+      - name: Run shellcheck suite
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/test-shellcheck.sh
+
+      - name: Run validate-scripts
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/validate-scripts.sh
+
+      - name: Run dry-run build test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            --tmpfs /tmp \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/test-build-dry-run.sh
+
+  test-python:
+    name: Python tests
+    needs: build-test-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download test image
+        uses: actions/download-artifact@v4
+        with:
+          name: test-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load < /tmp/test-image.tar.gz
+
+      - name: Run Python lint
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/lint-python.sh
+
+      - name: Run pytest
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -e WORKSPACE=/workspace \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/run-pytest.sh
+
+  test-profile-smoke:
+    name: Profile smoke test
+    needs: build-test-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download test image
+        uses: actions/download-artifact@v4
+        with:
+          name: test-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load < /tmp/test-image.tar.gz
+
+      - name: Run smoke test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroborOS-test:ci \
+            bash /workspace/tests/scripts/smoke-test.sh
+
+  report:
+    name: Test report
+    needs: [test-shell-validation, test-python, test-profile-smoke]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Write job summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## ouroborOS Test Suite Results
+
+          | Suite | Status |
+          |-------|--------|
+          | Shell validation | ${{ needs.test-shell-validation.result }} |
+          | Python tests | ${{ needs.test-python.result }} |
+          | Profile smoke test | ${{ needs.test-profile-smoke.result }} |
+
+          **Triggered by:** `${{ github.event_name }}` on `${{ github.ref_name }}`
+          **Commit:** `${{ github.sha }}`
+          EOF

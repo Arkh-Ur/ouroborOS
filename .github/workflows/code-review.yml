@@ -1,0 +1,185 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [dev, master]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  shellcheck-report:
+    name: ShellCheck report
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed shellcheck git findutils grep
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed shell scripts
+        id: changed
+        run: |
+          set -euo pipefail
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+            | grep '\.sh$' \
+            | grep -v '^\.git/' \
+            || true > /tmp/changed-scripts.txt
+          echo "Changed scripts:"
+          cat /tmp/changed-scripts.txt || echo "(none)"
+
+      - name: Run shellcheck on changed scripts
+        id: shellcheck
+        run: |
+          set -euo pipefail
+          REPORT=""
+          VIOLATIONS=0
+
+          if [[ ! -s /tmp/changed-scripts.txt ]]; then
+            echo "No shell scripts changed — skipping shellcheck."
+            echo "report=No shell scripts changed in this PR." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          while IFS= read -r script; do
+            [[ -f "$script" ]] || continue
+            result=$(shellcheck -S style --format=json "$script" 2>&1 || true)
+            count=$(echo "$result" | python3 -c "
+          import json, sys
+          try:
+              items = json.load(sys.stdin)
+              print(len(items))
+          except Exception:
+              print(0)
+          ")
+            if [[ "$count" -gt 0 ]]; then
+              VIOLATIONS=$((VIOLATIONS + count))
+              REPORT="${REPORT}\n### \`${script}\` — ${count} issue(s)\n"
+              REPORT="${REPORT}\`\`\`\n"
+              REPORT="${REPORT}$(shellcheck -S style "$script" 2>&1 || true)\n"
+              REPORT="${REPORT}\`\`\`\n"
+            fi
+          done < /tmp/changed-scripts.txt
+
+          if [[ $VIOLATIONS -eq 0 ]]; then
+            echo "report=All changed shell scripts passed shellcheck." >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "report<<SHELLCHECK_EOF"
+              printf "%b" "$REPORT"
+              echo "SHELLCHECK_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- ouroborOS-bot-review -->';
+            const report = `${{ steps.shellcheck.outputs.report }}`;
+            const body = `${MARKER}\n## ShellCheck Report\n\n${report}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  architecture-check:
+    name: Architecture compliance
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed git grep findutils
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for GRUB references
+        run: |
+          set -euo pipefail
+          VIOLATIONS=0
+
+          echo "=== Checking for GRUB references ==="
+          if grep -rqi "grub" \
+              --include="*.sh" \
+              --include="*.py" \
+              --include="*.conf" \
+              --include="*.md" \
+              --exclude-dir=".git" \
+              . 2>/dev/null; then
+            echo "::error::GRUB reference found (architectural violation: systemd-boot only)"
+            VIOLATIONS=$((VIOLATIONS + 1))
+          else
+            echo "No GRUB references found."
+          fi
+
+          echo "=== Checking for NetworkManager references ==="
+          if grep -rqi "networkmanager" \
+              --include="*.sh" \
+              --include="*.py" \
+              --include="*.conf" \
+              --include="packages.*" \
+              --exclude-dir=".git" \
+              . 2>/dev/null; then
+            echo "::error::NetworkManager reference found (architectural violation: systemd-networkd+iwd only)"
+            VIOLATIONS=$((VIOLATIONS + 1))
+          else
+            echo "No NetworkManager references found."
+          fi
+
+          echo "=== Checking for hardcoded /dev/sdX device paths ==="
+          if grep -rqP "/dev/sd[a-z]\d*" \
+              --include="*.sh" \
+              --include="*.py" \
+              --include="*.conf" \
+              --exclude-dir=".git" \
+              . 2>/dev/null; then
+            echo "::error::Hardcoded /dev/sdX path found (violation: UUID references required in fstab)"
+            VIOLATIONS=$((VIOLATIONS + 1))
+          else
+            echo "No hardcoded /dev/sdX paths found."
+          fi
+
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            echo "::error::$VIOLATIONS architectural violation(s) found. Fix before merging."
+            exit 1
+          fi
+
+          echo "All architecture compliance checks passed."
