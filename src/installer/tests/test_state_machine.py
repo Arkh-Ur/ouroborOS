@@ -10,14 +10,11 @@ import pytest
 
 from installer.config import InstallerConfig
 from installer.state_machine import (
-    CHECKPOINT_DIR,
     FatalError,
     InstallerError,
     Installer,
     State,
-    _checkpoint_path,
     _is_completed,
-    _load_config_checkpoint,
     _save_checkpoint,
 )
 

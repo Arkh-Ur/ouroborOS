@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from installer.config import InstallerConfig, find_unattended_config, load_config
-from installer.tui import TUI, TUIError
+from installer.tui import TUI
 
 # ---------------------------------------------------------------------------
 # Logging

@@ -6,7 +6,7 @@ TUI tests mock whiptail and subprocess to avoid requiring a terminal.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,7 +35,7 @@ class TestWhiptailWrapper:
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stderr = "selected_item"
-        with patch("installer.tui.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("installer.tui.subprocess.run", return_value=mock_result):
             rc, output = _whiptail("--msgbox", "hello", "10", "40")
         assert rc == 0
         assert output == "selected_item"

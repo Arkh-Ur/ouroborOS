@@ -9,7 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from installer.config import load_config, validate_config
+from installer.config import validate_config
 from installer.state_machine import Installer
 
 import yaml
