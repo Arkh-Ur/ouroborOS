@@ -34,7 +34,8 @@ class TestWhiptailWrapper:
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stderr = "selected_item"
-        with patch("installer.tui.subprocess.run", return_value=mock_result):
+        with patch("installer.tui._get_whiptail_path", return_value="/usr/bin/whiptail"), \
+             patch("installer.tui.subprocess.run", return_value=mock_result):
             rc, output = _whiptail("--msgbox", "hello", "10", "40")
         assert rc == 0
         assert output == "selected_item"
@@ -43,7 +44,8 @@ class TestWhiptailWrapper:
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stderr = ""
-        with patch("installer.tui.subprocess.run", return_value=mock_result):
+        with patch("installer.tui._get_whiptail_path", return_value="/usr/bin/whiptail"), \
+             patch("installer.tui.subprocess.run", return_value=mock_result):
             rc, _ = _whiptail("--msgbox", "bye", "10", "40")
         assert rc == 1
 
