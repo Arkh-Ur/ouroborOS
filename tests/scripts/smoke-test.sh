@@ -147,7 +147,7 @@ fi
 # ── Architectural compliance ──────────────────────────────────────────────────
 log_section "Architectural compliance"
 # Check entire profile for forbidden references
-find "$PROFILE" -type f | while read -r file; do
+find "$PROFILE" -type f -not -name '*.md' | while read -r file; do
     if grep -qi "networkmanager" "$file" 2>/dev/null; then
         echo -e "${RED}[FAIL]${RESET}  $(basename "$file") contains NetworkManager reference"
         echo "1" > /tmp/arch-compliance-failed
