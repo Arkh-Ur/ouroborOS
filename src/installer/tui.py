@@ -25,7 +25,7 @@ def _get_whiptail_path() -> str:
     """Resolve whiptail binary path, Returns the fixed path or raises TUIError."""
     path = shutil.which("whiptail")
     if path is None:
-        raise TUIError("whiptail is not installed. Install 'libnewt' or 'newt' package.")
+        raise TUIError("whiptail not installed. Install 'libnewt' package.")
     return path
 
 
