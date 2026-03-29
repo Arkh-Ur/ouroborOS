@@ -20,7 +20,10 @@ pacman-contrib
 
 # Bootloader
 efibootmgr
-systemd-boot-manager
+edk2-shell
+memtest86+-efi
+intel-ucode
+amd-ucode
 
 # Network (live environment)
 iwd
@@ -29,7 +32,7 @@ dhcpcd
 
 # Terminal & TUI
 dialog
-whiptail
+libnewt
 
 # Python (installer runtime)
 python
