@@ -18,7 +18,10 @@ out/
 work/
 *.iso
 *.sha256
-*.sig
+ *.sig
+src/ouroborOS-profile/airootfs/usr/lib/
+
+imagen_*.img*
 
 # Editor
 .vscode/
