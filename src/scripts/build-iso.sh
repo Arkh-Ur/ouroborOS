@@ -29,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$REPO_ROOT/out"
 WORK_DIR="/tmp/ouroborOS-build"
-PROFILE_DIR="$REPO_ROOT/ouroborOS-profile"
+PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile"
 CLEAN_BUILD=false
 SIGN_ISO=false
 
@@ -124,6 +124,10 @@ echo ""
 
 BUILD_START=$(date +%s)
 
+# Redirect bash/mkarchiso temp files to WORK_DIR to avoid filling /tmp (tmpfs)
+export TMPDIR="$WORK_DIR/tmp"
+mkdir -p "$TMPDIR"
+
 mkarchiso -v \
     -w "$WORK_DIR/work" \
     -o "$OUTPUT_DIR" \
@@ -161,15 +165,28 @@ fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 log_section "Build Summary"
-ISO_SIZE=$(du -sh "$ISO_FILE" | cut -f1)
-echo -e "  ${BOLD}ISO:${RESET}      $ISO_FILE"
+ISO_SIZE=$(du -sh "$ISO_BASENAME" | cut -f1)
+echo -e "  ${BOLD}ISO:${RESET}      $(pwd)/$ISO_BASENAME"
 echo -e "  ${BOLD}Size:${RESET}     $ISO_SIZE"
 echo -e "  ${BOLD}SHA256:${RESET}   $(cat "${ISO_BASENAME}.sha256" | cut -d' ' -f1)"
 echo -e "  ${BOLD}Duration:${RESET} ${BUILD_DURATION}s"
 echo ""
 log_ok "ouroborOS ISO ready."
 echo ""
-echo "Test with QEMU:"
-echo "  qemu-system-x86_64 -enable-kvm -m 2048 \\"
-echo "    -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \\"
-echo "    -cdrom \"$ISO_FILE\" -boot d"
+echo -e "${BOLD}── Próximos pasos ──────────────────────────────${RESET}"
+echo ""
+echo -e "  ${BOLD}Ruta del ISO:${RESET}"
+echo "    $ISO_FILE"
+echo ""
+echo -e "  ${BOLD}Grabar en USB (instalador físico):${RESET}"
+echo "    sudo bash ${SCRIPT_DIR}/flash-usb.sh --iso \"$ISO_FILE\""
+echo ""
+echo -e "  ${BOLD}Probar en GNOME Boxes:${RESET}"
+echo "    1. Abre GNOME Boxes → '+' → 'Elegir un archivo'"
+echo "    2. Selecciona: $ISO_FILE"
+echo "    3. RAM mínima: 2 GB | Disco: 20 GB | Firmware: UEFI"
+echo ""
+echo -e "  ${BOLD}Probar en QEMU (terminal):${RESET}"
+echo "    qemu-system-x86_64 -enable-kvm -m 2048 \\"
+echo "      -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \\"
+echo "      -cdrom \"$ISO_FILE\" -boot d"
