@@ -131,9 +131,7 @@ class TestHashPassword:
 
 class TestTUICheckWhiptail:
     def test_raises_when_whiptail_missing(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        with patch("installer.tui.subprocess.run", return_value=mock_result):
+        with patch("installer.tui.shutil.which", return_value=None):
             with pytest.raises(TUIError, match="whiptail"):
                 TUI()
 
