@@ -305,11 +305,10 @@ generate_fstab() {
     # Validate fstab was generated and contains expected entries
     validate_fstab "${target}/etc/fstab"
 
-    # Patch: ensure root subvolume has 'ro' option
-    # genfstab writes 'rw' — we replace it with 'ro' for the @ subvolume
-    sed -i 's/\(subvol=@[[:space:]]*[^,]*,\)rw/\1ro/' "${target}/etc/fstab" || true
-    # Simpler pattern: replace rw with ro on the @ subvol line
-    sed -i '/subvol=@[^a-z]/s/\brw\b/ro/' "${target}/etc/fstab"
+    # genfstab outputs fstab lines like:
+    #   UUID=xxx  /  btrfs  rw,...,subvol=/@,...  0 0
+    # genfstab uses 'subvol=/@' (with leading slash); match both /@ and @ forms
+    sed -i '/[sS]ubvol[sS]*=\/@[^a-z]\|[sS]ubvol[sS]*=@[^a-z]/s/\brw\b/ro/' "${target}/etc/fstab"
 
     _log_ok "fstab generated: ${target}/etc/fstab"
 }

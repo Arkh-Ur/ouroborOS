@@ -115,6 +115,26 @@ mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 log_ok "Output dir: $OUTPUT_DIR"
 log_ok "Work dir:   $WORK_DIR"
 
+# ── Sync installer modules to profile ──────────────────────────────────────
+INSTALLER_SRC="$REPO_ROOT/src/installer"
+INSTALLER_DST="$PROFILE_DIR/airootfs/usr/lib/ouroborOS/installer"
+
+if [[ -d "$INSTALLER_SRC" ]]; then
+    log_info "Syncing installer modules to profile airootfs..."
+    rm -rf "$INSTALLER_DST"
+    mkdir -p "$INSTALLER_DST/ops"
+
+    find "$INSTALLER_SRC" -maxdepth 1 -type f \( -name '*.py' -o -name '*.yaml' \) \
+        -exec cp -t "$INSTALLER_DST/" {} +
+    find "$INSTALLER_SRC/ops" -type f \( -name '*.py' -o -name '*.sh' \) \
+        -exec cp -t "$INSTALLER_DST/ops/" {} +
+
+    chmod 0755 "$INSTALLER_DST/ops/"*.sh
+    log_ok "Installer modules synced: $(find "$INSTALLER_DST" -type f | wc -l) files"
+else
+    log_warn "Installer source not found at $INSTALLER_SRC — skipping sync"
+fi
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 log_section "Building ISO"
 log_info "Profile:  $PROFILE_DIR"

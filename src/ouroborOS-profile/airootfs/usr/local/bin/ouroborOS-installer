@@ -6,7 +6,8 @@
 #
 set -euo pipefail
 
-INSTALLER_DIR="/usr/lib/ouroborOS/installer"
+INSTALLER_DIR="/usr/lib/ouroborOS"
+INSTALLER_MOD="${INSTALLER_DIR}/installer"
 LOG_FILE="/tmp/ouroborOS-install.log"
 MIN_PYTHON="3.11"
 
@@ -33,8 +34,8 @@ if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)";
 fi
 
 # Check installer module is available
-if [[ ! -d "$INSTALLER_DIR" ]]; then
-    log_error "Installer not found at ${INSTALLER_DIR}."
+if [[ ! -d "$INSTALLER_MOD" ]]; then
+    log_error "Installer not found at ${INSTALLER_MOD}."
     log_error "The live ISO may be corrupted."
     exit 1
 fi

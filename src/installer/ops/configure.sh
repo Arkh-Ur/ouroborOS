@@ -117,23 +117,37 @@ configure_bootloader() {
 
     in_chroot bootctl install
 
-    # Detect microcode
-    local ucode_intel ucode_amd
-    ucode_intel=""
-    ucode_amd=""
+    local ucode_initrd_lines=""
+    for ucode in intel-ucode.img amd-ucode.img; do
+        if [[ -f "${TARGET}/boot/${ucode}" ]]; then
+            ucode_initrd_lines+="initrd  /${ucode}
+"
+        fi
+    done
 
-    [[ -f "${TARGET}/boot/intel-ucode.img" ]] && ucode_intel="initrd  /intel-ucode.img"
-    [[ -f "${TARGET}/boot/amd-ucode.img"   ]] && ucode_amd="initrd  /amd-ucode.img"
+    # Determine root UUID from the @ subvolume mount (the actual root device)
+    # findmnt --target walks up; we need the source device of the root mount point
+    local root_source
+    root_source=$(findmnt -n -o SOURCE --target "${TARGET}" 2>/dev/null || true)
 
-    # Determine root UUID and subvolume
+    # For Btrfs subvolumes, SOURCE may be like /dev/sda2[/@] — extract the block device
+    # Strip any trailing [/subvol] bracket notation that findmnt adds for subvolume mounts
+    local root_dev="${root_source%%\[*}"
+    if [[ -z "$root_dev" ]]; then
+        log_error "Cannot determine root device for ${TARGET}"
+        return 1
+    fi
+
     local root_uuid
-    root_uuid=$(findmnt -n -o UUID --target "${TARGET}" 2>/dev/null || \
-        blkid -s UUID -o value "$(findmnt -n -o SOURCE --target "${TARGET}")")
+    root_uuid=$(blkid -s UUID -o value "$root_dev" 2>/dev/null || true)
+    if [[ -z "$root_uuid" ]]; then
+        log_error "Cannot determine UUID for root device ${root_dev}"
+        return 1
+    fi
 
     local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro quiet loglevel=3"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
-        # Read LUKS UUID from crypttab if present
         local luks_uuid=""
         if [[ -f "${TARGET}/etc/crypttab" ]]; then
             luks_uuid=$(awk '{print $2}' "${TARGET}/etc/crypttab" | sed 's/UUID=//')
@@ -143,38 +157,26 @@ configure_bootloader() {
 
     mkdir -p "${TARGET}/boot/loader/entries"
 
-    # Main boot entry
     cat > "${TARGET}/boot/loader/entries/ouroborOS.conf" << EOF
 title   ouroborOS
 linux   /vmlinuz-linux-zen
-${ucode_intel}
-${ucode_amd}
-initrd  /initramfs-linux-zen.img
+${ucode_initrd_lines}initrd  /initramfs-linux-zen.img
 options ${kernel_params}
 EOF
 
-    # Fallback boot entry
     cat > "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf" << EOF
 title   ouroborOS (fallback initramfs)
 linux   /vmlinuz-linux-zen
-${ucode_intel}
-${ucode_amd}
-initrd  /initramfs-linux-zen-fallback.img
+${ucode_initrd_lines}initrd  /initramfs-linux-zen-fallback.img
 options ${kernel_params}
 EOF
 
-    # loader.conf
     cat > "${TARGET}/boot/loader/loader.conf" << 'EOF'
 default  ouroborOS.conf
 timeout  3
 console-mode auto
 editor   no
 EOF
-
-    # Remove blank initrd lines if microcode not present
-    sed -i '/^initrd[[:space:]]*$/d' \
-        "${TARGET}/boot/loader/entries/ouroborOS.conf" \
-        "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf"
 
     log_ok "Bootloader installed."
 }

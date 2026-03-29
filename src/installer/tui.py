@@ -12,12 +12,21 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from typing import Any
 
 
 class TUIError(Exception):
     """Raised when a TUI operation fails (e.g. whiptail not available)."""
+
+
+def _get_whiptail_path() -> str:
+    """Resolve whiptail binary path, Returns the fixed path or raises TUIError."""
+    path = shutil.which("whiptail")
+    if path is None:
+        raise TUIError("whiptail is not installed. Install 'libnewt' or 'newt' package.")
+    return path
 
 
 def _whiptail(*args: str, input_text: str | None = None) -> tuple[int, str]:
@@ -31,7 +40,7 @@ def _whiptail(*args: str, input_text: str | None = None) -> tuple[int, str]:
         Tuple of (returncode, stdout_text). whiptail writes the selection
         to stderr, so we redirect stderr→stdout capture.
     """
-    cmd = ["whiptail"] + list(args)
+    cmd = [_get_whiptail_path()] + list(args)
     result = subprocess.run(
         cmd,
         input=input_text,
@@ -108,8 +117,7 @@ class TUI:
         self._check_whiptail()
 
     def _check_whiptail(self) -> None:
-        result = subprocess.run(["which", "whiptail"], capture_output=True, check=False)
-        if result.returncode != 0:
+        if shutil.which("whiptail") is None:
             raise TUIError(
                 "whiptail is not installed. Install 'libnewt' or 'newt' package."
             )
@@ -339,28 +347,23 @@ class TUI:
     # --- Progress gauge -----------------------------------------------------
 
     def show_progress(self, title: str, text: str, percent: int) -> None:
-        """Display a progress gauge (non-blocking informational update).
-
-        Args:
-            title:   Dialog title.
-            text:    Description text.
-            percent: Progress percentage 0–100.
-        """
-        # whiptail --gauge reads percentages from stdin, but we use it
-        # here as a simple status display with fixed percent
+        """Display a progress gauge (non-blocking informational update)."""
+        whiptail = _get_whiptail_path()
+        if whiptail is None:
+            return
         subprocess.run(
-            [
-                "whiptail",
-                "--title", title,
-                "--gauge", text,
-                str(self._HEIGHT), str(self._WIDTH),
-                str(max(0, min(100, percent))),
-            ],
-            input="",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+                [
+                    _get_whiptail_path(),
+                    "--title", title,
+                    "--gauge", text,
+                    str(self._HEIGHT), str(self._WIDTH),
+                    str(max(0, min(100, percent))),
+                ],
+                input="",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
     # --- Summary screen -----------------------------------------------------
 

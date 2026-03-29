@@ -143,15 +143,35 @@ generate_snapshot_boot_entry() {
 
     mkdir -p "$entries_dir"
 
+    # Resolve root device and UUID from the currently mounted root
+    local root_source root_dev root_uuid
+    root_source=$(findmnt -n -o SOURCE --target / 2>/dev/null || true)
+    root_dev="${root_source%%\[*}"
+
+    if [[ -n "$root_dev" ]]; then
+        root_uuid=$(blkid -s UUID -o value "$root_dev" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$root_uuid" ]]; then
+        _log_error "Cannot determine root UUID for snapshot boot entry"
+        return 1
+    fi
+
+    local ucode_initrd=""
+    for ucode in intel-ucode.img amd-ucode.img; do
+        if [[ -f "${esp_path}/${ucode}" ]]; then
+            ucode_initrd+="initrd  /${ucode}
+"
+        fi
+    done
+
     _log_info "Writing boot entry for snapshot '${snapshot_name}'..."
 
     cat > "$entry_file" << EOF
 title   ouroborOS snapshot (${snapshot_name})
-linux   /arch/boot/x86_64/vmlinuz-linux-zen
-initrd  /arch/boot/intel-ucode.img
-initrd  /arch/boot/amd-ucode.img
-initrd  /arch/boot/x86_64/initramfs-linux-zen.img
-options rootflags=subvol=@snapshots/${snapshot_name} ${kernel_params} ro
+linux   /vmlinuz-linux-zen
+${ucode_initrd}initrd  /initramfs-linux-zen.img
+options root=UUID=${root_uuid} rootflags=subvol=@snapshots/${snapshot_name} ${kernel_params} ro
 EOF
 
     _log_ok "Boot entry written: ${entry_file}"

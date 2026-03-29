@@ -16,6 +16,8 @@ gptfdisk
 
 # ArchLinux install helpers
 arch-install-scripts
+archiso
+mkinitcpio-archiso
 pacman-contrib
 
 # Bootloader
