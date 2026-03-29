@@ -287,3 +287,16 @@ umount /mnt
 | USB not detected by flash script | Check `lsblk -o HOTPLUG` — only hotplug devices are listed; use `--device /dev/sdX` to override |
 | `dd` very slow | Normal for USB 2.0 (~10 MB/s). USB 3.0 should be 40–80 MB/s |
 | SHA256 mismatch | Delete the ISO and rebuild: `sudo bash src/scripts/build-iso.sh --clean` |
+
+---
+
+## Fixes
+
+### archisolabel mismatch (ISO boot failure)
+- **Issue**: Kernel panic ("unable to find medium") during ISO boot.
+- **Cause**: `archisolabel` in boot entries (`efiboot/loader/entries/*.conf`) did not match the `iso_label` in `profiledef.sh`.
+- **Fix**: Updated both to use dynamic label format `OUROBOROS_YYYYMM` (e.g., `OUROBOROS_202603`).
+- **Verification**: `grep -n "OUROBOROS" docs/build-and-flash.md` should show the correct label format.
+- **Note**: `mkarchiso` uses the ISO label to locate the medium; consistency is mandatory for successful boot.
+- **Implementation**: `profiledef.sh` defines `iso_label="OUROBOROS_$(date +%Y%m)"`. Boot entries must match this dynamic value.
+
