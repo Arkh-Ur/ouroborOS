@@ -1,9 +1,3 @@
-"""test_tui.py — Tests for the TUI module.
-
-Tests both rich and whiptail backends using mocks.
-Utility functions (_lsblk_disks, _hash_password) are backend-independent.
-"""
-
 from __future__ import annotations
 
 import json
