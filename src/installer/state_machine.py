@@ -241,7 +241,6 @@ class Installer:
 
     def _handle_init(self) -> None:
         """INIT — detect unattended mode or initialise TUI."""
-        # Check for unattended config
         config_path = self._config_path or find_unattended_config()
         if config_path:
             log.info("Unattended config found: %s", config_path)
