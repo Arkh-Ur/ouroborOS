@@ -3,11 +3,41 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from installer.tui import TUI, TUIError, _hash_password, _lsblk_disks, _whiptail
+
+RICH_PATCHES = [
+    "installer.tui.Console",
+    "installer.tui.Panel",
+    "installer.tui.Progress",
+    "installer.tui.BarColumn",
+    "installer.tui.SpinnerColumn",
+    "installer.tui.TextColumn",
+    "installer.tui.Confirm",
+    "installer.tui.IntPrompt",
+    "installer.tui.Prompt",
+    "installer.tui.Table",
+    "installer.tui.Text",
+]
+
+
+@contextmanager
+def _patch_rich():
+    mocks = {name.split(".")[-1]: MagicMock() for name in RICH_PATCHES}
+    patches = [patch(name, mocks[name.split(".")[-1]]) for name in RICH_PATCHES]
+    patches.append(patch("installer.tui.HAS_RICH", True))
+    for p in patches:
+        p.start()
+    try:
+        yield mocks
+    finally:
+        for p in patches:
+            p.stop()
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -16,13 +46,10 @@ from installer.tui import TUI, TUIError, _hash_password, _lsblk_disks, _whiptail
 
 @pytest.fixture()
 def rich_tui() -> TUI:
-    mock_console = MagicMock()
-    with patch("installer.tui.HAS_RICH", True), patch(
-        "installer.tui.Console", return_value=mock_console
-    ):
+    with _patch_rich() as mocks:
         tui = TUI(title="Test Installer")
-        tui._console = mock_console
-        return tui
+        tui._console = mocks["Console"].return_value
+        yield tui
 
 
 @pytest.fixture()
@@ -30,7 +57,7 @@ def whiptail_tui() -> TUI:
     with patch("installer.tui.HAS_RICH", False), patch(
         "installer.tui.shutil.which", return_value="/usr/bin/whiptail"
     ):
-        return TUI(title="Test Installer")
+        yield TUI(title="Test Installer")
 
 
 # ---------------------------------------------------------------------------
@@ -40,10 +67,7 @@ def whiptail_tui() -> TUI:
 
 class TestBackendSelection:
     def test_rich_backend_when_available(self) -> None:
-        mock_console = MagicMock()
-        with patch("installer.tui.HAS_RICH", True), patch(
-            "installer.tui.Console", return_value=mock_console
-        ):
+        with _patch_rich():
             tui = TUI(title="Test")
             assert tui._backend == "rich"
 
@@ -180,73 +204,69 @@ class TestHashPassword:
 
 class TestRichShowWelcome:
     def test_prints_panel(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt"):
+        with _patch_rich():
             rich_tui.show_welcome()
         rich_tui._console.print.assert_called()
 
 
 class TestRichShowProgress:
     def test_creates_progress(self, rich_tui: TUI) -> None:
-        mock_progress = MagicMock()
-        mock_progress.add_task.return_value = 1
-        with patch("installer.tui.Progress", return_value=mock_progress):
+        with _patch_rich() as mocks:
+            mocks["Progress"].return_value.add_task.return_value = 1
             rich_tui.show_progress("Test", "Working...", 50)
-        mock_progress.start.assert_called_once()
-        mock_progress.add_task.assert_called_once()
+        mocks["Progress"].return_value.start.assert_called_once()
 
     def test_stops_at_100(self, rich_tui: TUI) -> None:
-        mock_progress = MagicMock()
-        mock_progress.add_task.return_value = 1
-        with patch("installer.tui.Progress", return_value=mock_progress):
+        with _patch_rich() as mocks:
+            mocks["Progress"].return_value.add_task.return_value = 1
             rich_tui.show_progress("Test", "Done!", 100)
-        mock_progress.stop.assert_called()
+        mocks["Progress"].return_value.stop.assert_called()
 
     def test_updates_existing_progress(self, rich_tui: TUI) -> None:
-        mock_progress = MagicMock()
-        mock_progress.add_task.return_value = 1
-        with patch("installer.tui.Progress", return_value=mock_progress):
+        with _patch_rich() as mocks:
+            mocks["Progress"].return_value.add_task.return_value = 1
             rich_tui.show_progress("Test", "Working...", 50)
             rich_tui.show_progress("Test", "Still working...", 75)
-        mock_progress.update.assert_called()
+        mocks["Progress"].return_value.update.assert_called()
 
 
 class TestRichShowError:
     def test_recoverable_yes_returns_true(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = True
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = True
             assert rich_tui.show_error("Oops", recoverable=True) is True
 
     def test_recoverable_no_returns_false(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = False
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
             assert rich_tui.show_error("Oops", recoverable=True) is False
 
     def test_fatal_returns_false(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm"):
+        with _patch_rich():
             assert rich_tui.show_error("Fatal!", recoverable=False) is False
 
 
 class TestRichShowConfirmation:
     def test_yes_returns_true(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = True
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = True
             assert rich_tui.show_confirmation("Sure?") is True
 
     def test_no_returns_false(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = False
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
             assert rich_tui.show_confirmation("Sure?") is False
 
 
 class TestRichShowLuksPrompt:
     def test_yes_returns_true(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = True
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = True
             assert rich_tui.show_luks_prompt() is True
 
     def test_no_returns_false(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Confirm") as mock:
-            mock.ask.return_value = False
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
             assert rich_tui.show_luks_prompt() is False
 
 
@@ -266,8 +286,8 @@ class TestRichShowLocaleMenu:
 
 class TestRichShowHostnameInput:
     def test_returns_hostname(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt") as mock:
-            mock.ask.return_value = "myhost"
+        with _patch_rich() as mocks:
+            mocks["Prompt"].ask.return_value = "myhost"
             assert rich_tui.show_hostname_input() == "myhost"
 
 
@@ -277,7 +297,8 @@ class TestRichShowDiskSelection:
         with patch(
             "installer.tui._lsblk_disks", return_value=disks
         ), patch.object(rich_tui, "_rich_select", return_value="/dev/sda"):
-            assert rich_tui.show_disk_selection() == "/dev/sda"
+            with _patch_rich():
+                assert rich_tui.show_disk_selection() == "/dev/sda"
 
     def test_raises_when_no_disks(self, rich_tui: TUI) -> None:
         with patch("installer.tui._lsblk_disks", return_value=[]):
@@ -287,8 +308,8 @@ class TestRichShowDiskSelection:
 
 class TestRichShowUserCreation:
     def test_successful_creation(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt") as mock_prompt:
-            mock_prompt.ask.side_effect = [
+        with _patch_rich() as mocks:
+            mocks["Prompt"].ask.side_effect = [
                 "alice",
                 "password123",
                 "password123",
@@ -298,8 +319,8 @@ class TestRichShowUserCreation:
         assert result["password_hash"].startswith("$6$")
 
     def test_password_mismatch_raises(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt") as mock_prompt:
-            mock_prompt.ask.side_effect = [
+        with _patch_rich() as mocks:
+            mocks["Prompt"].ask.side_effect = [
                 "bob",
                 "pass1",
                 "pass2",
@@ -314,20 +335,20 @@ class TestRichShowUserCreation:
 
 class TestRichShowPassphraseInput:
     def test_matching_passphrases(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt") as mock_prompt:
-            mock_prompt.ask.side_effect = ["secure123", "secure123"]
+        with _patch_rich() as mocks:
+            mocks["Prompt"].ask.side_effect = ["secure123", "secure123"]
             assert rich_tui.show_passphrase_input() == "secure123"
 
     def test_too_many_mismatches(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt") as mock_prompt:
-            mock_prompt.ask.side_effect = ["a", "b", "c", "d", "e", "f"]
+        with _patch_rich() as mocks:
+            mocks["Prompt"].ask.side_effect = ["a", "b", "c", "d", "e", "f"]
             with pytest.raises(TUIError, match="3 attempts"):
                 rich_tui.show_passphrase_input()
 
 
 class TestRichShowPartitionPreview:
     def test_prints_tables(self, rich_tui: TUI) -> None:
-        with patch("installer.tui.Prompt"):
+        with _patch_rich():
             rich_tui.show_partition_preview("/dev/sda", False)
         rich_tui._console.print.assert_called()
 
@@ -341,7 +362,7 @@ class TestRichShowSummary:
         config.user.username = "user"
         config.locale.locale = "en_US.UTF-8"
         config.locale.timezone = "UTC"
-        with patch("installer.tui.Prompt"):
+        with _patch_rich():
             rich_tui.show_summary(config)
         rich_tui._console.print.assert_called()
 
@@ -442,9 +463,7 @@ class TestWhiptailShowLocaleMenu:
 class TestWhiptailShowUserCreation:
     def test_successful_user_creation(self, whiptail_tui: TUI) -> None:
         with (
-            patch.object(
-                whiptail_tui, "_input_box", return_value="alice"
-            ),
+            patch.object(whiptail_tui, "_input_box", return_value="alice"),
             patch.object(
                 whiptail_tui,
                 "_password_box",
