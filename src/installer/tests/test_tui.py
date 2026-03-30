@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from installer.tui import (
-    HAS_RICH,
     TUI,
     TUIError,
     _hash_password,

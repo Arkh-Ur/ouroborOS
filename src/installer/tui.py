@@ -146,8 +146,10 @@ class TUI:
                     "\n[bold cyan]Welcome to the ouroborOS installer.[/]\n\n"
                     "ouroborOS is an ArchLinux-based distribution with an immutable\n"
                     "Btrfs root filesystem and a fully systemd-native stack.\n\n"
-                    "This installer will guide you through the installation process.\n\n"
-                    "[bold red]WARNING: This will ERASE the target disk completely.[/]\n"
+                    "This installer will guide you through "
+                    "the installation process.\n\n"
+                    "[bold red]WARNING: This will ERASE "
+                    "the target disk completely.[/]\n"
                 ),
                 title="[bold cyan]ouroborOS Installer[/]",
                 border_style="cyan",
