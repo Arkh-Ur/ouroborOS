@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from installer.tui import TUI, TUIError, _hash_password, _lsblk_disks, _whiptail
+from installer.tui import (
+    TUI,
+    TUIError,
+    _hash_password,
+    _lsblk_disks,
+    _whiptail,
+)
 
 
 # ---------------------------------------------------------------------------
