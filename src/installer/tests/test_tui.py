@@ -19,17 +19,6 @@ from installer.tui import (
     _whiptail,
 )
 
-try:
-    import rich  # noqa: F401
-
-    _RICH_AVAILABLE = True
-except ImportError:
-    _RICH_AVAILABLE = False
-
-requires_rich = pytest.mark.skipif(
-    not _RICH_AVAILABLE, reason="python-rich not installed"
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,9 +27,12 @@ requires_rich = pytest.mark.skipif(
 
 @pytest.fixture()
 def rich_tui() -> TUI:
-    with patch("installer.tui.HAS_RICH", True):
+    mock_console = MagicMock()
+    with patch("installer.tui.HAS_RICH", True), patch(
+        "installer.tui.Console", return_value=mock_console
+    ):
         tui = TUI(title="Test Installer")
-        tui._console = MagicMock()
+        tui._console = mock_console
         return tui
 
 
@@ -59,7 +51,10 @@ def whiptail_tui() -> TUI:
 
 class TestBackendSelection:
     def test_rich_backend_when_available(self) -> None:
-        with patch("installer.tui.HAS_RICH", True):
+        mock_console = MagicMock()
+        with patch("installer.tui.HAS_RICH", True), patch(
+            "installer.tui.Console", return_value=mock_console
+        ):
             tui = TUI(title="Test")
             assert tui._backend == "rich"
 
@@ -194,7 +189,6 @@ class TestHashPassword:
 # ---------------------------------------------------------------------------
 
 
-@requires_rich
 class TestRichShowWelcome:
     def test_prints_panel(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Prompt"):
@@ -202,7 +196,6 @@ class TestRichShowWelcome:
         rich_tui._console.print.assert_called()
 
 
-@requires_rich
 class TestRichShowProgress:
     def test_creates_progress(self, rich_tui: TUI) -> None:
         mock_progress = MagicMock()
@@ -228,7 +221,6 @@ class TestRichShowProgress:
         mock_progress.update.assert_called()
 
 
-@requires_rich
 class TestRichShowError:
     def test_recoverable_yes_returns_true(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Confirm") as mock:
@@ -245,7 +237,6 @@ class TestRichShowError:
             assert rich_tui.show_error("Fatal!", recoverable=False) is False
 
 
-@requires_rich
 class TestRichShowConfirmation:
     def test_yes_returns_true(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Confirm") as mock:
@@ -258,7 +249,6 @@ class TestRichShowConfirmation:
             assert rich_tui.show_confirmation("Sure?") is False
 
 
-@requires_rich
 class TestRichShowLuksPrompt:
     def test_yes_returns_true(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Confirm") as mock:
@@ -271,7 +261,6 @@ class TestRichShowLuksPrompt:
             assert rich_tui.show_luks_prompt() is False
 
 
-@requires_rich
 class TestRichShowLocaleMenu:
     def test_returns_locale_dict(self, rich_tui: TUI) -> None:
         with (
@@ -286,7 +275,6 @@ class TestRichShowLocaleMenu:
         assert result["timezone"] == "UTC"
 
 
-@requires_rich
 class TestRichShowHostnameInput:
     def test_returns_hostname(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Prompt") as mock:
@@ -294,7 +282,6 @@ class TestRichShowHostnameInput:
             assert rich_tui.show_hostname_input() == "myhost"
 
 
-@requires_rich
 class TestRichShowDiskSelection:
     def test_returns_selected_disk(self, rich_tui: TUI) -> None:
         disks = [{"name": "/dev/sda", "size": "500G", "model": "SAMSUNG"}]
@@ -309,7 +296,6 @@ class TestRichShowDiskSelection:
                 rich_tui.show_disk_selection()
 
 
-@requires_rich
 class TestRichShowUserCreation:
     def test_successful_creation(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Prompt") as mock_prompt:
@@ -337,7 +323,6 @@ class TestRichShowUserCreation:
                 rich_tui.show_user_creation()
 
 
-@requires_rich
 class TestRichShowPassphraseInput:
     def test_matching_passphrases(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Prompt") as mock_prompt:
@@ -351,7 +336,6 @@ class TestRichShowPassphraseInput:
                 rich_tui.show_passphrase_input()
 
 
-@requires_rich
 class TestRichShowPartitionPreview:
     def test_prints_tables(self, rich_tui: TUI) -> None:
         with patch("installer.tui.Prompt"):
@@ -359,7 +343,6 @@ class TestRichShowPartitionPreview:
         rich_tui._console.print.assert_called()
 
 
-@requires_rich
 class TestRichShowSummary:
     def test_prints_summary(self, rich_tui: TUI) -> None:
         config = MagicMock()
