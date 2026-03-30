@@ -1,3 +1,5 @@
+"""test_tui.py — Tests for the TUI module."""
+
 from __future__ import annotations
 
 import json
