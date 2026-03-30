@@ -22,6 +22,17 @@ try:
 
     HAS_RICH = True
 except ImportError:
+    Console = None  # type: ignore[assignment,misc]
+    Panel = None  # type: ignore[assignment,misc]
+    Progress = None  # type: ignore[assignment,misc]
+    BarColumn = None  # type: ignore[assignment,misc]
+    SpinnerColumn = None  # type: ignore[assignment,misc]
+    TextColumn = None  # type: ignore[assignment,misc]
+    Confirm = None  # type: ignore[assignment,misc]
+    IntPrompt = None  # type: ignore[assignment,misc]
+    Prompt = None  # type: ignore[assignment,misc]
+    Table = None  # type: ignore[assignment,misc]
+    Text = None  # type: ignore[assignment,misc]
     HAS_RICH = False
 
 
