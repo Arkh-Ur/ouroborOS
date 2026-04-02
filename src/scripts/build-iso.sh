@@ -100,6 +100,62 @@ if [[ "$AVAILABLE_KB" -lt "$REQUIRED_KB" ]]; then
     log_warn "Less than 10 GB available in $WORK_PARENT. Build may fail."
 fi
 
+# ── Pre-build cleanup ─────────────────────────────────────────────────────────
+log_section "Pre-build Cleanup"
+
+# Clean old snapper snapshots (keep only the current one per config)
+if command -v snapper &>/dev/null; then
+    while IFS= read -r cfg; do
+        [[ -z "$cfg" ]] && continue
+        mapfile -t SNAP_IDS < <(
+            snapper -c "$cfg" list -t number 2>/dev/null \
+                | tail -n +3 \
+                | awk '{gsub(/[^0-9]/,"",$1); print $1}' \
+                | grep -v '^$'
+        )
+        TOTAL=${#SNAP_IDS[@]}
+        if [[ $TOTAL -gt 1 ]]; then
+            FIRST="${SNAP_IDS[0]}"
+            DEL_END="${SNAP_IDS[$((TOTAL-2))]}"
+            if [[ "$FIRST" -le "$DEL_END" ]] 2>/dev/null; then
+                if snapper -c "$cfg" delete "$FIRST-$DEL_END" 2>/dev/null; then
+                    log_ok "Cleaned snapper '$cfg': removed $((TOTAL-1)) old snapshots"
+                else
+                    log_warn "Partial snapper cleanup for '$cfg'"
+                fi
+            fi
+        fi
+    done < <(snapper list-configs 2>/dev/null | tail -n +3 | awk '{print $1}')
+else
+    log_info "snapper not installed — skipping snapshot cleanup"
+fi
+
+# Clean pacman cache (only if >100MB to avoid unnecessary work)
+if [[ -d /var/cache/pacman/pkg ]]; then
+    CACHE_MB=$(du -sm /var/cache/pacman/pkg 2>/dev/null | awk '{print $1}')
+    if [[ "${CACHE_MB:-0}" -gt 100 ]]; then
+        rm -rf /var/cache/pacman/pkg/*
+        log_ok "Cleaned pacman cache (~${CACHE_MB}MB)"
+    else
+        log_info "Pacman cache is small (${CACHE_MB}MB) — skipping"
+    fi
+fi
+
+# Remove old build workdir unconditionally
+if [[ -d "$WORK_DIR" ]]; then
+    rm -rf "$WORK_DIR"
+    log_ok "Removed old build workdir: $WORK_DIR"
+fi
+
+# Re-check available space after cleanup
+AVAILABLE_KB=$(df -k "$WORK_PARENT" | awk 'NR==2 {print $4}')
+if [[ "$AVAILABLE_KB" -lt "$REQUIRED_KB" ]]; then
+    log_warn "Still less than 10 GB available after cleanup (have $((AVAILABLE_KB/1024))MB)."
+    log_warn "Build may fail — consider freeing disk space manually."
+else
+    log_ok "Disk space after cleanup: $((AVAILABLE_KB/1024))MB available"
+fi
+
 # ── Clean ─────────────────────────────────────────────────────────────────────
 if [[ "$CLEAN_BUILD" == true ]]; then
     log_section "Cleaning Working Directory"
