@@ -15,7 +15,6 @@ from typing import Any
 try:
     from rich.console import Console
     from rich.panel import Panel
-    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
     from rich.prompt import Confirm, IntPrompt, Prompt
     from rich.table import Table
     from rich.text import Text
@@ -24,10 +23,6 @@ try:
 except ImportError:
     Console = None  # type: ignore[assignment,misc]
     Panel = None  # type: ignore[assignment,misc]
-    Progress = None  # type: ignore[assignment,misc]
-    BarColumn = None  # type: ignore[assignment,misc]
-    SpinnerColumn = None  # type: ignore[assignment,misc]
-    TextColumn = None  # type: ignore[assignment,misc]
     Confirm = None  # type: ignore[assignment,misc]
     IntPrompt = None  # type: ignore[assignment,misc]
     Prompt = None  # type: ignore[assignment,misc]
@@ -108,13 +103,13 @@ class TUI:
 
     def __init__(self, title: str = "ouroborOS Installer") -> None:
         self._title = title
-        self._progress: Progress | None = None
-        self._progress_task_id: int | None = None
         self._progress_title: str = ""
+        self._install_progress_active: bool = False
+        self._install_progress_pct: int = 0
 
         if HAS_RICH:
             self._backend = "rich"
-            self._console: Console | None = Console()
+            self._console: Console | None = Console(force_terminal=True)
         else:
             self._backend = "whiptail"
             self._console = None
@@ -131,11 +126,12 @@ class TUI:
         return ["--title", self._title] + list(extra)
 
     def _stop_progress(self) -> None:
-        if self._progress is not None:
-            self._progress.stop()
-            self._progress = None
-            self._progress_task_id = None
+        if self._progress_title or self._install_progress_active:
+            import sys
+            sys.stdout.write("\r" + " " * 120 + "\r")
+            sys.stdout.flush()
             self._progress_title = ""
+            self._install_progress_active = False
 
     # ------------------------------------------------------------------
     # Welcome
@@ -175,11 +171,33 @@ class TUI:
         info.add_row("Bootloader", "systemd-boot")
         info.add_row("Network", "systemd-networkd + iwd")
         self._console.print(info)
-        Prompt.ask(
-            "\n  [dim]Press Enter to continue[/]",
-            default="",
-            console=self._console,
-        )
+        self._countdown(30)
+
+    def _countdown(self, seconds: int) -> None:
+        """Show a countdown that auto-continues after *seconds*.
+
+        Pressing Enter early skips the wait.
+        """
+        import select
+        import sys
+
+        assert self._console is not None
+
+        if not sys.stdin.isatty():
+            return
+
+        for remaining in range(seconds, 0, -1):
+            sys.stdout.write(
+                f"\r  [dim]Continuing in {remaining}s... "
+                f"(Enter to skip)[/]\033[K"
+            )
+            sys.stdout.flush()
+            dr, _, _ = select.select([sys.stdin], [], [], 1.0)
+            if dr:
+                sys.stdin.readline()
+                break
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
 
     def _whiptail_welcome(self) -> None:
         text = (
@@ -211,37 +229,19 @@ class TUI:
     def _rich_progress(self, title: str, text: str, percent: int) -> None:
         assert self._console is not None
         pct = max(0, min(100, percent))
+        self._progress_title = title
 
-        if self._progress is not None and self._progress_title != title:
-            self._stop_progress()
-
-        if self._progress is None:
-            self._progress = Progress(
-                SpinnerColumn(),
-                TextColumn(f"[bold blue]{title}"),
-                BarColumn(bar_width=40),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TextColumn("{task.description}"),
-                console=self._console,
-                transient=False,
-            )
-            self._progress.start()
-            self._progress_task_id = self._progress.add_task(
-                text, total=100, completed=pct
-            )
-            self._progress_title = title
-        else:
-            assert self._progress_task_id is not None
-            self._progress.update(
-                self._progress_task_id,
-                description=text,
-                completed=pct,
-            )
-
-        self._progress.refresh()
-
+        filled = int(pct / 100 * 40)
+        bar = "█" * filled + "░" * (40 - filled)
+        self._console.print(
+            f"\r  [bold cyan]{title}[/] |{bar}| {pct:>3}% — {text}"
+            + " " * 10,
+            end="",
+            highlight=False,
+        )
         if pct >= 100:
-            self._stop_progress()
+            self._console.print()
+            self._progress_title = ""
 
     def _whiptail_progress(self, title: str, text: str, percent: int) -> None:
         subprocess.run(
@@ -260,6 +260,66 @@ class TUI:
             text=True,
             check=False,
         )
+
+    # ------------------------------------------------------------------
+    # Global Install Progress
+    # ------------------------------------------------------------------
+
+    def start_install_progress(self) -> None:
+        """Start the global installation progress bar."""
+        self._install_progress_active = True
+        self._install_progress_pct = 0
+
+    def update_install_progress(
+        self,
+        percent: int,
+        step_num: int,
+        total_steps: int,
+        step_label: str,
+        detail: str = "",
+    ) -> None:
+        """Update the global installation progress bar.
+
+        Args:
+            percent: Overall progress 0-100.
+            step_num: Current step number (1-based).
+            total_steps: Total number of steps.
+            step_label: Human-readable step name.
+            detail: Optional detail text for the current sub-task.
+        """
+        self._install_progress_active = True
+        pct = max(0, min(100, percent))
+        self._install_progress_pct = pct
+        step_text = f"Paso {step_num}/{total_steps}: {step_label}"
+        if detail:
+            step_text += f" — {detail}"
+        self._update_install_bar(pct, step_text)
+
+    def stop_install_progress(self) -> None:
+        """Clear the progress bar (for interactive prompts)."""
+        if self._install_progress_active:
+            import sys
+            sys.stdout.write("\r" + " " * 120 + "\r")
+            sys.stdout.flush()
+            self._install_progress_active = False
+
+    def finish_install_progress(self) -> None:
+        """Mark the global progress as complete (100%)."""
+        self._install_progress_pct = 100
+        self._update_install_bar(100, "Instalación completa")
+        self._install_progress_active = False
+
+    def _update_install_bar(self, pct: int, step_text: str) -> None:
+        """Render the progress bar to stdout."""
+        import sys
+        filled = int(pct / 100 * 40)
+        bar = "█" * filled + "░" * (40 - filled)
+        line = f"\r  |{bar}| {pct:>3}%  {step_text}" + " " * 20
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        if pct >= 100:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
     # ------------------------------------------------------------------
     # Locale
@@ -453,9 +513,9 @@ class TUI:
                 console=self._console,
             )
             if passphrase == confirm:
-                if len(passphrase) < 8:
+                if len(passphrase) < 4:
                     self._console.print(
-                        "  [bold red]Passphrase must be at least 8 characters.[/]"
+                        "  [bold red]Passphrase must be at least 4 characters.[/]"
                     )
                     continue
                 return passphrase
@@ -474,9 +534,9 @@ class TUI:
                 "LUKS Passphrase", "Confirm LUKS encryption passphrase:"
             )
             if passphrase == confirm:
-                if len(passphrase) < 8:
+                if len(passphrase) < 4:
                     self.show_error(
-                        "Passphrase must be at least 8 characters.",
+                        "Passphrase must be at least 4 characters.",
                         recoverable=True,
                     )
                     continue
@@ -525,11 +585,7 @@ class TUI:
         self._console.print()
         self._console.print(partitions)
         self._console.print(subvols)
-        Prompt.ask(
-            "\n  [dim]Press Enter to continue[/]",
-            default="",
-            console=self._console,
-        )
+        self._countdown(10)
 
     def _whiptail_partition_preview(self, disk: str, use_luks: bool) -> None:
         luks_note = " (encrypted with LUKS2)" if use_luks else ""
@@ -586,9 +642,9 @@ class TUI:
                 console=self._console,
             )
             if password == confirm:
-                if len(password) < 6:
+                if len(password) < 4:
                     self._console.print(
-                        "  [bold red]Password must be at least 6 characters.[/]"
+                        "  [bold red]Password must be at least 4 characters.[/]"
                     )
                     continue
                 return {"username": username, "password_hash": _hash_password(password)}
@@ -610,9 +666,9 @@ class TUI:
             )
             confirm = self._password_box("User Account", "Confirm password:")
             if password == confirm:
-                if len(password) < 6:
+                if len(password) < 4:
                     self.show_error(
-                        "Password must be at least 6 characters.",
+                        "Password must be at least 4 characters.",
                         recoverable=True,
                     )
                     continue
@@ -625,6 +681,179 @@ class TUI:
                 recoverable=True,
             )
         raise TUIError("Password entry failed after 3 attempts.")
+
+    # ------------------------------------------------------------------
+    # WiFi connection
+    # ------------------------------------------------------------------
+
+    def show_wifi_connect(self) -> bool:
+        if self._backend == "rich":
+            return self._rich_wifi_connect()
+        return self._whiptail_wifi_connect()
+
+    def _find_wifi_interface(self) -> str | None:
+        result = subprocess.run(
+            ["iw", "dev"], capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            return None
+        iface: str | None = None
+        is_station = False
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Interface "):
+                iface = stripped.split(maxsplit=1)[1]
+                is_station = False
+            elif stripped == "type station":
+                is_station = True
+            elif stripped.startswith("Interface ") or stripped.startswith("phy#"):
+                if is_station and iface:
+                    return iface
+                iface = None
+                is_station = False
+        if is_station and iface:
+            return iface
+        return None
+
+    def _scan_wifi_networks(self, iface: str) -> list[tuple[str, str, bool]]:
+        subprocess.run(
+            ["iwctl", "station", iface, "scan"],
+            capture_output=True, text=True, check=False,
+        )
+        import time
+        time.sleep(5)
+        result = subprocess.run(
+            ["iwctl", "station", iface, "get-networks", "list"],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            return []
+        networks: list[tuple[str, str, bool]] = []
+        for line in result.stdout.splitlines()[4:]:
+            parts = line.split()
+            if len(parts) >= 4:
+                ssid = parts[0]
+                security = parts[1]
+                is_open = security == "open"
+                networks.append((ssid, security, is_open))
+        return networks
+
+    def _rich_wifi_connect(self) -> bool:
+        assert self._console is not None
+        self._stop_progress()
+
+        self._console.print(
+            Panel(
+                Text.from_markup(
+                    "No internet connectivity detected.\n\n"
+                    "Select a WiFi network to connect to."
+                ),
+                title="[bold]Network Configuration[/]",
+                border_style="yellow",
+            )
+        )
+
+        iface = self._find_wifi_interface()
+        if iface is None:
+            self._console.print("  [bold red]No WiFi interface found.[/]")
+            return False
+
+        networks = self._scan_wifi_networks(iface)
+        if not networks:
+            self._console.print("  [bold red]No WiFi networks found.[/]")
+            return False
+
+        table = Table(title="Available Networks", show_lines=False)
+        table.add_column("#", style="cyan bold", width=4)
+        table.add_column("SSID", style="bold")
+        table.add_column("Security")
+        table.add_column("Signal")
+        for i, (ssid, security, _is_open) in enumerate(networks):
+            table.add_row(str(i + 1), ssid, security, "")
+        table.add_row("0", "Skip / Retry later", "", "")
+        self._console.print(table)
+
+        choice = IntPrompt.ask(
+            "  Select network [0 to skip]",
+            default=0,
+            console=self._console,
+        )
+        if choice == 0 or choice > len(networks):
+            return False
+
+        ssid, _security, is_open = networks[choice - 1]
+        if is_open:
+            cmd = ["iwctl", "station", iface, "connect", ssid]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        else:
+            password = Prompt.ask(
+                f"  Password for '{ssid}'", password=True, console=self._console,
+            )
+            cmd = ["iwctl", "--passphrase", password, "station", iface, "connect", ssid]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        if result.returncode != 0:
+            self._console.print(f"  [bold red]Connection failed: {result.stderr.strip()}[/]")
+            return False
+
+        import time
+        time.sleep(5)
+        ping = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+            capture_output=True, check=False,
+        )
+        if ping.returncode == 0:
+            self._console.print("  [bold green]Connected![/]")
+            return True
+        self._console.print("  [bold red]Connected but no internet.[/]")
+        return False
+
+    def _whiptail_wifi_connect(self) -> bool:
+        iface = self._find_wifi_interface()
+        if iface is None:
+            self.show_error("No WiFi interface found.", recoverable=False)
+            return False
+
+        networks = self._scan_wifi_networks(iface)
+        if not networks:
+            self.show_error("No WiFi networks found.", recoverable=False)
+            return False
+
+        items = [(ssid, f"{security}") for ssid, security, _ in networks]
+        items.append(("skip", "Skip / Retry later"))
+        ssid = self._select_from_list(
+            "WiFi Networks", "Select a network:", items,
+        )
+        if ssid == "skip":
+            return False
+
+        selected = [(s, sec, op) for s, sec, op in networks if s == ssid]
+        if not selected:
+            return False
+        _ssid, _security, is_open = selected[0]
+
+        if is_open:
+            cmd = ["iwctl", "station", iface, "connect", _ssid]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        else:
+            password = self._password_box("WiFi", f"Password for '{_ssid}':")
+            cmd = [
+                "iwctl", "--passphrase", password,
+                "station", iface, "connect", _ssid,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        if result.returncode != 0:
+            self.show_error(f"Connection failed: {result.stderr.strip()}", recoverable=False)
+            return False
+
+        import time
+        time.sleep(5)
+        ping = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+            capture_output=True, check=False,
+        )
+        return ping.returncode == 0
 
     # ------------------------------------------------------------------
     # Summary
@@ -658,15 +887,16 @@ class TUI:
             )
         )
         self._console.print(
-            "\n  Remove the installation media and press Enter to reboot."
+            "\n  Remove the installation media."
         )
-        Prompt.ask(
-            "  [dim]Press Enter to continue[/]",
-            default="",
-            console=self._console,
+        self._console.print(
+            "  [bold]System will reboot in 10 seconds... (Enter to reboot now)[/]"
         )
+        self._countdown(10)
 
     def _whiptail_summary(self, config: Any) -> None:
+        import time
+
         text = (
             "Installation Complete!\n\n"
             f"  Disk:      {config.disk.device}\n"
@@ -675,7 +905,8 @@ class TUI:
             f"  User:      {config.user.username}\n"
             f"  Locale:    {config.locale.locale}\n"
             f"  Timezone:  {config.locale.timezone}\n\n"
-            "Remove the installation media and press Enter to reboot."
+            "Remove the installation media.\n"
+            "System will reboot in 10 seconds."
         )
         _whiptail(
             *self._args(
@@ -685,6 +916,7 @@ class TUI:
                 str(self._WIDTH),
             )
         )
+        time.sleep(10)
 
     # ------------------------------------------------------------------
     # Error

@@ -13,10 +13,6 @@ from installer.tui import TUI, TUIError, _hash_password, _lsblk_disks, _whiptail
 RICH_PATCHES = [
     "installer.tui.Console",
     "installer.tui.Panel",
-    "installer.tui.Progress",
-    "installer.tui.BarColumn",
-    "installer.tui.SpinnerColumn",
-    "installer.tui.TextColumn",
     "installer.tui.Confirm",
     "installer.tui.IntPrompt",
     "installer.tui.Prompt",
@@ -211,23 +207,69 @@ class TestRichShowWelcome:
 
 class TestRichShowProgress:
     def test_creates_progress(self, rich_tui: TUI) -> None:
-        with _patch_rich() as mocks:
-            mocks["Progress"].return_value.add_task.return_value = 1
-            rich_tui.show_progress("Test", "Working...", 50)
-        mocks["Progress"].return_value.start.assert_called_once()
+        rich_tui._console = MagicMock()
+        rich_tui.show_progress("Test", "Working...", 50)
+        rich_tui._console.print.assert_called()
 
     def test_stops_at_100(self, rich_tui: TUI) -> None:
-        with _patch_rich() as mocks:
-            mocks["Progress"].return_value.add_task.return_value = 1
-            rich_tui.show_progress("Test", "Done!", 100)
-        mocks["Progress"].return_value.stop.assert_called()
+        rich_tui._console = MagicMock()
+        rich_tui.show_progress("Test", "Done!", 100)
+        assert rich_tui._progress_title == ""
 
     def test_updates_existing_progress(self, rich_tui: TUI) -> None:
-        with _patch_rich() as mocks:
-            mocks["Progress"].return_value.add_task.return_value = 1
-            rich_tui.show_progress("Test", "Working...", 50)
-            rich_tui.show_progress("Test", "Still working...", 75)
-        mocks["Progress"].return_value.update.assert_called()
+        rich_tui._console = MagicMock()
+        rich_tui.show_progress("Test", "Working...", 50)
+        rich_tui.show_progress("Test", "Still working...", 75)
+        assert rich_tui._console.print.call_count == 2
+
+
+class TestGlobalInstallProgress:
+    def test_start_sets_active(self, rich_tui: TUI) -> None:
+        rich_tui.start_install_progress()
+        assert rich_tui._install_progress_active is True
+        assert rich_tui._install_progress_pct == 0
+
+    def test_update_sets_pct_and_active(self, rich_tui: TUI) -> None:
+        rich_tui.update_install_progress(35, 3, 9, "Preparando disco", "Particionando...")
+        assert rich_tui._install_progress_active is True
+        assert rich_tui._install_progress_pct == 35
+
+    def test_update_clamps_percent(self, rich_tui: TUI) -> None:
+        rich_tui.update_install_progress(-10, 1, 9, "Test")
+        assert rich_tui._install_progress_pct == 0
+        rich_tui.update_install_progress(150, 1, 9, "Test")
+        assert rich_tui._install_progress_pct == 100
+
+    def test_stop_clears_active(self, rich_tui: TUI) -> None:
+        rich_tui.start_install_progress()
+        rich_tui.update_install_progress(50, 3, 9, "Test")
+        rich_tui.stop_install_progress()
+        assert rich_tui._install_progress_active is False
+
+    def test_stop_noop_when_inactive(self, rich_tui: TUI) -> None:
+        rich_tui.stop_install_progress()
+        assert rich_tui._install_progress_active is False
+
+    def test_finish_sets_100_and_clears(self, rich_tui: TUI) -> None:
+        rich_tui.start_install_progress()
+        rich_tui.update_install_progress(50, 3, 9, "Test")
+        rich_tui.finish_install_progress()
+        assert rich_tui._install_progress_pct == 100
+        assert rich_tui._install_progress_active is False
+
+    def test_update_resumes_after_stop(self, rich_tui: TUI) -> None:
+        rich_tui.start_install_progress()
+        rich_tui.stop_install_progress()
+        assert rich_tui._install_progress_active is False
+        rich_tui.update_install_progress(60, 4, 9, "Test")
+        assert rich_tui._install_progress_active is True
+        assert rich_tui._install_progress_pct == 60
+
+    def test_stop_progress_also_clears_global(self, rich_tui: TUI) -> None:
+        rich_tui.start_install_progress()
+        rich_tui.update_install_progress(50, 3, 9, "Test")
+        rich_tui._stop_progress()
+        assert rich_tui._install_progress_active is False
 
 
 class TestRichShowError:
@@ -532,7 +574,7 @@ class TestWhiptailPassphraseInput:
         with patch.object(
             whiptail_tui,
             "_password_box",
-            side_effect=["short", "short", "longpassword", "longpassword"],
+            side_effect=["abc", "abc", "longpassword", "longpassword"],
         ), patch.object(whiptail_tui, "show_error"):
             assert whiptail_tui.show_passphrase_input() == "longpassword"
 
