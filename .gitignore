@@ -31,3 +31,12 @@ imagen_*.img*
 
 # Checkpoints (runtime)
 /tmp/ouroborOS-checkpoints/
+
+# Agent tooling
+.atl/
+.sisyphus/
+
+# Build / dev temp
+src/temp/
+src/logs/
+build-tmp/
