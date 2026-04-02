@@ -34,6 +34,7 @@ set -euo pipefail
 : "${USER_SHELL:='/bin/bash'}"
 : "${ENABLE_IWD:='1'}"
 : "${ENABLE_LUKS:='0'}"
+: "${ROOT_DEVICE:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -97,12 +98,11 @@ EOF
 configure_initramfs() {
     log_info "Generating initramfs..."
 
-    # Ensure btrfs is in MODULES
     cat > "${TARGET}/etc/mkinitcpio.conf" << 'EOF'
 MODULES=(btrfs)
 BINARIES=()
 FILES=()
-HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)
+HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)
 EOF
 
     in_chroot mkinitcpio -P
@@ -115,7 +115,13 @@ EOF
 configure_bootloader() {
     log_info "Installing systemd-boot..."
 
-    in_chroot bootctl install
+    if ! in_chroot bootctl install --path=/boot 2>/dev/null; then
+        log_warn "bootctl install failed (NVRAM unavailable?), retrying with --no-variables..."
+        if ! in_chroot bootctl install --path=/boot --no-variables; then
+            log_error "bootctl install failed completely"
+            return 1
+        fi
+    fi
 
     local ucode_initrd_lines=""
     for ucode in intel-ucode.img amd-ucode.img; do
@@ -125,16 +131,14 @@ configure_bootloader() {
         fi
     done
 
-    # Determine root UUID from the @ subvolume mount (the actual root device)
-    # findmnt --target walks up; we need the source device of the root mount point
-    local root_source
-    root_source=$(findmnt -n -o SOURCE --target "${TARGET}" 2>/dev/null || true)
-
-    # For Btrfs subvolumes, SOURCE may be like /dev/sda2[/@] — extract the block device
-    # Strip any trailing [/subvol] bracket notation that findmnt adds for subvolume mounts
-    local root_dev="${root_source%%\[*}"
+    local root_dev="${ROOT_DEVICE}"
     if [[ -z "$root_dev" ]]; then
-        log_error "Cannot determine root device for ${TARGET}"
+        local root_source
+        root_source=$(findmnt -n -o SOURCE --target "${TARGET}" 2>/dev/null || true)
+        root_dev="${root_source%%\[*}"
+    fi
+    if [[ -z "$root_dev" ]]; then
+        log_error "Cannot determine root device for ${TARGET} (ROOT_DEVICE empty, findmnt failed)"
         return 1
     fi
 
@@ -145,7 +149,7 @@ configure_bootloader() {
         return 1
     fi
 
-    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro quiet loglevel=3"
+    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro quiet loglevel=3 console=tty0 console=ttyS0,115200"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
         local luks_uuid=""
@@ -372,6 +376,21 @@ main() {
     configure_users
     configure_immutable_root
     configure_os_release
+
+    # Enable getty on tty1 (VGA/VNC console) — serial-getty on ttyS0 is
+    # auto-enabled by systemd, but the graphical console needs explicit enable.
+    in_chroot systemctl enable getty@tty1.service
+
+    # Ensure /var/log/journal exists so journald can store logs persistently.
+    # Without this the Journal Log Access Socket fails because the directory
+    # is inside the @var subvolume which may be empty on first boot.
+    mkdir -p "${TARGET}/var/log/journal"
+
+    # Prevent interactive firstboot prompt — all settings configured above.
+    # Write a proper machine-id INSIDE the target (not --root="" which writes
+    # to the host), then mask the service.
+    in_chroot systemd-machine-id-setup
+    in_chroot systemctl mask systemd-firstboot.service
 
     log_ok "All configuration steps complete."
 }
