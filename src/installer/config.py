@@ -7,6 +7,7 @@ It is populated from either TUI interaction or an unattended YAML config file.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -219,6 +220,15 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.user.username = str(usr["username"])
     if "password_hash" in usr:
         cfg.user.password_hash = str(usr["password_hash"])
+    elif "password" in usr:
+        result = subprocess.run(
+            ["openssl", "passwd", "-6", "-stdin"],
+            input=str(usr["password"]),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        cfg.user.password_hash = result.stdout.strip()
     cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
     cfg.user.shell = str(usr.get("shell", "/bin/bash"))
 
