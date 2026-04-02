@@ -78,6 +78,30 @@ _STATE_ORDER: list[State] = [
     State.FINISH,
 ]
 
+_STEP_RANGES: dict[State, tuple[int, int]] = {
+    State.INIT: (0, 5),
+    State.PREFLIGHT: (5, 10),
+    State.LOCALE: (10, 20),
+    State.PARTITION: (20, 30),
+    State.FORMAT: (30, 45),
+    State.INSTALL: (45, 70),
+    State.CONFIGURE: (70, 90),
+    State.SNAPSHOT: (90, 95),
+    State.FINISH: (95, 100),
+}
+
+_STEP_LABELS: dict[State, str] = {
+    State.INIT: "Iniciando",
+    State.PREFLIGHT: "Verificando requisitos",
+    State.LOCALE: "Configurando idioma",
+    State.PARTITION: "Seleccionando disco",
+    State.FORMAT: "Preparando disco",
+    State.INSTALL: "Instalando paquetes",
+    State.CONFIGURE: "Configurando sistema",
+    State.SNAPSHOT: "Creando snapshot",
+    State.FINISH: "Finalizando",
+}
+
 # ---------------------------------------------------------------------------
 # Checkpoint system
 # ---------------------------------------------------------------------------
@@ -202,6 +226,9 @@ class Installer:
                         handler()
                         _save_checkpoint(state, self.config)
                         log.info("State completed: %s", state.name)
+                        if state == State.INIT and self.tui:
+                            self.tui.start_install_progress()
+                            self._update_progress(State.INIT, 100)
                         break
                     except InstallerError as exc:
                         retries += 1
@@ -224,12 +251,14 @@ class Installer:
             self.state = State.FATAL
             log.critical("Fatal error: %s", exc)
             if self.tui:
+                self.tui.stop_install_progress()
                 self.tui.show_error(str(exc), recoverable=False)
             return 1
         except KeyboardInterrupt:
             self.state = State.FATAL
             log.warning("Installation interrupted by user.")
             if self.tui:
+                self.tui.stop_install_progress()
                 self.tui.show_error(
                     "Installation cancelled by user.", recoverable=False
                 )
@@ -238,6 +267,15 @@ class Installer:
         return 0
 
     # --- State handlers -----------------------------------------------------
+
+    def _update_progress(self, state: State, sub_pct: int, detail: str = "") -> None:
+        lo, hi = _STEP_RANGES[state]
+        global_pct = lo + int((hi - lo) * max(0, min(100, sub_pct)) / 100)
+        step_num = _STATE_ORDER.index(state) + 1
+        total = len(_STATE_ORDER)
+        label = _STEP_LABELS.get(state, state.name)
+        if self.tui:
+            self.tui.update_install_progress(global_pct, step_num, total, label, detail)
 
     def _handle_init(self) -> None:
         """INIT — detect unattended mode or initialise TUI."""
@@ -260,10 +298,7 @@ class Installer:
             ("Internet connectivity", self._check_network),
         ]
 
-        if self.tui:
-            self.tui.show_progress(
-                "Preflight Checks", "Verifying system requirements...", 0
-            )
+        self._update_progress(State.PREFLIGHT, 0, "Iniciando verificación...")
 
         failed = []
         for i, (name, check_fn) in enumerate(checks):
@@ -273,15 +308,18 @@ class Installer:
             except InstallerError as exc:
                 log.warning("Preflight check failed: %s — %s", name, exc)
                 failed.append(f"{name}: {exc}")
-            if self.tui:
-                pct = int((i + 1) / len(checks) * 100)
-                self.tui.show_progress("Preflight Checks", f"Checking: {name}", pct)
+            self._update_progress(
+                State.PREFLIGHT,
+                int((i + 1) / len(checks) * 100),
+                f"Verificando: {name}",
+            )
 
         if failed:
             raise InstallerError("Preflight checks failed:\n" + "\n".join(failed))
 
     def _handle_locale(self) -> None:
         """LOCALE — set locale, timezone, keymap."""
+        self._update_progress(State.LOCALE, 0)
         if self.tui:
             locale_cfg = self.tui.show_locale_menu()
             self.config.locale.locale = locale_cfg["locale"]
@@ -294,9 +332,11 @@ class Installer:
             self.config.locale.keymap,
             self.config.locale.timezone,
         )
+        self._update_progress(State.LOCALE, 100)
 
     def _handle_partition(self) -> None:
         """PARTITION — disk selection, layout preview, confirmation."""
+        self._update_progress(State.PARTITION, 0)
         if self.tui:
             disk = self.tui.show_disk_selection()
             self.config.disk.device = disk
@@ -315,11 +355,11 @@ class Installer:
             self.config.disk.device,
             self.config.disk.use_luks,
         )
+        self._update_progress(State.PARTITION, 100)
 
     def _handle_format(self) -> None:
         """FORMAT — partition, format, create subvolumes, mount, fstab."""
-        if self.tui:
-            self.tui.show_progress("Disk Setup", "Preparing disk...", 0)
+        self._update_progress(State.FORMAT, 0, "Preparando disco...")
 
         args = [
             "bash",
@@ -333,12 +373,102 @@ class Installer:
             args += ["--luks", self.config.disk.luks_passphrase]
 
         self._run_op(args, progress_title="Disk Setup", final_msg="Disk prepared.")
+        self._update_progress(State.FORMAT, 100, "Disco preparado")
 
-        # Clear passphrase from memory immediately after use
         self.config.disk.luks_passphrase = ""
 
+    def _generate_mirrorlist(self) -> None:
+        """Generate a working mirrorlist on the live system for pacstrap."""
+        host_mirrorlist = Path("/etc/pacman.d/mirrorlist")
+        self._update_progress(State.INSTALL, 0, "Generando lista de mirrors...")
+
+        result = subprocess.run(
+            [
+                "reflector",
+                "--country", "CL,AR,BR,US",
+                "--latest", "10",
+                "--sort", "rate",
+                "--save", str(host_mirrorlist),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log.warning(
+                "reflector (regional) failed: %s — trying global fallback",
+                result.stderr.strip(),
+            )
+            result = subprocess.run(
+                [
+                    "reflector",
+                    "--latest", "20",
+                    "--sort", "rate",
+                    "--save", str(host_mirrorlist),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise InstallerError(
+                    f"reflector failed to generate mirrorlist: {result.stderr}"
+                )
+
+        log.info("Host mirrorlist generated: %s", host_mirrorlist)
+
+    def _init_pacman_keyring(self) -> None:
+        """Initialise the pacman keyring on the live system.
+
+        pacstrap -K copies the host keyring into the new root, but the
+        live ISO keyring may not be populated yet.  Run init + populate
+        once so that subsequent pacstrap calls can verify signatures.
+        """
+        self._update_progress(State.INSTALL, 20, "Inicializando keyring...")
+
+        for step, args in (
+            ("init", ["pacman-key", "--init"]),
+            ("populate", ["pacman-key", "--populate", "archlinux"]),
+        ):
+            log.info("Running: %s", " ".join(args))
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                log.warning(
+                    "pacman-key %s failed (rc=%d): %s",
+                    step,
+                    result.returncode,
+                    result.stderr.strip(),
+                )
+                raise InstallerError(
+                    f"pacman-key --{step} failed: {result.stderr.strip()}"
+                )
+
+        log.info("Pacman keyring initialised.")
+
     def _handle_install(self) -> None:
-        """INSTALL — pacstrap base system."""
+        """INSTALL — pacstrap base system with automatic retries."""
+        target = self.config.install_target
+        self._generate_mirrorlist()
+        self._init_pacman_keyring()
+
+        # Write custom mkinitcpio.conf BEFORE pacstrap so that the linux-zen
+        # post-install hook generates a correct initramfs from the start:
+        #   - btrfs in MODULES and HOOKS (required for btrfs root)
+        #   - no autodetect (chroot has no real btrfs devices, so autodetect
+        #     would strip the module)
+        mkinitcpio_path = Path(target) / "etc" / "mkinitcpio.conf"
+        mkinitcpio_path.parent.mkdir(parents=True, exist_ok=True)
+        mkinitcpio_path.write_text(
+            "MODULES=(btrfs)\n"
+            "BINARIES=()\n"
+            "FILES=()\n"
+            "HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)\n"
+        )
+        log.info("Pre-seeded mkinitcpio.conf with btrfs support (no autodetect).")
+
         packages = [
             "base",
             "linux-zen",
@@ -355,39 +485,112 @@ class Installer:
             "zram-generator",
         ] + self.config.extra_packages
 
-        if self.tui:
-            self.tui.show_progress("Installing Base System", "Running pacstrap...", 0)
+        cmd = ["pacstrap", "-K", target] + packages
+        max_retries = 10
 
-        cmd = ["pacstrap", "-K", self.config.install_target] + packages
-        log.info("Running pacstrap: %s", " ".join(cmd))
-
-        result = subprocess.run(cmd, check=False)
-        if result.returncode != 0:
-            raise InstallerError(
-                f"pacstrap failed with exit code {result.returncode}. "
-                "Check the install log for details."
+        for attempt in range(1, max_retries + 1):
+            self._update_progress(
+                State.INSTALL,
+                50,
+                f"Ejecutando pacstrap (intento {attempt}/{max_retries})...",
             )
 
-        if self.tui:
-            self.tui.show_progress("Installing Base System", "pacstrap complete.", 100)
+            log.info("Running pacstrap (attempt %d/%d): %s", attempt, max_retries, " ".join(cmd))
+            result = subprocess.run(
+                cmd,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+            # Always log pacstrap output — package hooks may emit warnings
+            # (e.g. filesystem .install "error: command failed to execute correctly")
+            # that are non-fatal but important for diagnostics.
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        log.debug("[pacstrap] %s", stripped)
+
+            if result.returncode == 0:
+                log.info("pacstrap succeeded on attempt %d.", attempt)
+                break
+
+            log.warning(
+                "pacstrap attempt %d/%d failed (exit %d). Regenerating mirrorlist and retrying.",
+                attempt, max_retries, result.returncode,
+            )
+            self._generate_mirrorlist()
+
+            if attempt == max_retries:
+                raise InstallerError(
+                    f"pacstrap failed after {max_retries} attempts (exit code {result.returncode}). "
+                    "Check the install log for details."
+                )
+        else:
+            raise InstallerError("pacstrap failed: unexpected loop exit.")
+
+        # Regenerate fstab AFTER pacstrap — pacstrap overwrites /etc/fstab
+        # with a generic one from the 'filesystem' package. We must restore
+        # our custom Btrfs subvolume layout.
+        self._regenerate_fstab()
+
+        self._update_progress(State.INSTALL, 100, "Pacstrap completado")
+
+    def _root_partition_device(self) -> str:
+        """Return the root partition device path (e.g. /dev/vda2).
+
+        Mirrors the logic of _root_device() in disk.sh:
+        NVMe/mmcblk → p2 suffix, everything else → 2 suffix.
+        """
+        disk = self.config.disk.device
+        if "nvme" in disk or "mmcblk" in disk:
+            return f"{disk}p2"
+        return f"{disk}2"
+
+    def _root_device_for_fstab(self) -> str:
+        """Return the device that holds the root filesystem.
+
+        For LUKS installations this is /dev/mapper/ouroboros-root;
+        otherwise it is the raw root partition.
+        """
+        if self.config.disk.use_luks:
+            return "/dev/mapper/ouroboros-root"
+        return self._root_partition_device()
+
+    def _regenerate_fstab(self) -> None:
+        target = self.config.install_target
+        root_dev = self._root_device_for_fstab()
+
+        log.info("Regenerating fstab after pacstrap (root_dev=%s)", root_dev)
+
+        args = [
+            "bash",
+            str(OPS_DIR / "disk.sh"),
+            "--action", "regenerate_fstab",
+            "--target", target,
+            "--root-device", root_dev,
+        ]
+        self._run_op(args, progress_title="Regenerating fstab", final_msg="fstab regenerated.")
 
     def _handle_configure(self) -> None:
         """CONFIGURE — chroot post-install configuration."""
+        self._update_progress(State.CONFIGURE, 0, "Configurando sistema...")
+
         if self.tui:
             user_cfg = self.tui.show_user_creation()
             self.config.user.username = user_cfg["username"]
             self.config.user.password_hash = user_cfg["password_hash"]
 
-        if self.tui:
-            self.tui.show_progress(
-                "System Configuration", "Configuring installed system...", 0
-            )
+        self._update_progress(State.CONFIGURE, 20, "Ejecutando configuración...")
 
         configure_script = OPS_DIR / "configure.sh"
         env = os.environ.copy()
         env.update(
             {
                 "INSTALL_TARGET": self.config.install_target,
+                "ROOT_DEVICE": self._root_device_for_fstab(),
                 "LOCALE": self.config.locale.locale,
                 "KEYMAP": self.config.locale.keymap,
                 "TIMEZONE": self.config.locale.timezone,
@@ -408,17 +611,11 @@ class Installer:
                 "See /tmp/ouroborOS-install.log"
             )
 
-        if self.tui:
-            self.tui.show_progress(
-                "System Configuration", "Configuration complete.", 100
-            )
+        self._update_progress(State.CONFIGURE, 100, "Configuración completada")
 
     def _handle_snapshot(self) -> None:
         """SNAPSHOT — create baseline Btrfs snapshot."""
-        if self.tui:
-            self.tui.show_progress(
-                "Creating Snapshot", "Snapshotting install baseline...", 0
-            )
+        self._update_progress(State.SNAPSHOT, 0, "Creando snapshot...")
 
         result = subprocess.run(
             [
@@ -430,17 +627,21 @@ class Installer:
             check=False,
         )
         if result.returncode != 0:
-            # Non-fatal: snapshot failure should not abort the install
             log.warning("Snapshot creation failed — continuing without snapshot.")
         else:
             log.info("Installation snapshot created.")
 
+        self._update_progress(State.SNAPSHOT, 100, "Snapshot creado")
+
     def _handle_finish(self) -> None:
-        """FINISH — show completion summary and prompt for reboot."""
+        """FINISH — show completion summary and reboot."""
         if self.tui:
+            self.tui.finish_install_progress()
             self.tui.show_summary(self.config)
 
         log.info("Installation complete. System ready.")
+        log.info("Rebooting system...")
+        os.system("reboot")
 
     # --- Preflight check helpers --------------------------------------------
 
@@ -483,6 +684,16 @@ class Installer:
             check=False,
         )
         if result.returncode != 0:
+            if self.tui is not None:
+                connected = self.tui.show_wifi_connect()
+                if connected:
+                    retry = subprocess.run(
+                        ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+                        capture_output=True,
+                        check=False,
+                    )
+                    if retry.returncode == 0:
+                        return
             raise InstallerError(
                 "No internet connectivity. Connect to a network before installing."
             )
@@ -492,9 +703,8 @@ class Installer:
     @staticmethod
     def _which(tool: str) -> bool:
         """Return True if tool is available in PATH."""
-        return subprocess.run(
-            ["which", tool], capture_output=True, check=False
-        ).returncode == 0
+        import shutil
+        return shutil.which(tool) is not None
 
     def _run_op(
         self,
