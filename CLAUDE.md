@@ -1,6 +1,20 @@
-# CLAUDE.md — ouroborOS Project Instructions
+# CLAUDE.md — Instrucciones del Proyecto ouroborOS
 
-This file provides Claude Code with persistent context about the ouroborOS project. Read this before working on any task.
+Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ouroborOS. Lee esto antes de trabajar en cualquier tarea.
+
+---
+
+## Reglas de Salida (OBLIGATORIO)
+
+1. **Idioma de salida:** Todas las respuestas, explicaciones, resúmenes y comunicaciones deben ser en **español**. El código, nombres de variables, mensajes de commit y documentación técnica del proyecto permanecen en inglés (son parte del código).
+2. **Resumen final obligatorio:** Al terminar cada tarea o interacción, incluye **siempre** un resumen breve de lo último que realizaste, en este formato:
+
+```
+📋 **Resumen de lo realizado:**
+- [acción concreta 1]
+- [acción concreta 2]
+- [estado final: completado / pendiente / error]
+```
 
 ---
 

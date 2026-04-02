@@ -1,14 +1,26 @@
-# PROJECT KNOWLEDGE BASE
+# BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Generated:** 2026-03-28
+**Generado:** 2026-03-28
 **Commit:** 6650663
 **Branch:** dev
 
-## OVERVIEW
+## REGLAS DE SALIDA (OBLIGATORIO)
 
-ouroborOS is an ArchLinux-based immutable Linux distribution using systemd-boot, Btrfs snapshots, and a Python FSM installer with Bash ops. Rolling release, minimal bloat, UEFI-only.
+1. **Idioma de salida:** Todas las respuestas, explicaciones, resúmenes y comunicaciones deben ser en **español**. El código, nombres de variables, mensajes de commit y documentación técnica del proyecto permanecen en inglés (son parte del código).
+2. **Resumen final obligatorio:** Al terminar cada tarea o interacción, incluye **siempre** un resumen breve de lo último que realizaste, en este formato:
 
-## STRUCTURE
+```
+📋 **Resumen de lo realizado:**
+- [acción concreta 1]
+- [acción concreta 2]
+- [estado final: completado / pendiente / error]
+```
+
+## RESUMEN GENERAL
+
+ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa systemd-boot, snapshots de Btrfs, y un instalador FSM en Python con operaciones en Bash. Rolling release, mínimo bloat, solo UEFI.
+
+## ESTRUCTURA
 
 ```
 ouroborOS/
@@ -25,99 +37,99 @@ ouroborOS/
 └── README.md
 ```
 
-## WHERE TO LOOK
+## DÓNDE BUSCAR
 
-| Task | Location | Notes |
-|------|----------|-------|
-| Add installer state/phase | `src/installer/state_machine.py` | FSM with checkpoints, see installer/AGENTS.md |
-| Add TUI screen | `src/installer/tui.py` | whiptail wrapper, returns dicts |
-| Change config schema | `src/installer/config.py` | Dataclasses + YAML validation |
-| Add disk/snapshot/config op | `src/installer/ops/*.sh` | Bash libs called via `_run_op()` |
-| Add ISO package | `src/ouroborOS-profile/packages.x86_64` | Must justify (bloat concern) |
-| Change boot entries | `src/ouroborOS-profile/efiboot/` | systemd-boot .conf files |
-| Change live ISO filesystem | `src/ouroborOS-profile/airootfs/` | Copied into ISO at build |
-| Build ISO | `src/scripts/build-iso.sh` | mkarchiso wrapper |
-| Flash USB | `src/scripts/flash-usb.sh` | Safe dd wrapper |
-| Dev environment | `src/scripts/setup-dev-env.sh` | Installs build deps on Arch host |
-| Add CI check | `.github/workflows/` | lint.yml, test.yml, code-review.yml |
-| Add test | `src/installer/tests/` or `tests/scripts/` | pytest or shell scripts |
-| Architecture decisions | `docs/architecture/` | overview, immutability, systemd, installer-phases |
+| Tarea | Ubicación | Notas |
+|-------|-----------|-------|
+| Agregar estado/fase del instalador | `src/installer/state_machine.py` | FSM con checkpoints, ver installer/AGENTS.md |
+| Agregar pantalla TUI | `src/installer/tui.py` | Wrapper de whiptail, retorna diccionarios |
+| Cambiar esquema de configuración | `src/installer/config.py` | Dataclasses + validación YAML |
+| Agregar operación de disco/snapshot/config | `src/installer/ops/*.sh` | Librerías Bash invocadas via `_run_op()` |
+| Agregar paquete al ISO | `src/ouroborOS-profile/packages.x86_64` | Debe justificarse (preocupación de bloat) |
+| Cambiar entradas de boot | `src/ouroborOS-profile/efiboot/` | Archivos .conf de systemd-boot |
+| Cambiar filesystem del ISO live | `src/ouroborOS-profile/airootfs/` | Copiado al ISO durante el build |
+| Construir ISO | `src/scripts/build-iso.sh` | Wrapper de mkarchiso |
+| Flashear USB | `src/scripts/flash-usb.sh` | Wrapper seguro de dd |
+| Entorno de desarrollo | `src/scripts/setup-dev-env.sh` | Instala deps de build en host Arch |
+| Agregar check de CI | `.github/workflows/` | lint.yml, test.yml, code-review.yml |
+| Agregar test | `src/installer/tests/` o `tests/scripts/` | pytest o scripts shell |
+| Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, installer-phases |
 
-## CODE MAP
+## MAPA DE CÓDIGO
 
-| Symbol | Type | Location | Role |
-|--------|------|----------|------|
-| `Installer` | class | `src/installer/state_machine.py` | Core FSM orchestrator |
+| Símbolo | Tipo | Ubicación | Rol |
+|---------|------|-----------|-----|
+| `Installer` | clase | `src/installer/state_machine.py` | Orquestador FSM principal |
 | `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
-| `TUI` | class | `src/installer/tui.py` | whiptail UI wrapper |
-| `InstallerConfig` | dataclass | `src/installer/config.py` | Single config model (disk, locale, network, user) |
-| `load_config` | func | `src/installer/config.py` | YAML→InstallerConfig loader |
-| `validate_config` | func | `src/installer/config.py` | Schema validation (disk path, timezone, hostname, username) |
-| `find_unattended_config` | func | `src/installer/config.py` | Discovers YAML on cmdline/USB/tmp |
-| `main` | func | `src/installer/main.py` | CLI entry (--resume, --config, --validate-config) |
-| `prepare_disk` | func | `src/installer/ops/disk.sh` | End-to-end partition→format→subvol→mount→fstab |
-| `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Baseline Btrfs snapshot |
+| `TUI` | clase | `src/installer/tui.py` | Wrapper de UI whiptail |
+| `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario) |
+| `load_config` | func | `src/installer/config.py` | Cargador YAML→InstallerConfig |
+| `validate_config` | func | `src/installer/config.py` | Validación de esquema (ruta disco, timezone, hostname, username) |
+| `find_unattended_config` | func | `src/installer/config.py` | Descubre YAML en cmdline/USB/tmp |
+| `main` | func | `src/installer/main.py` | Entry point CLI (--resume, --config, --validate-config) |
+| `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab completo |
+| `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
 | configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root |
 
-## CONVENTIONS
+## CONVENCIONES
 
-- **Python for logic, Bash for ops.** No mixing. `state_machine.py` orchestrates; `ops/*.sh` executes.
+- **Python para lógica, Bash para operaciones.** Sin mezclar. `state_machine.py` orquesta; `ops/*.sh` ejecuta.
 - **Conventional Commits:** `feat|fix|docs|build|installer|test|chore|refactor)(scope): description`
-- **Branch strategy:** `dev` or `feature/*` only. PR to merge. Never push to `master`.
-- **All shell scripts:** `set -euo pipefail` + pass `shellcheck -S style` (zero warnings).
-- **Python lint:** Ruff with E,W,F,I,UP,ANN001,ANN201,E722.
-- **Test coverage gate:** 70% minimum (enforced by `tests/scripts/run-pytest.sh`).
-- **No GRUB, no NetworkManager, no /dev/sdX, no root rw in production.** See ANTI-PATTERNS.
+- **Estrategia de branches:** `dev` o `feature/*` solamente. PR para mergear. Nunca push directo a `master`.
+- **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck -S style` (cero warnings).
+- **Lint Python:** Ruff con E,W,F,I,UP,ANN001,ANN201,E722.
+- **Cobertura mínima de tests:** 70% (forzado por `tests/scripts/run-pytest.sh`).
+- **No GRUB, no NetworkManager, no /dev/sdX, no root rw en producción.** Ver ANTIPATRONES.
 
-## ANTI-PATTERNS
+## ANTIPATRONES
 
-| Forbidden | Why |
-|-----------|-----|
-| GRUB in code/configs | systemd-boot only; UEFI-only |
+| Prohibido | Motivo |
+|-----------|--------|
+| GRUB en código/configs | Solo systemd-boot; solo UEFI |
 | NetworkManager | systemd-networkd + iwd |
-| `/dev/sdX` in runtime code | Use UUID everywhere |
-| Root mounted read-write in production | Immutable design; writes to /var, /etc, /tmp, /home |
-| Direct commits to master | Branch strategy: dev→PR→master |
-| Unjustified packages in ISO | Keep ISO lean |
-| `shellcheck` failures | All scripts must pass with zero warnings |
-| TODO in submitted code | Track properly or implement |
-| PARTUUID in fstab for root | Use UUID= for root subvolume |
-| Hardcoded archisolabel in boot entries | Use `%ARCHISO_UUID%` template + `archisosearchuuid=` (archiso v87+) |
-| Plaintext passwords in scripts/config | Hash via SHA-512 crypt; LUKS passphrase via stdin |
-| Python logic in Bash ops or vice versa | Strict separation of concerns |
-| Hardcoded mirror URLs in pacman.conf | Parameterize or configure |
+| `/dev/sdX` en código runtime | Usar UUID en todo lugar |
+| Root montado read-write en producción | Diseño inmutable; escrituras a /var, /etc, /tmp, /home |
+| Commits directos a master | Estrategia: dev→PR→master |
+| Paquetes injustificados en el ISO | Mantener ISO liviano |
+| Fallos de `shellcheck` | Todos los scripts deben pasar con cero warnings |
+| TODO en código enviado | Trackear apropiadamente o implementar |
+| PARTUUID en fstab para root | Usar UUID= para el subvolumen root |
+| archisolabel hardcodeado en boot entries | Usar template `%ARCHISO_UUID%` + `archisosearchuuid=` (archiso v87+) |
+| Contraseñas en texto plano en scripts/config | Hash via SHA-512 crypt; passphrase LUKS via stdin |
+| Lógica Python en ops Bash o viceversa | Separación estricta de responsabilidades |
+| URLs de mirrors hardcodeadas en pacman.conf | Parametrizar o configurar |
 
-## UNIQUE STYLES
+## ESTILOS ÚNICOS
 
-- **FSM with checkpoints:** Installer state persisted per-phase in `/tmp/ouroborOS-checkpoints/`; supports resume after interruption.
-- **Python↔Bash boundary:** `state_machine._run_op()` invokes `ops/*.sh` with `--action` and `--target` flags; `configure.sh` driven by environment variables.
-- **archiso profile layout:** `airootfs/` mirrors live ISO filesystem; `efiboot/` contains systemd-boot entries; `profiledef.sh` defines build metadata.
-- **Docker-based test infra:** All CI tests run in an Arch Linux container built from `tests/Dockerfile`.
+- **FSM con checkpoints:** Estado del instalador persistido por fase en `/tmp/ouroborOS-checkpoints/`; soporta reanudación tras interrupciones.
+- **Límite Python↔Bash:** `state_machine._run_op()` invoca `ops/*.sh` con flags `--action` y `--target`; `configure.sh` es impulsado por variables de entorno.
+- **Layout del perfil archiso:** `airootfs/` refleja el filesystem del ISO live; `efiboot/` contiene las entradas de systemd-boot; `profiledef.sh` define los metadatos de build.
+- **Infra de tests basada en Docker:** Todos los tests de CI corren en un contenedor Arch Linux construido desde `tests/Dockerfile`.
 
-## COMMANDS
+## COMANDOS
 
 ```bash
-# Setup (Arch host)
+# Setup (host Arch)
 bash src/scripts/setup-dev-env.sh
 
-# Build ISO
+# Construir ISO
 sudo bash src/scripts/build-iso.sh --clean
 
-# Flash USB
+# Flashear USB
 sudo bash src/scripts/flash-usb.sh --iso out/ouroborOS-*.iso
 
-# Test in QEMU
+# Test en QEMU
 qemu-system-x86_64 -enable-kvm -m 2048 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
   -cdrom out/ouroborOS-*.iso -boot d
 
-# Unit tests
+# Tests unitarios
 pytest src/installer/tests/ -v
 
-# Full CI suite (Docker)
+# Suite CI completa (Docker)
 docker-compose -f tests/docker-compose.yml run --rm full-suite
 
-# Individual test suites
+# Suites de test individuales
 docker-compose -f tests/docker-compose.yml run --rm shellcheck-suite
 docker-compose -f tests/docker-compose.yml run --rm pytest-suite
 docker-compose -f tests/docker-compose.yml run --rm smoke-test
@@ -127,9 +139,9 @@ tests/scripts/lint-python.sh
 tests/scripts/test-shellcheck.sh
 ```
 
-## NOTES
+## NOTAS
 
-- No `pyproject.toml`, `pytest.ini`, `conftest.py`, or `Makefile` — test config is in `tests/scripts/`.
-- `out/` contains build artifacts (ISO), gitignored.
-- `IMPLEMENTATION_PLAN.md` tracks phase progress; currently at Phase 3 complete.
-- `skills/` and `agents/` are non-code knowledge bases for Claude Code; not executed.
+- No hay `pyproject.toml`, `pytest.ini`, `conftest.py`, ni `Makefile` — la config de tests está en `tests/scripts/`.
+- `out/` contiene artefactos de build (ISO), gitignored.
+- `IMPLEMENTATION_PLAN.md` trackea progreso de fases; actualmente en Phase 3 completa.
+- `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
