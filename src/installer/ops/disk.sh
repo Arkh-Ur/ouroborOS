@@ -294,23 +294,56 @@ unmount_all() {
 #   TARGET — currently-mounted install target (e.g. /mnt)
 generate_fstab() {
     local target="$1"
+    local root_device="$2"
 
     check_root
-
-    _log_info "Generating fstab using UUIDs..."
+    assert_block_device "$root_device"
 
     mkdir -p "${target}/etc"
     genfstab -U "$target" > "${target}/etc/fstab"
 
-    # Validate fstab was generated and contains expected entries
     validate_fstab "${target}/etc/fstab"
 
-    # genfstab outputs fstab lines like:
-    #   UUID=xxx  /  btrfs  rw,...,subvol=/@,...  0 0
-    # genfstab uses 'subvol=/@' (with leading slash); match both /@ and @ forms
     sed -i '/[sS]ubvol[sS]*=\/@[^a-z]\|[sS]ubvol[sS]*=@[^a-z]/s/\brw\b/ro/' "${target}/etc/fstab"
 
     _log_ok "fstab generated: ${target}/etc/fstab"
+}
+
+# copy_fstab_to_root TARGET ROOT_DEVICE
+#
+# ${target}/etc is currently @etc mounted over @'s /etc.
+# systemd reads /etc/fstab from @ (the root subvol) to mount subvolumes.
+# This function mounts @ on a temp dir, copies fstab into it, then unmounts.
+# Uses a temp mount to avoid "target is busy" errors from pacstrap.
+#
+# Args:
+#   TARGET       — install mount point (e.g. /mnt)
+#   ROOT_DEVICE  — btrfs block device (e.g. /dev/vda2)
+copy_fstab_to_root() {
+    local target="$1"
+    local root_device="$2"
+    local fstab="${target}/etc/fstab"
+
+    [[ -f "$fstab" ]] || return 1
+
+    _log_info "Copying fstab into root subvolume (@)..."
+
+    local tmp_root
+    tmp_root=$(mktemp -d)
+
+    mount -t btrfs -o "subvol=@,compress=zstd,noatime" "$root_device" "$tmp_root" || {
+        _log_warn "Could not mount @ subvolume on $tmp_root"
+        rmdir "$tmp_root"
+        return 1
+    }
+
+    mkdir -p "${tmp_root}/etc"
+    cp "$fstab" "${tmp_root}/etc/fstab"
+
+    umount "$tmp_root"
+    rmdir "$tmp_root"
+
+    _log_ok "fstab available in both @ and @etc subvolumes."
 }
 
 # validate_fstab FSTAB_FILE — check that fstab is valid and has required entries
@@ -459,8 +492,9 @@ prepare_disk() {
     mount_subvolumes "$root_device" "$target"
     mount_esp "$esp_dev" "$target"
 
-    # Step 6: Generate fstab
-    generate_fstab "$target"
+    generate_fstab "$target" "$root_device"
+
+    copy_fstab_to_root "$target" "$root_device"
 
     if [[ "$use_luks" == true ]]; then
         generate_crypttab "$target" "$root_part"
@@ -468,3 +502,70 @@ prepare_disk() {
 
     _log_ok "Disk preparation complete. System is ready for pacstrap."
 }
+
+# --- CLI dispatcher ---------------------------------------------------------
+
+_cli_usage() {
+    echo "Usage: $0 --action ACTION [options]" >&2
+    echo "Actions: prepare_disk, regenerate_fstab" >&2
+    echo "Options for prepare_disk:" >&2
+    echo "  --disk DEVICE   Target disk (e.g. /dev/vda)" >&2
+    echo "  --target PATH   Mount point (e.g. /mnt)" >&2
+    echo "  --luks PASS     Enable LUKS with passphrase" >&2
+    echo "Options for regenerate_fstab:" >&2
+    echo "  --target PATH       Mount point (e.g. /mnt)" >&2
+    echo "  --root-device DEV   Root block device (e.g. /dev/vda2)" >&2
+}
+
+if [[ "${1:-}" == "--action" ]]; then
+    shift
+    action="${1:?Missing action name}"
+    shift
+
+    case "$action" in
+        regenerate_fstab)
+            target=""
+            root_dev=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --target)       target="${2:?--target requires a value}"; shift 2 ;;
+                    --root-device)  root_dev="${2:?--root-device requires a value}"; shift 2 ;;
+                    *)              _log_error "Unknown option: $1"; _cli_usage; exit 1 ;;
+                esac
+            done
+            if [[ -z "$target" || -z "$root_dev" ]]; then
+                _log_error "regenerate_fstab requires --target and --root-device"
+                exit 1
+            fi
+            generate_fstab "$target" "$root_dev"
+            copy_fstab_to_root "$target" "$root_dev"
+            ;;
+        prepare_disk)
+            disk=""
+            target=""
+            luks_pass=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --disk)     disk="${2:?--disk requires a value}"; shift 2 ;;
+                    --target)   target="${2:?--target requires a value}"; shift 2 ;;
+                    --luks)     luks_pass="${2:?--luks requires a value}"; shift 2 ;;
+                    *)          _log_error "Unknown option: $1"; _cli_usage; exit 1 ;;
+                esac
+            done
+            if [[ -z "$disk" || -z "$target" ]]; then
+                _log_error "prepare_disk requires --disk and --target"
+                exit 1
+            fi
+            if [[ -n "$luks_pass" ]]; then
+                prepare_disk "$disk" "$target" --luks "$luks_pass"
+            else
+                prepare_disk "$disk" "$target"
+            fi
+            ;;
+        *)
+            _log_error "Unknown action: $action"
+            _cli_usage
+            exit 1
+            ;;
+    esac
+fi
