@@ -19,6 +19,7 @@ arch-install-scripts
 archiso
 mkinitcpio-archiso
 pacman-contrib
+reflector
 
 # Bootloader
 efibootmgr
@@ -31,6 +32,7 @@ amd-ucode
 iwd
 wireless_tools
 dhcpcd
+openssh
 
 # Terminal & TUI
 dialog

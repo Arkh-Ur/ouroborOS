@@ -20,4 +20,5 @@ file_permissions=(
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"
   ["/usr/local/bin/ouroborOS-installer"]="0:0:755"
+  ["/usr/local/bin/sshd-hostkeys"]="0:0:755"
 )

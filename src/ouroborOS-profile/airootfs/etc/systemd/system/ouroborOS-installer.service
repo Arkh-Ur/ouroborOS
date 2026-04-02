@@ -1,10 +1,12 @@
 [Unit]
 Description=ouroborOS Installer
 Documentation=https://github.com/Arkhur-Vo/ouroborOS
-# Run after tty1 is available and network is up
 After=getty@tty1.service
 After=systemd-networkd.service
+After=systemd-networkd-wait-online.service
 After=systemd-resolved.service
+After=sshd-setup.service
+Wants=systemd-networkd-wait-online.service
 Conflicts=getty@tty1.service
 
 [Service]
