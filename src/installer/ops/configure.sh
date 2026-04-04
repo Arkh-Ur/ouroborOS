@@ -79,10 +79,13 @@ write_to_root_subvolume() {
         return 1
     }
 
-    # Guarantee cleanup
-    trap "umount '${tmp_root}' 2>/dev/null; rmdir '${tmp_root}' 2>/dev/null" RETURN
-
+    # Run callback — cleanup inline to avoid RETURN trap leaking into caller
     "$callback" "$tmp_root" "$@"
+    local rc=$?
+
+    umount "$tmp_root" 2>/dev/null || true
+    rmdir "$tmp_root" 2>/dev/null || true
+    return "$rc"
 }
 
 # --- Logging ----------------------------------------------------------------
