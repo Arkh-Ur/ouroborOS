@@ -433,6 +433,7 @@ main() {
     # So certain files must exist directly on the @ subvolume.
 
     in_chroot systemctl enable getty@tty1.service
+    in_chroot systemctl enable sshd.service
 
     # /var/log/journal — on @var (rw overlay) with correct ownership
     mkdir -p "${TARGET}/var/log/journal"

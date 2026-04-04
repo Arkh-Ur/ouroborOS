@@ -483,6 +483,7 @@ class Installer:
             "efibootmgr",
             "sudo",
             "zram-generator",
+            "openssh",
         ] + self.config.extra_packages
 
         cmd = ["pacstrap", "-K", target] + packages
