@@ -182,7 +182,7 @@ configure_bootloader() {
         if [[ -n "$esp_disk" && -n "$esp_partnum" ]]; then
             efibootmgr -c -d "$esp_disk" -p "$esp_partnum" \
                 -L "ouroborOS" \
-                -l "\\systemd-bootx64.efi" 2>/dev/null || true
+                -l "\\EFI\\systemd-boot\\systemd-bootx64.efi" 2>/dev/null || true
             log_ok "UEFI boot entry registered via efibootmgr."
         fi
     fi
