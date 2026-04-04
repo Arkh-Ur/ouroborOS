@@ -165,11 +165,25 @@ EOF
 configure_bootloader() {
     log_info "Installing systemd-boot..."
 
-    if ! in_chroot bootctl install --path=/boot 2>/dev/null; then
-        log_warn "bootctl install failed (NVRAM unavailable?), retrying with --no-variables..."
-        if ! in_chroot bootctl install --path=/boot --no-variables; then
-            log_error "bootctl install failed completely"
-            return 1
+    in_chroot bootctl install --path=/boot --no-variables 2>/dev/null || {
+        log_error "bootctl install failed"
+        return 1
+    }
+
+    # Register boot entry in UEFI NVRAM from the host side.
+    # bootctl inside chroot cannot access real NVRAM, so we use
+    # efibootmgr from the live ISO host targeting the installed ESP.
+    local esp_part=""
+    esp_part=$(lsblk -ln -o NAME,FSTYPE,MOUNTPOINT | grep "${TARGET}/boot" | grep vfat | awk '{print $1}' | head -1) || true
+    if [[ -n "$esp_part" ]]; then
+        local esp_disk="/dev/$(lsblk -dno PKNAME "/dev/${esp_part}" 2>/dev/null)" || true
+        local esp_partnum=""
+        esp_partnum=$(cat "/sys/block/${esp_disk#/dev/}/$(basename "/dev/${esp_part}")/partition" 2>/dev/null) || true
+        if [[ -n "$esp_disk" && -n "$esp_partnum" ]]; then
+            efibootmgr -c -d "$esp_disk" -p "$esp_partnum" \
+                -L "ouroborOS" \
+                -l "\\systemd-bootx64.efi" 2>/dev/null || true
+            log_ok "UEFI boot entry registered via efibootmgr."
         fi
     fi
 

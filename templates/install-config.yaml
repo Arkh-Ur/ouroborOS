@@ -16,8 +16,8 @@ network:
   enable_resolved: true
 
 user:
-  username: admin
-  password: ouroborOS
+  username: hbuddenberg
+  password: 7907
   groups:
     - wheel
     - audio
