@@ -38,6 +38,53 @@ set -euo pipefail
 
 TARGET="$INSTALL_TARGET"
 
+# Discover the btrfs root device for temp-mount operations on subvolumes.
+# Must be called AFTER disk.sh has partitioned and formatted (FORMAT state).
+_ROOT_DEVICE=""
+_discover_root_device() {
+    if [[ -n "$_ROOT_DEVICE" ]]; then
+        return 0
+    fi
+    if [[ -n "${ROOT_DEVICE}" ]]; then
+        _ROOT_DEVICE="${ROOT_DEVICE}"
+        return 0
+    fi
+    local src
+    src=$(findmnt -n -o SOURCE --target "${TARGET}" 2>/dev/null || true)
+    _ROOT_DEVICE="${src%%\[*}"
+    if [[ -n "$_ROOT_DEVICE" ]]; then
+        return 0
+    fi
+    log_error "Cannot discover root device for temp-mount operations"
+    return 1
+}
+
+# write_to_root_subvolume CALLBACK [ARG...]
+#
+# Temp-mount the @ (root) subvolume, call CALLBACK(tmp_mount_dir [ARG...]),
+# then unmount.  Used to write files that must exist on the @ subvolume
+# because systemd reads them BEFORE the @etc overlay is mounted on boot.
+#
+# Cleanup is guaranteed via a trap — even on error the temp mount is released.
+write_to_root_subvolume() {
+    local callback="$1"; shift
+    _discover_root_device
+
+    local tmp_root
+    tmp_root=$(mktemp -d)
+
+    mount -t btrfs -o "subvol=@,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
+        log_warn "Could not temp-mount @ subvolume on ${tmp_root}"
+        rmdir "$tmp_root" 2>/dev/null || true
+        return 1
+    }
+
+    # Guarantee cleanup
+    trap "umount '${tmp_root}' 2>/dev/null; rmdir '${tmp_root}' 2>/dev/null" RETURN
+
+    "$callback" "$tmp_root" "$@"
+}
+
 # --- Logging ----------------------------------------------------------------
 
 log_info()  { printf '\033[0;34m[configure]\033[0m %s\n' "$*" >&2; }
@@ -377,20 +424,47 @@ main() {
     configure_immutable_root
     configure_os_release
 
-    # Enable getty on tty1 (VGA/VNC console) — serial-getty on ttyS0 is
-    # auto-enabled by systemd, but the graphical console needs explicit enable.
+    # --- Fixes that need to land on BOTH @etc (overlay) and @ (root subvolume) ---
+    # systemd loads unit files from @ BEFORE @etc mounts over /etc.
+    # journald starts before @var mounts over /var.
+    # So certain files must exist directly on the @ subvolume.
+
     in_chroot systemctl enable getty@tty1.service
 
-    # Ensure /var/log/journal exists so journald can store logs persistently.
-    # Without this the Journal Log Access Socket fails because the directory
-    # is inside the @var subvolume which may be empty on first boot.
+    # /var/log/journal — on @var (rw overlay) with correct ownership
     mkdir -p "${TARGET}/var/log/journal"
+    chown root:systemd-journal "${TARGET}/var/log/journal"
+    chmod 2755 "${TARGET}/var/log/journal"
 
-    # Prevent interactive firstboot prompt — all settings configured above.
-    # Write a proper machine-id INSIDE the target (not --root="" which writes
-    # to the host), then mask the service.
     in_chroot systemd-machine-id-setup
     in_chroot systemctl mask systemd-firstboot.service
+
+    # --- Write critical files to @ subvolume (pre-overlay) ---
+
+    _write_journal_placeholder() {
+        local mnt="$1"
+        mkdir -p "${mnt}/var/log/journal"
+        chown root:systemd-journal "${mnt}/var/log/journal"
+        chmod 2755 "${mnt}/var/log/journal"
+        log_ok "Journal placeholder written to @ subvolume."
+    }
+    write_to_root_subvolume _write_journal_placeholder || true
+
+    _write_firstboot_mask() {
+        local mnt="$1"
+        mkdir -p "${mnt}/etc/systemd/system"
+        ln -sf /dev/null "${mnt}/etc/systemd/system/systemd-firstboot.service"
+        log_ok "firstboot mask written to @ subvolume."
+    }
+    write_to_root_subvolume _write_firstboot_mask || true
+
+    _write_hostname_to_root() {
+        local mnt="$1"
+        mkdir -p "${mnt}/etc"
+        echo "${HOSTNAME}" > "${mnt}/etc/hostname"
+        log_ok "Hostname written to @ subvolume."
+    }
+    write_to_root_subvolume _write_hostname_to_root || true
 
     log_ok "All configuration steps complete."
 }
