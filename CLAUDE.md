@@ -26,7 +26,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Filesystem:** Btrfs subvolumes, root mounted read-only (`ro`)
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
-- **Installer:** Python state machine + whiptail TUI + Bash ops
+- **Installer:** Python state machine + Rich TUI (primary) + Bash ops
 - **Status:** Early development (v0.1 in progress)
 
 ---
@@ -46,7 +46,7 @@ ouroborOS/
 │   ├── installer/               ← Python installer
 │   │   ├── config.py            ← InstallerConfig + YAML loader
 │   │   ├── state_machine.py     ← FSM with checkpoints
-│   │   ├── tui.py               ← whiptail TUI layer
+│   │   ├── tui.py               ← Rich TUI (primary) + whiptail fallback
 │   │   ├── main.py              ← CLI entrypoint
 │   │   ├── ops/                 ← Bash operations
 │   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab
@@ -59,16 +59,21 @@ ouroborOS/
 │       ├── pacman.conf
 │       ├── airootfs/            ← Files copied into the live ISO
 │       └── efiboot/             ← systemd-boot entries
+├── templates/                   ← Default install config templates
+│   └── install-config.yaml      ← Interactive/unattended install config
 ├── docs/                        ← Documentation only (no scripts)
 │   ├── architecture/            ← System design decisions
 │   ├── build/                   ← ISO build process
 │   ├── installer/               ← Installer architecture
 │   ├── messages/                ← Project log and decisions
 │   ├── build-and-flash.md       ← How to build ISO and flash USB
+│   ├── build-and-test-automation.md ← Build process and test automation guide
 │   └── user-guide.md            ← End-user installation guide
 ├── tests/                       ← CI test scripts
 ├── agents/                      ← Multi-agent role definitions
-└── skills/                      ← Claude Code expert skill definitions
+├── skills/                      ← Claude Code expert skill definitions
+└── .github/
+    └── workflows/               ← CI workflows (lint, test, code-review, opencode)
 ```
 
 ---
@@ -99,7 +104,7 @@ ouroborOS/
 | DNS | systemd-resolved |
 | Home dirs | systemd-homed (optional) |
 | Installer logic | Python 3 |
-| Installer TUI | whiptail / dialog |
+| Installer TUI | Rich (primary) + whiptail (fallback) |
 | System ops | Bash |
 | ISO build | archiso (mkarchiso) |
 | Testing | pytest + QEMU |
@@ -203,6 +208,8 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 **Current phase:** Phase 3 complete — Installer TUI and State Machine
 
+**Next:** Phase 4 (systemd Integration)
+
 ---
 
 ## Important Files to Know
@@ -220,6 +227,9 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 | `src/scripts/flash-usb.sh` | Safe dd wrapper for USB flashing |
 | `src/installer/state_machine.py` | FSM implementation with checkpoints |
 | `src/installer/config.py` | InstallerConfig dataclass + YAML validation |
+| `templates/install-config.yaml` | Default unattended install config template |
+| `docs/build-and-test-automation.md` | Build process and test automation guide |
+| `docs/architecture/systemd-integration.md` | systemd integration design |
 | `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
 | `IMPLEMENTATION_PLAN.md` | Phased roadmap with milestones |
 
