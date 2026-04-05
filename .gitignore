@@ -40,3 +40,9 @@ imagen_*.img*
 src/temp/
 src/logs/
 build-tmp/
+
+# Archiso build artifacts
+src/ouroborOS-profile/airootfs/tmp/
+
+# Tool logs
+opencode.log
