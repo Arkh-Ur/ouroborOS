@@ -128,14 +128,18 @@ Boot the ISO in QEMU with UEFI:
 ```bash
 qemu-system-x86_64 \
   -enable-kvm \
-  -m 2048 \
   -cpu host \
-  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+  -m 2048 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
   -cdrom out/ouroborOS-*.iso \
   -boot d \
   -vga virtio \
   -display gtk
 ```
+
+> **OVMF path** varies by distro. Common alternatives:
+> - ArchLinux: `/usr/share/edk2/x64/OVMF_CODE.4m.fd` (package `edk2-ovmf`)
+> - Ubuntu/Debian: `/usr/share/OVMF/OVMF_CODE.fd`
 
 What you should see:
 1. systemd-boot menu with timeout (3 seconds)
@@ -144,24 +148,56 @@ What you should see:
 4. MOTD with ouroborOS branding
 5. Shell prompt (or installer launching automatically)
 
-To test the installer interactively in QEMU (with a virtual disk):
+To test the installer with a virtual disk (unattended install):
+
+```bash
+qemu-img create -f qcow2 /tmp/ouroboros-test.qcow2 20G
+
+qemu-system-x86_64 \
+  -enable-kvm \
+  -cpu host \
+  -smp 2 \
+  -m 2048 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+  -drive file=/tmp/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
+  -cdrom out/ouroborOS-*.iso \
+  -boot d \
+  -netdev user,id=net0 \
+  -device e1000,netdev=net0 \
+  -rtc base=utc,clock=host \
+  -serial file:/tmp/ouroboros-serial.log \
+  -vga virtio \
+  -display gtk
+```
+
+**Headless mode (VNC)** — for remote or CI environments:
 
 ```bash
 qemu-system-x86_64 \
   -enable-kvm \
-  -m 4096 \
   -cpu host \
-  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+  -smp 2 \
+  -m 2048 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+  -drive file=/tmp/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
   -cdrom out/ouroborOS-*.iso \
-  -drive file=/tmp/ouroboros-test.img,format=raw,if=virtio \
-  -boot d
+  -boot d \
+  -netdev user,id=net0 \
+  -device e1000,netdev=net0 \
+  -rtc base=utc,clock=host \
+  -serial file:/tmp/ouroboros-serial.log \
+  -vga virtio \
+  -display none \
+  -vnc :1
 ```
 
-Create the virtual disk first if it doesn't exist:
+Then connect with any VNC client on `localhost:5901`.
 
-```bash
-qemu-img create -f raw /tmp/ouroboros-test.img 20G
-```
+> **Important notes:**
+> - Use `-display none` (not `-nographic`) for headless+VNC. `-nographic` disables the VGA device entirely, leaving VNC with a blank screen.
+> - Keep `-m 2048` on hosts with ≤ 8 GB RAM. Using 4096 MB will trigger the OOM killer during pacstrap.
+> - Use `-device e1000` for networking. `virtio-net` can hang under sustained download load during pacstrap.
+> - Monitor the serial log: `tail -f /tmp/ouroboros-serial.log`
 
 ---
 
