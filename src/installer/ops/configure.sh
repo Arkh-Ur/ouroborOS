@@ -372,9 +372,13 @@ d  /var/usrlocal/lib   0755  root root  -  -
 d  /var/usrlocal/share 0755  root root  -  -
 EOF
 
-    # pacman hook: create Btrfs snapshot before upgrades
+    # pacman hooks: snapshot + remount rw before upgrade, remount ro after
+    # Two hooks are required because pacman writes to @(root RO) during upgrade.
+    # Pre: create snapshot, then remount / as rw so pacman can write.
+    # Post: remount / back to ro to restore the immutable guarantee.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
-    cat > "${TARGET}/etc/pacman.d/hooks/00-btrfs-snapshot.hook" << 'EOF'
+
+    cat > "${TARGET}/etc/pacman.d/hooks/00-pre-upgrade.hook" << 'EOF'
 [Trigger]
 Operation = Upgrade
 Operation = Install
@@ -383,20 +387,43 @@ Type = Package
 Target = *
 
 [Action]
-Description = Creating Btrfs snapshot before package changes...
+Description = Snapshot + remount rw before package changes...
 When = PreTransaction
-Exec = /usr/local/bin/ouroboros-pre-upgrade-snapshot
+Exec = /usr/local/bin/ouroboros-pre-upgrade
 EOF
 
-    # Install the pre-upgrade snapshot script
+    cat > "${TARGET}/etc/pacman.d/hooks/99-post-upgrade.hook" << 'EOF'
+[Trigger]
+Operation = Upgrade
+Operation = Install
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Remount root read-only after package changes...
+When = PostTransaction
+Exec = /usr/local/bin/ouroboros-post-upgrade
+EOF
+
+    # Install hook scripts
     mkdir -p "${TARGET}/usr/local/bin"
-    cat > "${TARGET}/usr/local/bin/ouroboros-pre-upgrade-snapshot" << 'SCRIPT'
+
+    cat > "${TARGET}/usr/local/bin/ouroboros-pre-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 source /usr/local/lib/ouroboros/snapshot.sh
 pre_upgrade_snapshot
+mount -o remount,rw /
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-pre-upgrade-snapshot"
+    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-pre-upgrade"
+
+    cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+mount -o remount,ro /
+SCRIPT
+    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-post-upgrade"
 
     # Install snapshot library to installed system
     mkdir -p "${TARGET}/usr/local/lib/ouroboros"
