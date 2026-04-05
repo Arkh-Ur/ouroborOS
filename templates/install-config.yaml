@@ -16,8 +16,8 @@ network:
   enable_resolved: true
 
 user:
-  username: hbuddenberg
-  password: 7907
+  username: admin
+  password: changeme
   groups:
     - wheel
     - audio
