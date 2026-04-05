@@ -79,6 +79,7 @@ class InstallerConfig:
     extra_packages: list[str] = field(default_factory=list)
     enable_luks: bool = False
     unattended: bool = False
+    post_install_action: str = "reboot"  # "reboot" | "shutdown" | "none"
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +236,15 @@ def load_config(path: Path) -> InstallerConfig:
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
     cfg.unattended = True
+
+    # Post-install action (optional — defaults to "reboot")
+    action = str(data.get("post_install_action", "reboot")).lower()
+    if action not in ("reboot", "shutdown", "none"):
+        raise ConfigValidationError(
+            f"Invalid post_install_action: '{action}'. "
+            "Must be 'reboot', 'shutdown', or 'none'."
+        )
+    cfg.post_install_action = action
 
     return cfg
 

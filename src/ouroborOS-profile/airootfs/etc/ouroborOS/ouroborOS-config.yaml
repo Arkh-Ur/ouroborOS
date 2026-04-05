@@ -16,8 +16,8 @@ network:
   enable_resolved: true
 
 user:
-  username: admin
-  password: changeme
+  username: hbuddenberg
+  password: 7907
   groups:
     - wheel
     - audio
@@ -28,6 +28,4 @@ user:
 extra_packages:
   - openssh
 
-# What to do after installation completes.
-# Options: "reboot" (default), "shutdown", "none"
-post_install_action: reboot
+post_install_action: shutdown

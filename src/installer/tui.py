@@ -886,17 +886,9 @@ class TUI:
                 padding=(1, 2),
             )
         )
-        self._console.print(
-            "\n  Remove the installation media."
-        )
-        self._console.print(
-            "  [bold]System will reboot in 10 seconds... (Enter to reboot now)[/]"
-        )
-        self._countdown(10)
+        self._console.print("\n  Remove the installation media.\n")
 
     def _whiptail_summary(self, config: Any) -> None:
-        import time
-
         text = (
             "Installation Complete!\n\n"
             f"  Disk:      {config.disk.device}\n"
@@ -905,8 +897,7 @@ class TUI:
             f"  User:      {config.user.username}\n"
             f"  Locale:    {config.locale.locale}\n"
             f"  Timezone:  {config.locale.timezone}\n\n"
-            "Remove the installation media.\n"
-            "System will reboot in 10 seconds."
+            "Remove the installation media."
         )
         _whiptail(
             *self._args(
@@ -916,7 +907,41 @@ class TUI:
                 str(self._WIDTH),
             )
         )
-        time.sleep(10)
+
+    # ------------------------------------------------------------------
+    # Post-install action
+    # ------------------------------------------------------------------
+
+    def show_post_install_action(self) -> str:
+        """Ask the user whether to reboot or shutdown after installation.
+
+        Returns ``"reboot"`` or ``"shutdown"``.
+        """
+        if self._backend == "rich":
+            return self._rich_post_install_action()
+        return self._whiptail_post_install_action()
+
+    def _rich_post_install_action(self) -> str:
+        return self._rich_select(
+            title="What next?",
+            prompt="Choose what to do after installation:",
+            items=[
+                ("reboot", "Restart the system now"),
+                ("shutdown", "Shut the system down"),
+            ],
+            default="reboot",
+        )
+
+    def _whiptail_post_install_action(self) -> str:
+        rc, _ = _whiptail(
+            *self._args(
+                "--yesno",
+                "Restart the system now?\n\nYes = Reboot   No = Shutdown",
+                str(self._HEIGHT),
+                str(self._WIDTH),
+            )
+        )
+        return "reboot" if rc == 0 else "shutdown"
 
     # ------------------------------------------------------------------
     # Error

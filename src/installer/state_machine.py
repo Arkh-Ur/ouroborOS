@@ -635,14 +635,24 @@ class Installer:
         self._update_progress(State.SNAPSHOT, 100, "Snapshot creado")
 
     def _handle_finish(self) -> None:
-        """FINISH — show completion summary and reboot."""
+        """FINISH — show completion summary, then reboot or shutdown."""
         if self.tui:
             self.tui.finish_install_progress()
             self.tui.show_summary(self.config)
+            action = self.tui.show_post_install_action()
+        else:
+            action = self.config.post_install_action
 
         log.info("Installation complete. System ready.")
-        log.info("Rebooting system...")
-        os.system("reboot")
+
+        if action == "shutdown":
+            log.info("Shutting down system...")
+            os.system("poweroff")
+        elif action == "none":
+            log.info("Post-install action: none. Staying up.")
+        else:
+            log.info("Rebooting system...")
+            os.system("reboot")
 
     # --- Preflight check helpers --------------------------------------------
 
