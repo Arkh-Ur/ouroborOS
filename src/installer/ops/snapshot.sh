@@ -272,3 +272,33 @@ pre_upgrade_snapshot() {
 
     _log_ok "Pre-upgrade snapshot complete."
 }
+
+# --- CLI dispatcher ---------------------------------------------------------
+
+if [[ "${1:-}" == "--action" ]]; then
+    shift
+    action="${1:?Missing action name}"
+    shift
+
+    case "$action" in
+        create_install_snapshot)
+            target=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --target) target="${2:?--target requires a value}"; shift 2 ;;
+                    *) _log_error "Unknown option: $1"; exit 1 ;;
+                esac
+            done
+            if [[ -z "$target" ]]; then
+                _log_error "create_install_snapshot requires --target"
+                exit 1
+            fi
+            create_install_snapshot "$target"
+            generate_snapshot_boot_entry "install" "${target}/boot" "quiet ro"
+            ;;
+        *)
+            _log_error "Unknown action: $action"
+            exit 1
+            ;;
+    esac
+fi
