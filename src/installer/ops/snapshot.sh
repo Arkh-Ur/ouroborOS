@@ -143,9 +143,15 @@ generate_snapshot_boot_entry() {
 
     mkdir -p "$entries_dir"
 
-    # Resolve root device and UUID from the currently mounted root
+    # Resolve root device and UUID.
+    # When called from the installer (live ISO), "/" is an overlayfs with no UUID.
+    # Instead, infer the target root from esp_path (e.g. /mnt/boot → /mnt) and
+    # look up the device mounted there.  Fall back to "/" for the installed system.
     local root_source root_dev root_uuid
-    root_source=$(findmnt -n -o SOURCE --target / 2>/dev/null || true)
+    local target_root
+    target_root=$(dirname "$esp_path")  # /mnt/boot → /mnt  |  /boot → /
+
+    root_source=$(findmnt -n -o SOURCE --target "$target_root" 2>/dev/null || true)
     root_dev="${root_source%%\[*}"
 
     if [[ -n "$root_dev" ]]; then
@@ -153,8 +159,8 @@ generate_snapshot_boot_entry() {
     fi
 
     if [[ -z "$root_uuid" ]]; then
-        _log_error "Cannot determine root UUID for snapshot boot entry"
-        return 1
+        _log_warn "Cannot determine root UUID for snapshot boot entry — skipping entry."
+        return 0
     fi
 
     local ucode_initrd=""
