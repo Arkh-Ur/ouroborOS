@@ -519,11 +519,18 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
-    # NOTE: sshd intentionally uses the default After=network.target ordering.
-    # In QEMU SLIRP, hostfwd (localhost:2222→guest:22) operates at the host TCP
-    # level — it does NOT require the guest to have a DHCP-assigned IP. sshd
-    # binding on 0.0.0.0:22 is sufficient. Adding After=network-online.target
-    # made sshd wait for DHCP which blocks the entire multi-user.target chain.
+
+    # sshd_config: disable reverse DNS lookup.
+    # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
+    # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.
+    # This causes a multi-second (up to 30s) hang at the banner exchange phase,
+    # making SSH appear broken even though sshd is running and port is open.
+    mkdir -p "${TARGET}/etc/ssh/sshd_config.d"
+    cat > "${TARGET}/etc/ssh/sshd_config.d/99-ouroboros.conf" << 'EOF'
+# Disable reverse DNS lookup — avoids timeout in environments without PTR records
+UseDNS no
+EOF
+    log_ok "sshd_config: UseDNS no."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
