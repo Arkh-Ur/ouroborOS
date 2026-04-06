@@ -634,6 +634,15 @@ main() {
             cp "${TARGET}/etc/systemd/resolved.conf" "${mnt}/etc/systemd/resolved.conf"
             log_ok "resolved.conf mirrored to @ subvolume."
         fi
+
+        # Mirror zram-generator.conf: systemd generators run before /etc mounts.
+        # Without this, zram-generator doesn't see the config and zram swap is
+        # never created.
+        if [[ -f "${TARGET}/etc/systemd/zram-generator.conf" ]]; then
+            mkdir -p "${mnt}/etc/systemd"
+            cp "${TARGET}/etc/systemd/zram-generator.conf" "${mnt}/etc/systemd/zram-generator.conf"
+            log_ok "zram-generator.conf mirrored to @ subvolume."
+        fi
     }
     write_to_root_subvolume _write_systemd_enables_to_root || true
 
