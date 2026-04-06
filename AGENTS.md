@@ -156,3 +156,4 @@ tests/scripts/test-shellcheck.sh
 - `templates/install-config.yaml` es la config default para instalación interactiva.
 - El ISO live tiene SSH server habilitado con generación de host keys al boot.
 - `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
+- `skills/qemu-e2e-test.md` — plan completo de test E2E: build ISO → install en QEMU (desatendido) → verificar sistema instalado via SSH + serial log.
