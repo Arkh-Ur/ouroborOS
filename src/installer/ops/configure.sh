@@ -225,7 +225,7 @@ configure_bootloader() {
         return 1
     fi
 
-    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro quiet loglevel=3 console=tty0 console=ttyS0,115200"
+    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0 console=ttyS0,115200"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
         local luks_uuid=""
@@ -316,6 +316,7 @@ EOF
     # Without this, network-online.target is reached instantly (no one satisfies it)
     # and sshd starts before the interface has an address.
     in_chroot systemctl enable systemd-networkd-wait-online.service
+    log_ok "systemd-networkd-wait-online enabled."
     in_chroot systemctl enable systemd-resolved.service
     in_chroot systemctl enable systemd-timesyncd.service
 

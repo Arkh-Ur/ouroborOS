@@ -30,7 +30,8 @@ git status  # must be clean
 
 ```bash
 # Build with workdir on /home to avoid /tmp space exhaustion (needs ~6-8 GB)
-sudo bash src/scripts/build-iso.sh --clean --workdir /home/ouroborOS-build
+# Use -S to feed password via stdin for autonomous/non-interactive testing
+echo "7907" | sudo -S bash src/scripts/build-iso.sh --clean --workdir /home/ouroborOS-build
 
 # Expected last lines:
 # [OK]  ouroborOS ISO ready.
