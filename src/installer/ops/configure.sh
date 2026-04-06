@@ -312,6 +312,10 @@ EOF
 
     # Enable networking units
     in_chroot systemctl enable systemd-networkd.service
+    # wait-online blocks network-online.target until DHCP assigns an IP.
+    # Without this, network-online.target is reached instantly (no one satisfies it)
+    # and sshd starts before the interface has an address.
+    in_chroot systemctl enable systemd-networkd-wait-online.service
     in_chroot systemctl enable systemd-resolved.service
     in_chroot systemctl enable systemd-timesyncd.service
 
@@ -509,6 +513,19 @@ main() {
 
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
+
+    # Drop-in: sshd must wait until DHCP assigns an IP before accepting connections.
+    # Default sshd.service has After=network.target (interface up, no IP yet).
+    # With this drop-in sshd waits for network-online.target, which is satisfied by
+    # systemd-networkd-wait-online (enabled above) only after DHCP completes.
+    # Wants= (not Requires=) so sshd still starts even if wait-online times out.
+    mkdir -p "${TARGET}/etc/systemd/system/sshd.service.d"
+    cat > "${TARGET}/etc/systemd/system/sshd.service.d/network-online.conf" << 'EOF'
+[Unit]
+After=network-online.target
+Wants=network-online.target
+EOF
+    log_ok "sshd.service drop-in: waits for network-online.target."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
