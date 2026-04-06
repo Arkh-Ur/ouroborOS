@@ -170,6 +170,18 @@ configure_bootloader() {
         return 1
     }
 
+    # Verify EFI binary and loader were written correctly.
+    # bootctl status cannot access NVRAM from chroot, so we check files directly.
+    if [[ ! -f "${TARGET}/boot/EFI/systemd/systemd-bootx64.efi" ]]; then
+        log_error "bootctl install failed: EFI binary missing at boot/EFI/systemd/systemd-bootx64.efi"
+        return 1
+    fi
+    if [[ ! -f "${TARGET}/boot/loader/loader.conf" ]]; then
+        log_error "bootctl install failed: loader.conf missing at boot/loader/loader.conf"
+        return 1
+    fi
+    log_ok "bootctl: EFI binary and loader.conf verified."
+
     # Register boot entry in UEFI NVRAM from the host side.
     # bootctl inside chroot cannot access real NVRAM, so we use
     # efibootmgr from the live ISO host targeting the installed ESP.
@@ -286,8 +298,17 @@ RouteMetric=20
 UseDNS=true
 EOF
 
-    # systemd-resolved stub resolver symlink
+    # systemd-resolved: stub resolver symlink + DoT/DNSSEC config
     ln -sfn /run/systemd/resolve/stub-resolv.conf "${TARGET}/etc/resolv.conf"
+
+    mkdir -p "${TARGET}/etc/systemd"
+    cat > "${TARGET}/etc/systemd/resolved.conf" << 'EOF'
+[Resolve]
+DNS=1.1.1.1 9.9.9.9
+FallbackDNS=8.8.8.8
+DNSOverTLS=opportunistic
+DNSSEC=allow-downgrade
+EOF
 
     # Enable networking units
     in_chroot systemctl enable systemd-networkd.service
@@ -390,6 +411,19 @@ Target = *
 Description = Snapshot + remount rw before package changes...
 When = PreTransaction
 Exec = /usr/local/bin/ouroboros-pre-upgrade
+EOF
+
+    # Keep systemd-boot EFI binary in sync when systemd itself is upgraded.
+    cat > "${TARGET}/etc/pacman.d/hooks/50-bootctl-update.hook" << 'EOF'
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = systemd
+
+[Action]
+Description = Updating systemd-boot after systemd upgrade...
+When = PostTransaction
+Exec = /usr/bin/bootctl update --graceful
 EOF
 
     cat > "${TARGET}/etc/pacman.d/hooks/99-post-upgrade.hook" << 'EOF'
