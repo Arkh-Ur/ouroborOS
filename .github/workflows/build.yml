@@ -1,0 +1,102 @@
+name: Build ISO
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ouroborOS ISO
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            archiso \
+            dosfstools \
+            e2fsprogs \
+            squashfs-tools \
+            libisoburn \
+            git \
+            erofs-utils \
+            mtools
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up loop devices
+        run: |
+          for i in $(seq 0 7); do
+            mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
+          done
+          modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Build ISO
+        run: |
+          bash src/scripts/build-iso.sh \
+            --clean \
+            --workdir /tmp/ouroborOS-build \
+            --output out/
+
+      - name: Generate SHA256 checksum
+        run: |
+          cd out/
+          sha256sum ouroborOS-*.iso > ouroborOS-SHA256SUMS.txt
+          cat ouroborOS-SHA256SUMS.txt
+
+      - name: Verify ISO size (800 MiB – 2.5 GiB)
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          SIZE=$(stat -c%s "$ISO")
+          MIN=$((800 * 1024 * 1024))
+          MAX=$((2560 * 1024 * 1024))
+          echo "ISO size: $(( SIZE / 1024 / 1024 )) MiB"
+          if [[ $SIZE -lt $MIN ]]; then
+            echo "::error::ISO too small: $(( SIZE / 1024 / 1024 )) MiB (min 800 MiB)"
+            exit 1
+          fi
+          if [[ $SIZE -gt $MAX ]]; then
+            echo "::error::ISO too large: $(( SIZE / 1024 / 1024 )) MiB (max 2560 MiB)"
+            exit 1
+          fi
+          echo "ISO size OK."
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ouroborOS-iso-${{ github.sha }}
+          path: |
+            out/ouroborOS-*.iso
+            out/ouroborOS-SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Write build summary
+        if: always()
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -1 || echo "not built")
+          SIZE_MB=0
+          if [[ -f "$ISO" ]]; then
+            SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 ))
+          fi
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## ouroborOS ISO Build
+
+          | Field | Value |
+          |-------|-------|
+          | Branch | \`${{ github.ref_name }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | ISO | \`$(basename "$ISO" 2>/dev/null || echo "N/A")\` |
+          | Size | ${SIZE_MB} MiB |
+          | SHA256 | \`$(cat out/ouroborOS-SHA256SUMS.txt 2>/dev/null | awk '{print $1}' || echo "N/A")\` |
+          EOF
