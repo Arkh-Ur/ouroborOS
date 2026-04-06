@@ -510,6 +510,12 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
 
+    # Pre-generate SSH host keys during install so sshd can start immediately
+    # on first boot without waiting for entropy. Without this, sshd resets
+    # connections during key generation (kex_exchange_identification error).
+    in_chroot ssh-keygen -A 2>/dev/null || true
+    log_ok "SSH host keys pre-generated."
+
     # /var/log/journal — on @var (rw overlay) with correct ownership
     mkdir -p "${TARGET}/var/log/journal"
     chown root:systemd-journal "${TARGET}/var/log/journal"
