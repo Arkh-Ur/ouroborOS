@@ -518,36 +518,12 @@ main() {
 
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
-
-    # Drop-in: sshd must wait until DHCP assigns an IP before accepting connections.
-    # Default sshd.service has After=network.target (interface up, no IP yet).
-    # With this drop-in sshd waits for network-online.target, which is satisfied by
-    # systemd-networkd-wait-online (enabled above) only after DHCP completes.
-    # Wants= (not Requires=) so sshd still starts even if wait-online times out.
-    mkdir -p "${TARGET}/etc/systemd/system/sshd.service.d"
-    cat > "${TARGET}/etc/systemd/system/sshd.service.d/network-online.conf" << 'EOF'
-[Unit]
-After=network-online.target
-Wants=network-online.target
-EOF
-    log_ok "sshd.service drop-in: waits for network-online.target."
-
-    # Drop-in: limit wait-online timeout so it doesn't block boot if DHCP is slow.
-    # Default TimeoutStartSec can be 2-3 min. With Wants= in sshd, sshd starts
-    # anyway when wait-online times out — but we don't want 3 min of blocked boot.
-    # Override ExecStart to pass --timeout=30 to the binary directly.
-    # The base unit has TimeoutStartSec=0 (infinite); drop-in cannot reliably
-    # override that. Passing --timeout=30 to the binary guarantees it exits
-    # after 30s even if DHCP never completes. --any means succeed if at least
-    # one managed interface is online (not all), so loopback or unconfigured
-    # interfaces don't block the wait.
-    mkdir -p "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d"
-    cat > "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf" << 'EOF'
-[Service]
-ExecStart=
-ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --timeout=30
-EOF
-    log_ok "wait-online timeout set to 30s (--any --timeout=30)."
+    log_ok "sshd enabled (uses default After=network.target)."
+    # NOTE: sshd intentionally uses the default After=network.target ordering.
+    # In QEMU SLIRP, hostfwd (localhost:2222→guest:22) operates at the host TCP
+    # level — it does NOT require the guest to have a DHCP-assigned IP. sshd
+    # binding on 0.0.0.0:22 is sufficient. Adding After=network-online.target
+    # made sshd wait for DHCP which blocks the entire multi-user.target chain.
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
@@ -624,9 +600,7 @@ EOF
             network-online.target.wants \
             sysinit.target.wants \
             sockets.target.wants \
-            getty.target.wants \
-            sshd.service.d \
-            systemd-networkd-wait-online.service.d; do
+            getty.target.wants; do
             if [[ -d "${src}/${dir}" ]]; then
                 mkdir -p "${dst}/${dir}"
                 cp -a "${src}/${dir}/." "${dst}/${dir}/"
