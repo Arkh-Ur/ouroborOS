@@ -403,25 +403,12 @@ d  /var/usrlocal/lib   0755  root root  -  -
 d  /var/usrlocal/share 0755  root root  -  -
 EOF
 
-    # pacman hooks: snapshot + remount rw before upgrade, remount ro after
-    # Two hooks are required because pacman writes to @(root RO) during upgrade.
-    # Pre: create snapshot, then remount / as rw so pacman can write.
-    # Post: remount / back to ro to restore the immutable guarantee.
+    # pacman hooks: only PostTransaction hooks here.
+    # PreTransaction remount is NOT done via hook — pacman checks filesystem
+    # writability BEFORE running any hook, making PreTransaction remount useless.
+    # Instead, ouroboros-upgrade (wrapper) handles remount + snapshot before
+    # invoking the real pacman binary.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
-
-    cat > "${TARGET}/etc/pacman.d/hooks/00-pre-upgrade.hook" << 'EOF'
-[Trigger]
-Operation = Upgrade
-Operation = Install
-Operation = Remove
-Type = Package
-Target = *
-
-[Action]
-Description = Snapshot + remount rw before package changes...
-When = PreTransaction
-Exec = /usr/local/bin/ouroboros-pre-upgrade
-EOF
 
     # Keep systemd-boot EFI binary in sync when systemd itself is upgraded.
     cat > "${TARGET}/etc/pacman.d/hooks/50-bootctl-update.hook" << 'EOF'
@@ -450,22 +437,55 @@ When = PostTransaction
 Exec = /usr/local/bin/ouroboros-post-upgrade
 EOF
 
-    # Install hook scripts
+    # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
-    cat > "${TARGET}/usr/local/bin/ouroboros-pre-upgrade" << 'SCRIPT'
+    # ouroboros-upgrade — the ONLY safe way to install/upgrade packages on ouroborOS.
+    # pacman checks filesystem writability before PreTransaction hooks run, so a hook
+    # cannot remount rw in time. This wrapper:
+    #   1. Remounts / rw so pacman can write
+    #   2. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
+    #   3. Invokes real pacman with all arguments forwarded
+    #   4. The 99-post-upgrade hook remounts / ro after the transaction
+    #
+    # Usage: sudo ouroboros-upgrade -Syu
+    #        sudo ouroboros-upgrade -S <pkg>
+    #        sudo ouroboros-upgrade -R <pkg>
+    cat > "${TARGET}/usr/local/bin/ouroboros-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo /usr/local/bin/ouroboros-upgrade "$@"
+fi
+
 source /usr/local/lib/ouroboros/snapshot.sh
-pre_upgrade_snapshot
+
+echo "[ouroboros] Preparing package operation..."
+
+# Step 1: Remount root rw — must happen BEFORE pacman checks disk space
 mount -o remount,rw /
+echo "[ouroboros] Root remounted read-write"
+
+# Step 2: Create pre-upgrade Btrfs snapshot (timestamped, with boot entry)
+pre_upgrade_snapshot
+
+# Step 3: Run real pacman — 99-post-upgrade hook will remount ro after
+echo "[ouroboros] Running pacman $*"
+exec /usr/bin/pacman "$@"
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-pre-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-upgrade"
 
     cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
-mount -o remount,ro /
+# Remount root read-only. If busy (active SSH session or open files), skip
+# gracefully — the fstab mount with ro option restores immutability on next boot.
+if mount -o remount,ro / 2>/dev/null; then
+    echo "[ouroboros] Root remounted read-only"
+else
+    echo "[ouroboros] Root busy — will be remounted ro on next boot (fstab)"
+fi
 SCRIPT
     chmod 0755 "${TARGET}/usr/local/bin/ouroboros-post-upgrade"
 
