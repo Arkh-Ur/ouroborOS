@@ -586,3 +586,221 @@ class TestWhiptailPassphraseInput:
         ), patch.object(whiptail_tui, "show_error"):
             with pytest.raises(TUIError, match="3 attempts"):
                 whiptail_tui.show_passphrase_input()
+
+
+# ---------------------------------------------------------------------------
+# _get_whiptail_path
+# ---------------------------------------------------------------------------
+
+
+class TestGetWhiptailPath:
+    def test_raises_when_not_installed(self) -> None:
+        from installer.tui import _get_whiptail_path
+        with patch("installer.tui.shutil.which", return_value=None):
+            with pytest.raises(TUIError, match="whiptail not installed"):
+                _get_whiptail_path()
+
+    def test_returns_path_when_found(self) -> None:
+        from installer.tui import _get_whiptail_path
+        with patch("installer.tui.shutil.which", return_value="/usr/bin/whiptail"):
+            assert _get_whiptail_path() == "/usr/bin/whiptail"
+
+
+# ---------------------------------------------------------------------------
+# Whiptail private helpers: _input_box, _password_box, _select_from_list
+# ---------------------------------------------------------------------------
+
+
+class TestWhiptailHelpers:
+    def test_input_box_returns_value(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "typed value")):
+            assert whiptail_tui._input_box("Title", "Prompt") == "typed value"
+
+    def test_input_box_cancel_raises(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(1, "")):
+            with pytest.raises(TUIError, match="cancelled input"):
+                whiptail_tui._input_box("Title", "Prompt")
+
+    def test_password_box_returns_value(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "s3cr3t")):
+            assert whiptail_tui._password_box("Title", "Prompt") == "s3cr3t"
+
+    def test_password_box_cancel_raises(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(1, "")):
+            with pytest.raises(TUIError, match="cancelled password"):
+                whiptail_tui._password_box("Title", "Prompt")
+
+
+# ---------------------------------------------------------------------------
+# Whiptail: show_hostname_input, show_partition_preview, show_summary
+# ---------------------------------------------------------------------------
+
+
+class TestWhiptailMiscScreens:
+    def test_hostname_input_whiptail(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_input_box", return_value="my-host"):
+            assert whiptail_tui.show_hostname_input() == "my-host"
+
+    def test_partition_preview_calls_whiptail(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "")) as mock_wt:
+            whiptail_tui.show_partition_preview("/dev/sda", False)
+        mock_wt.assert_called_once()
+        assert "--msgbox" in mock_wt.call_args[0]
+
+    def test_partition_preview_luks(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "")) as mock_wt:
+            whiptail_tui.show_partition_preview("/dev/sda", True)
+        call_args = " ".join(str(a) for a in mock_wt.call_args[0])
+        assert "LUKS" in call_args or "encrypted" in call_args
+
+    def test_summary_whiptail(self, whiptail_tui: TUI) -> None:
+        config = MagicMock()
+        config.disk.device = "/dev/sda"
+        config.disk.use_luks = False
+        config.network.hostname = "test"
+        config.user.username = "user"
+        config.locale.locale = "en_US.UTF-8"
+        config.locale.timezone = "UTC"
+        with patch("installer.tui._whiptail", return_value=(0, "")) as mock_wt:
+            whiptail_tui.show_summary(config)
+        mock_wt.assert_called_once()
+        assert "--msgbox" in mock_wt.call_args[0]
+
+
+# ---------------------------------------------------------------------------
+# show_post_install_action
+# ---------------------------------------------------------------------------
+
+
+class TestShowPostInstallAction:
+    def test_rich_reboot(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="reboot"):
+            assert rich_tui.show_post_install_action() == "reboot"
+
+    def test_rich_shutdown(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="shutdown"):
+            assert rich_tui.show_post_install_action() == "shutdown"
+
+    def test_whiptail_reboot(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "")):
+            assert whiptail_tui.show_post_install_action() == "reboot"
+
+    def test_whiptail_shutdown(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(1, "")):
+            assert whiptail_tui.show_post_install_action() == "shutdown"
+
+
+# ---------------------------------------------------------------------------
+# _rich_select
+# ---------------------------------------------------------------------------
+
+
+class TestRichSelect:
+    def test_returns_selected_item(self, rich_tui: TUI) -> None:
+        items = [("opt1", "Option 1"), ("opt2", "Option 2")]
+        with _patch_rich() as mocks:
+            mocks["IntPrompt"].ask.return_value = 1
+            result = rich_tui._rich_select("Title", "Choose:", items, default="opt1")
+        assert result == "opt1"
+
+    def test_second_item(self, rich_tui: TUI) -> None:
+        items = [("opt1", "Option 1"), ("opt2", "Option 2")]
+        with _patch_rich() as mocks:
+            mocks["IntPrompt"].ask.return_value = 2
+            result = rich_tui._rich_select("Title", "Choose:", items)
+        assert result == "opt2"
+
+    def test_out_of_range_then_valid(self, rich_tui: TUI) -> None:
+        items = [("opt1", "Option 1"), ("opt2", "Option 2")]
+        with _patch_rich() as mocks:
+            mocks["IntPrompt"].ask.side_effect = [99, 1]
+            result = rich_tui._rich_select("Title", "Choose:", items)
+        assert result == "opt1"
+
+
+# ---------------------------------------------------------------------------
+# show_wifi_connect dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestShowWifiConnect:
+    def test_rich_backend_calls_rich_method(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_wifi_connect", return_value=True) as mock:
+            result = rich_tui.show_wifi_connect()
+        assert result is True
+        mock.assert_called_once()
+
+    def test_whiptail_backend_calls_whiptail_method(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_whiptail_wifi_connect", return_value=False) as mock:
+            result = whiptail_tui.show_wifi_connect()
+        assert result is False
+        mock.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _find_wifi_interface
+# ---------------------------------------------------------------------------
+
+
+class TestFindWifiInterface:
+    def test_returns_none_when_iw_fails(self, rich_tui: TUI) -> None:
+        fail = MagicMock()
+        fail.returncode = 1
+        fail.stdout = ""
+        with patch("subprocess.run", return_value=fail):
+            assert rich_tui._find_wifi_interface() is None
+
+    def test_returns_station_interface(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype station\n"
+        )
+        with patch("subprocess.run", return_value=ok):
+            assert rich_tui._find_wifi_interface() == "wlan0"
+
+    def test_returns_none_when_no_station(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype AP\n"
+        )
+        with patch("subprocess.run", return_value=ok):
+            assert rich_tui._find_wifi_interface() is None
+
+
+# ---------------------------------------------------------------------------
+# Rich passphrase: short passphrase retry
+# ---------------------------------------------------------------------------
+
+
+class TestRichPassphraseShortRetry:
+    def test_short_passphrase_then_valid(self, rich_tui: TUI) -> None:
+        with _patch_rich() as mocks:
+            # First attempt: passphrase "ab" matches confirm "ab" but too short
+            # Second attempt: "secure123" matches "secure123" and is long enough
+            mocks["Prompt"].ask.side_effect = ["ab", "ab", "secure123", "secure123"]
+            result = rich_tui.show_passphrase_input()
+        assert result == "secure123"
+
+
+# ---------------------------------------------------------------------------
+# Rich user creation: short password retry
+# ---------------------------------------------------------------------------
+
+
+class TestRichUserCreationShortPassword:
+    def test_short_password_then_valid(self, rich_tui: TUI) -> None:
+        with _patch_rich() as mocks:
+            # username, then short/short, then valid/valid
+            mocks["Prompt"].ask.side_effect = [
+                "alice",
+                "hi", "hi",
+                "validpassword", "validpassword",
+            ]
+            result = rich_tui.show_user_creation()
+        assert result["username"] == "alice"
