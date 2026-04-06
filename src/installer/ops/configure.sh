@@ -609,14 +609,17 @@ EOF
         local dst="${mnt}/etc/systemd/system"
         mkdir -p "${dst}"
 
-        # Directories whose contents must exist on @ for early-boot scheduling
+        # Directories whose contents must exist on @ for early-boot scheduling.
+        # Includes .target.wants (enable symlinks) AND service drop-ins that
+        # must take effect before @etc is mounted over /etc.
         for dir in \
             multi-user.target.wants \
             network-online.target.wants \
             sysinit.target.wants \
             sockets.target.wants \
             getty.target.wants \
-            sshd.service.d; do
+            sshd.service.d \
+            systemd-networkd-wait-online.service.d; do
             if [[ -d "${src}/${dir}" ]]; then
                 mkdir -p "${dst}/${dir}"
                 cp -a "${src}/${dir}/." "${dst}/${dir}/"
