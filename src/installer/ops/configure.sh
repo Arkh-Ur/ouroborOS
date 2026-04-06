@@ -511,6 +511,22 @@ main() {
     }
     write_to_root_subvolume _write_hostname_to_root || true
 
+    # Critical /etc files must exist on @ (root subvolume) because systemd reads
+    # them before @etc is overlaid on /etc. If missing and /etc is already RO,
+    # systemd cannot resolve groups/users → journal socket and other early units fail.
+    # Files needed: machine-id, passwd, group, shadow, gshadow.
+    _write_etc_to_root() {
+        local mnt="$1"
+        mkdir -p "${mnt}/etc"
+        for f in machine-id passwd group shadow gshadow; do
+            if [[ -f "${TARGET}/etc/${f}" ]]; then
+                cp "${TARGET}/etc/${f}" "${mnt}/etc/${f}"
+            fi
+        done
+        log_ok "Critical /etc files written to @ subvolume (machine-id, passwd, group, shadow, gshadow)."
+    }
+    write_to_root_subvolume _write_etc_to_root || true
+
     log_ok "All configuration steps complete."
 }
 
