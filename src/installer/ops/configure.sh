@@ -585,6 +585,34 @@ EOF
     }
     write_to_root_subvolume _write_etc_to_root || true
 
+    # systemd reads /etc/systemd/system/ from @ BEFORE fstab mounts /etc from @etc.
+    # Any symlink created by `systemctl enable` lives in @etc and is invisible to
+    # systemd at early boot.  We must mirror those symlinks onto @ so that networkd,
+    # resolved, sshd, timesyncd and their wait-online deps are actually scheduled.
+    _write_systemd_enables_to_root() {
+        local mnt="$1"
+        local src="${TARGET}/etc/systemd/system"
+        local dst="${mnt}/etc/systemd/system"
+        mkdir -p "${dst}"
+
+        # Directories whose contents must exist on @ for early-boot scheduling
+        for dir in \
+            multi-user.target.wants \
+            network-online.target.wants \
+            sysinit.target.wants \
+            sockets.target.wants \
+            getty.target.wants \
+            sshd.service.d; do
+            if [[ -d "${src}/${dir}" ]]; then
+                mkdir -p "${dst}/${dir}"
+                cp -a "${src}/${dir}/." "${dst}/${dir}/"
+            fi
+        done
+
+        log_ok "systemd enable symlinks mirrored to @ subvolume."
+    }
+    write_to_root_subvolume _write_systemd_enables_to_root || true
+
     log_ok "All configuration steps complete."
 }
 
