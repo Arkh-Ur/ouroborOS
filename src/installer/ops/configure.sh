@@ -523,14 +523,11 @@ main() {
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
     # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.
-    # This causes a multi-second (up to 30s) hang at the banner exchange phase,
-    # making SSH appear broken even though sshd is running and port is open.
-    mkdir -p "${TARGET}/etc/ssh/sshd_config.d"
-    cat > "${TARGET}/etc/ssh/sshd_config.d/99-ouroboros.conf" << 'EOF'
-# Disable reverse DNS lookup — avoids timeout in environments without PTR records
-UseDNS no
-EOF
-    log_ok "sshd_config: UseDNS no."
+    # This causes a 30s+ hang at banner exchange even though sshd is running.
+    # Append directly to sshd_config — Arch openssh does not read sshd_config.d/
+    # by default (no Include directive in the default config).
+    echo "UseDNS no" >> "${TARGET}/etc/ssh/sshd_config"
+    log_ok "sshd_config: UseDNS no (appended to sshd_config)."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
