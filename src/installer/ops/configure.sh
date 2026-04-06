@@ -590,6 +590,11 @@ main() {
     # Any symlink created by `systemctl enable` lives in @etc and is invisible to
     # systemd at early boot.  We must mirror those symlinks onto @ so that networkd,
     # resolved, sshd, timesyncd and their wait-online deps are actually scheduled.
+    #
+    # CRITICAL: systemd-networkd and systemd-resolved also start BEFORE /etc is
+    # mounted (network-pre.target happens in sysinit, before local-fs.target).
+    # Their config files (.network, resolved.conf) live on @etc and are invisible
+    # at that point.  We must copy them to @ so they are picked up on first read.
     _write_systemd_enables_to_root() {
         local mnt="$1"
         local src="${TARGET}/etc/systemd/system"
@@ -612,6 +617,23 @@ main() {
         done
 
         log_ok "systemd enable symlinks mirrored to @ subvolume."
+
+        # Mirror .network files: networkd starts BEFORE /etc is mounted and reads
+        # /etc/systemd/network/ from @ directly.  Without this, no interface is
+        # configured and DHCP never runs.
+        if [[ -d "${TARGET}/etc/systemd/network" ]]; then
+            mkdir -p "${mnt}/etc/systemd/network"
+            cp -a "${TARGET}/etc/systemd/network/." "${mnt}/etc/systemd/network/"
+            log_ok ".network files mirrored to @ subvolume."
+        fi
+
+        # Mirror resolved.conf: systemd-resolved also starts before /etc mounts.
+        # Without this, DoT/DNS config is ignored on first boot.
+        if [[ -f "${TARGET}/etc/systemd/resolved.conf" ]]; then
+            mkdir -p "${mnt}/etc/systemd"
+            cp "${TARGET}/etc/systemd/resolved.conf" "${mnt}/etc/systemd/resolved.conf"
+            log_ok "resolved.conf mirrored to @ subvolume."
+        fi
     }
     write_to_root_subvolume _write_systemd_enables_to_root || true
 
