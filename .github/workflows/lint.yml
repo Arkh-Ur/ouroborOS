@@ -110,7 +110,9 @@ jobs:
           echo "Found ${#PY_FILES[@]} Python file(s)."
 
           # --output-format=github produces inline PR annotations
+          # --line-length 120: project standard (some log/string lines exceed 88)
           ruff check \
             --select "E,W,F,I,UP,ANN001,ANN201,E722" \
+            --line-length 120 \
             --output-format github \
             "${PY_FILES[@]}"

@@ -15,7 +15,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build test image
-        run: docker build -t ouroboros-test:ci tests/
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
 
       - name: Run shellcheck suite
         run: |
@@ -50,7 +55,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build test image
-        run: docker build -t ouroboros-test:ci tests/
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
 
       - name: Run Python lint
         run: |
@@ -76,7 +86,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build test image
-        run: docker build -t ouroboros-test:ci tests/
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
 
       - name: Run smoke test
         run: |
