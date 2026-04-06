@@ -448,6 +448,18 @@ class Installer:
 
         log.info("Pacman keyring initialised.")
 
+    def _detect_microcode_package(self) -> str | None:
+        """Return the appropriate microcode package for this CPU, or None."""
+        try:
+            cpuinfo = Path("/proc/cpuinfo").read_text()
+            if "GenuineIntel" in cpuinfo:
+                return "intel-ucode"
+            if "AuthenticAMD" in cpuinfo:
+                return "amd-ucode"
+        except OSError:
+            pass
+        return None
+
     def _handle_install(self) -> None:
         """INSTALL — pacstrap base system with automatic retries."""
         target = self.config.install_target
@@ -485,6 +497,11 @@ class Installer:
             "zram-generator",
             "openssh",
         ] + self.config.extra_packages
+
+        ucode = self._detect_microcode_package()
+        if ucode:
+            log.info("Detected CPU microcode package: %s", ucode)
+            packages.insert(0, ucode)
 
         cmd = ["pacstrap", "-K", target] + packages
         max_retries = 10
