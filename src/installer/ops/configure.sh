@@ -535,12 +535,19 @@ EOF
     # Drop-in: limit wait-online timeout so it doesn't block boot if DHCP is slow.
     # Default TimeoutStartSec can be 2-3 min. With Wants= in sshd, sshd starts
     # anyway when wait-online times out — but we don't want 3 min of blocked boot.
+    # Override ExecStart to pass --timeout=30 to the binary directly.
+    # The base unit has TimeoutStartSec=0 (infinite); drop-in cannot reliably
+    # override that. Passing --timeout=30 to the binary guarantees it exits
+    # after 30s even if DHCP never completes. --any means succeed if at least
+    # one managed interface is online (not all), so loopback or unconfigured
+    # interfaces don't block the wait.
     mkdir -p "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d"
     cat > "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf" << 'EOF'
 [Service]
-TimeoutStartSec=30
+ExecStart=
+ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --timeout=30
 EOF
-    log_ok "wait-online timeout set to 30s."
+    log_ok "wait-online timeout set to 30s (--any --timeout=30)."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
