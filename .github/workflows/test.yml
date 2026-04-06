@@ -7,42 +7,15 @@ on:
     branches: [dev, master]
 
 jobs:
-  build-test-image:
-    name: Build test image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t ouroboros-test:ci tests/
-
-      - name: Export image as artifact
-        run: docker save ouroboros-test:ci | gzip > /tmp/test-image.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-image
-          path: /tmp/test-image.tar.gz
-          retention-days: 1
-
   test-shell-validation:
     name: Shell validation
-    needs: build-test-image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download test image
-        uses: actions/download-artifact@v4
-        with:
-          name: test-image
-          path: /tmp
-
-      - name: Load image
-        run: docker load < /tmp/test-image.tar.gz
+      - name: Build test image
+        run: docker build -t ouroboros-test:ci tests/
 
       - name: Run shellcheck suite
         run: |
@@ -71,20 +44,13 @@ jobs:
 
   test-python:
     name: Python tests
-    needs: build-test-image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download test image
-        uses: actions/download-artifact@v4
-        with:
-          name: test-image
-          path: /tmp
-
-      - name: Load image
-        run: docker load < /tmp/test-image.tar.gz
+      - name: Build test image
+        run: docker build -t ouroboros-test:ci tests/
 
       - name: Run Python lint
         run: |
@@ -104,20 +70,13 @@ jobs:
 
   test-profile-smoke:
     name: Profile smoke test
-    needs: build-test-image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download test image
-        uses: actions/download-artifact@v4
-        with:
-          name: test-image
-          path: /tmp
-
-      - name: Load image
-        run: docker load < /tmp/test-image.tar.gz
+      - name: Build test image
+        run: docker build -t ouroboros-test:ci tests/
 
       - name: Run smoke test
         run: |

@@ -188,7 +188,8 @@ configure_bootloader() {
     local esp_part=""
     esp_part=$(lsblk -ln -o NAME,FSTYPE,MOUNTPOINT | grep "${TARGET}/boot" | grep vfat | awk '{print $1}' | head -1) || true
     if [[ -n "$esp_part" ]]; then
-        local esp_disk="/dev/$(lsblk -dno PKNAME "/dev/${esp_part}" 2>/dev/null)" || true
+        local esp_disk
+        esp_disk="/dev/$(lsblk -dno PKNAME "/dev/${esp_part}" 2>/dev/null)" || true
         local esp_partnum=""
         esp_partnum=$(cat "/sys/block/${esp_disk#/dev/}/$(basename "/dev/${esp_part}")/partition" 2>/dev/null) || true
         if [[ -n "$esp_disk" && -n "$esp_partnum" ]]; then
