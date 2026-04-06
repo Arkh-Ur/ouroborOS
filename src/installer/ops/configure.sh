@@ -277,6 +277,10 @@ Name=eth*
 DHCP=yes
 DNS=1.1.1.1
 DNS=9.9.9.9
+IPv6AcceptRA=no
+# wait-online is satisfied as soon as IPv4 DHCP completes.
+# Without this, it also waits for IPv6 RA which QEMU SLIRP never sends.
+RequiredFamilyForOnline=ipv4
 
 [DHCP]
 RouteMetric=10
@@ -527,6 +531,16 @@ After=network-online.target
 Wants=network-online.target
 EOF
     log_ok "sshd.service drop-in: waits for network-online.target."
+
+    # Drop-in: limit wait-online timeout so it doesn't block boot if DHCP is slow.
+    # Default TimeoutStartSec can be 2-3 min. With Wants= in sshd, sshd starts
+    # anyway when wait-online times out — but we don't want 3 min of blocked boot.
+    mkdir -p "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d"
+    cat > "${TARGET}/etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf" << 'EOF'
+[Service]
+TimeoutStartSec=30
+EOF
+    log_ok "wait-online timeout set to 30s."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
