@@ -67,6 +67,7 @@ RUFF_RULES="E,W,F,I,UP,ANN001,ANN201,E722"
 
 if ruff check \
     --select "$RUFF_RULES" \
+    --line-length 120 \
     --output-format grouped \
     --no-cache \
     "${PY_FILES[@]}" 2>&1; then
