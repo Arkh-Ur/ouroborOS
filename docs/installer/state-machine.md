@@ -2,259 +2,316 @@
 
 ## Overview
 
-The ouroborOS installer is implemented as an explicit finite state machine (FSM). Every screen, action, and transition is defined as a state. This guarantees:
-- No undefined behavior between steps
-- Clean rollback to any previous state
-- Testable logic independent of the UI layer
-- Resumable installation (checkpoint files)
+The ouroborOS installer is implemented as a linear finite state machine (FSM) in Python (`state_machine.py`). Each state corresponds to one installation phase. If the installer is interrupted, it can resume from the last completed checkpoint.
 
----
-
-## States
-
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> PREFLIGHT
-
-    PREFLIGHT --> LOCALE : pass
-    PREFLIGHT --> ERROR_FATAL : fail
-
-    LOCALE --> PARTITION : next
-
-    PARTITION --> FORMAT : next (confirmed)
-    PARTITION --> LOCALE : back
-
-    FORMAT --> INSTALL : next
-    FORMAT --> PARTITION : back
-    FORMAT --> ERROR_RECOVERABLE : fail
-
-    INSTALL --> CONFIGURE : next
-    INSTALL --> FORMAT : back
-    INSTALL --> ERROR_RECOVERABLE : fail
-
-    CONFIGURE --> SNAPSHOT : next
-    CONFIGURE --> INSTALL : back
-    CONFIGURE --> ERROR_RECOVERABLE : fail
-
-    SNAPSHOT --> FINISH : next
-    SNAPSHOT --> ERROR_RECOVERABLE : fail
-
-    FINISH --> [*] : reboot / stay
-
-    ERROR_RECOVERABLE --> FORMAT : retry
-    ERROR_RECOVERABLE --> ERROR_FATAL : abort
-
-    ERROR_FATAL --> [*]
+State flow:
+```
+INIT → PREFLIGHT → LOCALE → PARTITION → FORMAT → INSTALL
+     → CONFIGURE → SNAPSHOT → FINISH
 ```
 
-| State | ID | Description |
-|-------|----|-------------|
-| `PREFLIGHT` | 0 | System checks before anything starts |
-| `LOCALE` | 1 | Language, keyboard, timezone selection |
-| `PARTITION` | 2 | Disk selection and partition plan |
-| `FORMAT` | 3 | Write partition table, create filesystems |
-| `INSTALL` | 4 | pacstrap base packages |
-| `CONFIGURE` | 5 | Bootloader, network, users, firstboot |
-| `SNAPSHOT` | 6 | Create baseline Btrfs snapshot |
-| `FINISH` | 7 | Unmount, display summary, reboot |
-| `ERROR_RECOVERABLE` | 90 | Error that allows retry/rollback |
-| `ERROR_FATAL` | 99 | Error that requires abort |
+Error states:
+```
+Any state → ERROR_RECOVERABLE (retry) or FATAL (abort)
+```
 
 ---
 
-## Transitions
+## State Machine Diagram
+
+```mermaid
+flowchart TD
+    START(["▶ START"])
+
+    INIT["INIT\nLoad/check config\nDetect resume checkpoint"]
+
+    PREFLIGHT["PREFLIGHT\nUEFI check · RAM · disk size\nnetwork · clock sync"]
+
+    LOCALE["LOCALE\nlanguage · keymap · timezone"]
+
+    PARTITION["PARTITION\ndisk selection · layout plan\nLUKS option · confirmation"]
+
+    FORMAT["FORMAT\nsgdisk GPT · mkfs.btrfs\nBtrfs subvolumes · mount\n📌 checkpoint: FORMATTED"]
+
+    INSTALL["INSTALL\npacstrap base packages\ngenfstab · fstab validation\n📌 checkpoint: INSTALLED"]
+
+    CONFIGURE["CONFIGURE\nlocale · hostname · initramfs\nsystemd-boot · network units\nusers · sudoers\n📌 checkpoint: CONFIGURED"]
+
+    SNAPSHOT["SNAPSHOT\nbtrfs snapshot -r @ → @snapshots/install\nsystemd-boot baseline entry\n📌 checkpoint: SNAPSHOT"]
+
+    FINISH(["FINISH\nunmount · summary\nreboot / shutdown / stay"])
+
+    ERR_REC["⚠️ ERROR_RECOVERABLE\nretry / back / abort"]
+    ERR_FATAL(["💀 FATAL\nexit"])
+
+    START --> INIT --> PREFLIGHT
+    PREFLIGHT -- pass --> LOCALE
+    PREFLIGHT -- fail --> ERR_FATAL
+
+    LOCALE -- next --> PARTITION
+    PARTITION -- next --> FORMAT
+    PARTITION -- back --> LOCALE
+    PARTITION -- fail --> ERR_REC
+
+    FORMAT -- next --> INSTALL
+    FORMAT -- back --> PARTITION
+    FORMAT -- fail --> ERR_REC
+
+    INSTALL -- next --> CONFIGURE
+    INSTALL -- back --> FORMAT
+    INSTALL -- fail --> ERR_REC
+
+    CONFIGURE -- next --> SNAPSHOT
+    CONFIGURE -- back --> INSTALL
+    CONFIGURE -- fail --> ERR_REC
+
+    SNAPSHOT -- next --> FINISH
+    SNAPSHOT -- fail --> ERR_REC
+
+    ERR_REC -- retry --> FORMAT
+    ERR_REC -- abort --> ERR_FATAL
+
+    style START fill:#2d6a4f,color:#fff
+    style FINISH fill:#2d6a4f,color:#fff
+    style ERR_FATAL fill:#d62828,color:#fff
+    style ERR_REC fill:#f4a261,color:#000
+    style FORMAT fill:#023e8a,color:#fff
+    style INSTALL fill:#023e8a,color:#fff
+    style CONFIGURE fill:#023e8a,color:#fff
+    style SNAPSHOT fill:#023e8a,color:#fff
+```
+
+---
+
+## State Enum (from `state_machine.py`)
 
 ```python
-TRANSITIONS = {
-    "PREFLIGHT":  {"pass": "LOCALE",     "fail": "ERROR_FATAL"},
-    "LOCALE":     {"next": "PARTITION",  "back": None},
-    "PARTITION":  {"next": "FORMAT",     "back": "LOCALE",    "fail": "ERROR_RECOVERABLE"},
-    "FORMAT":     {"next": "INSTALL",    "back": "PARTITION", "fail": "ERROR_RECOVERABLE"},
-    "INSTALL":    {"next": "CONFIGURE",  "back": "FORMAT",    "fail": "ERROR_RECOVERABLE"},
-    "CONFIGURE":  {"next": "SNAPSHOT",   "back": "INSTALL",   "fail": "ERROR_RECOVERABLE"},
-    "SNAPSHOT":   {"next": "FINISH",     "fail": "ERROR_RECOVERABLE"},
-    "FINISH":     {"reboot": None,       "stay": None},
-    "ERROR_RECOVERABLE": {"retry": None, "back": None, "abort": "ERROR_FATAL"},
-    "ERROR_FATAL": {"exit": None},
-}
+class State(Enum):
+    INIT = auto()
+    PREFLIGHT = auto()
+    LOCALE = auto()
+    PARTITION = auto()
+    FORMAT = auto()
+    INSTALL = auto()
+    CONFIGURE = auto()
+    SNAPSHOT = auto()
+    FINISH = auto()
+    ERROR_RECOVERABLE = auto()
+    FATAL = auto()
 ```
 
 ---
 
 ## Checkpoint System
 
-Each completed state writes a checkpoint file:
+Checkpoints are saved to `/tmp/ouroborOS-checkpoints/` (on the live ISO):
 
 ```
-/tmp/ouroborOS-checkpoint/
-├── PREFLIGHT.done
-├── LOCALE.done
-├── PARTITION.done
-├── FORMAT.done
-├── INSTALL.done
-├── CONFIGURE.done
-└── SNAPSHOT.done
+/tmp/ouroborOS-checkpoints/
+├── formatted.done          # FORMAT completed
+├── installed.done          # INSTALL completed
+├── configured.done         # CONFIGURE completed
+├── snapshot.done           # SNAPSHOT completed
+└── config.json             # Serialized InstallerConfig
 ```
 
-On crash/restart, the installer reads existing checkpoints and resumes from the last incomplete state. The user is prompted:
+Each checkpoint saves:
+1. A `.done` marker file for the state name
+2. The full `InstallerConfig` as `config.json` (for resume)
 
-```
-Installation checkpoint found: INSTALL complete.
-Resume from CONFIGURE? [Y/n]
-```
+**Resume flow:** `--resume` flag → read `config.json` → find last `.done` checkpoint → skip to next state.
 
 ---
 
-## Configuration State Object
+## Phase Details
 
-The installer carries a single `Config` object through all states, progressively populated:
+### INIT
+**Purpose:** Load configuration and detect if a previous installation can be resumed.
 
-```python
-@dataclass
-class InstallerConfig:
-    # LOCALE
-    locale: str = "en_US.UTF-8"
-    keymap: str = "us"
-    timezone: str = "UTC"
-
-    # PARTITION
-    target_disk: str = ""
-    partition_scheme: str = "auto"  # or "manual"
-    use_luks: bool = False
-    luks_passphrase: str = ""
-
-    # derived from partitioning
-    esp_device: str = ""
-    root_device: str = ""
-    root_uuid: str = ""
-    esp_uuid: str = ""
-
-    # CONFIGURE
-    hostname: str = "ouroborOS"
-    root_password_hash: str = ""
-    username: str = ""
-    user_password_hash: str = ""
-    user_groups: list = field(default_factory=lambda: ["wheel", "audio", "video"])
-    use_homed: bool = False
-
-    # INSTALL
-    packages_extra: list = field(default_factory=list)
-    pacman_mirror: str = ""
-```
+**Actions:**
+- Parse CLI arguments (`--config`, `--resume`, `--validate-config`)
+- Search for unattended config via `find_unattended_config()` (kernel cmdline → `/tmp` → `/run` → USB drives)
+- If `--resume`: load last checkpoint and skip to that state
+- If no config found: launch interactive TUI
 
 ---
 
-## Python State Machine Implementation (skeleton)
+### PREFLIGHT
+**Purpose:** Validate that installation can proceed safely.
 
-```python
-#!/usr/bin/env python3
-"""ouroborOS Installer — State Machine Core"""
+**Checks:**
+- [ ] UEFI boot mode detected (`/sys/firmware/efi` exists)
+- [ ] At least 2 GB RAM available
+- [ ] At least one disk ≥ 20 GB detected
+- [ ] Internet connectivity (ping archlinux.org or cached packages)
+- [ ] System clock synchronized (timedatectl status)
 
-import sys
-import json
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
-from enum import Enum, auto
+**On failure:** Display diagnostic message, exit with `FATAL`. No changes made to disk.
 
-CHECKPOINT_DIR = Path("/tmp/ouroborOS-checkpoint")
-CONFIG_FILE = Path("/tmp/ouroborOS-config.json")
+---
 
+### LOCALE
+**Purpose:** Set regional settings for the installed system.
 
-class State(Enum):
-    PREFLIGHT = "PREFLIGHT"
-    LOCALE = "LOCALE"
-    PARTITION = "PARTITION"
-    FORMAT = "FORMAT"
-    INSTALL = "INSTALL"
-    CONFIGURE = "CONFIGURE"
-    SNAPSHOT = "SNAPSHOT"
-    FINISH = "FINISH"
-    ERROR_RECOVERABLE = "ERROR_RECOVERABLE"
-    ERROR_FATAL = "ERROR_FATAL"
+**User inputs:**
+- Language / locale (e.g., `en_US.UTF-8`)
+- Keyboard layout (e.g., `us`, `es`, `de`)
+- Timezone (e.g., `America/New_York`)
 
+**Rollback:** N/A (no disk changes).
 
-class Installer:
-    def __init__(self):
-        self.state = State.PREFLIGHT
-        self.config = InstallerConfig()
-        self.error_message = ""
-        CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+---
 
-    def run(self):
-        self.state = self._resume_from_checkpoint()
-        while self.state not in (State.FINISH, State.ERROR_FATAL):
-            handler = getattr(self, f"_handle_{self.state.value.lower()}")
-            self.state = handler()
-        getattr(self, f"_handle_{self.state.value.lower()}")()
+### PARTITION
+**Purpose:** Define disk layout without writing to disk yet.
 
-    def _resume_from_checkpoint(self) -> State:
-        states = list(State)
-        for s in reversed(states[:-2]):  # skip error states
-            if (CHECKPOINT_DIR / f"{s.value}.done").exists():
-                idx = states.index(s)
-                if idx + 1 < len(states) - 2:
-                    return states[idx + 1]
-        return State.PREFLIGHT
+**User inputs:**
+- Target disk selection
+- LUKS encryption? (optional)
 
-    def _checkpoint(self, state: State):
-        (CHECKPOINT_DIR / f"{state.value}.done").touch()
-        CONFIG_FILE.write_text(json.dumps(asdict(self.config), indent=2))
+**Actions:**
+- Display disk overview (`lsblk`, `fdisk -l`)
+- Show proposed partition table (dry-run)
+- **Confirmation required before proceeding**
 
-    def _handle_preflight(self) -> State:
-        # Implement checks
-        ...
+**Rollback:** N/A (no changes until FORMAT phase).
 
-    def _handle_locale(self) -> State:
-        # Implement TUI locale selection
-        ...
+---
 
-    # ... etc for each state
+### FORMAT
+**Purpose:** Write partition table and create filesystems.
+
+**Actions:**
+1. Write GPT with `sgdisk`
+2. Format ESP: `mkfs.fat -F32`
+3. Format root: `mkfs.btrfs -L ouroborOS`
+4. Create Btrfs subvolumes: `@`, `@var`, `@etc`, `@home`, `@snapshots`
+5. Mount subvolumes with correct options (see [immutability-strategy.md](../architecture/immutability-strategy.md))
+6. Generate fstab
+
+**Rollback:** Wipe partition table with `sgdisk --zap-all`.
+
+**Checkpoint saved:** `FORMATTED`
+
+---
+
+### INSTALL
+**Purpose:** Install base system packages into the mounted target.
+
+**Actions:**
+1. Install base packages via `pacstrap /mnt` (packages from `packages.x86_64`)
+2. Generate fstab: `genfstab -U /mnt >> /mnt/etc/fstab`
+3. Validate fstab for `ro` flag on root subvolume
+
+**Rollback:** Unmount and reformat (return to FORMAT phase).
+
+**Checkpoint saved:** `INSTALLED`
+
+---
+
+### CONFIGURE
+**Purpose:** Configure the installed system (bootloader, network, users).
+
+**Actions (via `arch-chroot`):**
+
+1. **Locale & timezone:** `locale-gen`, `/etc/locale.conf`, `/etc/vconsole.conf`
+2. **Hostname:** `/etc/hostname`
+3. **Initramfs:** `mkinitcpio -P` with btrfs hook
+4. **Bootloader:** `bootctl install` + EFI boot entry via `efibootmgr` (from host)
+5. **Microcode:** Auto-detect CPU vendor → install `intel-ucode` or `amd-ucode`
+6. **Network:** Enable `systemd-networkd`, `systemd-resolved`, `iwd`
+7. **Immutable root:** `_write_systemd_enables_to_root()` — mirror essential systemd files to `@` subvolume
+8. **User creation:** `useradd` with hashed password, wheel group
+9. **Journal:** Mask `/var/log/journal` on `@` to prevent FAILED socket
+
+**Rollback:** Return to INSTALL phase.
+
+**Checkpoint saved:** `CONFIGURED`
+
+---
+
+### SNAPSHOT
+**Purpose:** Create the baseline immutable snapshot of the clean install.
+
+**Actions:**
+```bash
+btrfs subvolume snapshot -r /mnt/@ /mnt/.snapshots/install
 ```
+
+This snapshot is the **golden baseline** — always available for rollback.
+
+Boot entry written to `/boot/loader/entries/`.
+
+---
+
+### FINISH
+**Purpose:** Clean up and present completion to user.
+
+**Actions:**
+1. Unmount all filesystems in reverse order
+2. Display installation summary
+3. Execute `post_install_action`: **reboot** (default), **shutdown**, or **stay**
 
 ---
 
 ## TUI Layer
 
-The state machine is **independent of the UI**. The TUI is a thin wrapper that:
-1. Calls the state handler
-2. Renders state-specific screens using `dialog` or `whiptail`
-3. Passes user input back to the state handler
+The TUI is implemented in `tui.py` using **Rich** as the primary backend with **whiptail** as fallback.
 
-```mermaid
-graph TD
-    subgraph Core["🧠 State Machine Core (state_machine.py)"]
-        FSM["Installer.run()\nstate loop"]
-        HANDLERS["State Handlers\n_handle_preflight()\n_handle_locale()\n_handle_partition()\n..."]
-        CONFIG["InstallerConfig\ndataclass"]
-        CHECKPOINT["Checkpoint System\n/tmp/ouroborOS-checkpoint/"]
-    end
+- **Rich:** Rich console, progress bars, panels, tables
+- **Whiptail:** Fallback if Rich is not available
 
-    subgraph TUI["🖥️ TUI Layer (tui.py · whiptail)"]
-        SCREENS["Screen Functions\nshow_welcome()\nshow_locale_menu()\nshow_disk_selection()\nshow_progress()\nshow_error()"]
-    end
+All TUI functions return dicts — they never mutate global state. The FSM is independent of the UI, allowing unit testing of state logic without UI and unattended (headless) installation by bypassing TUI entirely.
 
-    subgraph Ops["⚙️ Operations (ops/)"]
-        DISK["disk.sh\npartition · format · mount"]
-        CONFIGURE["configure.sh/py\nchroot · bootloader · users"]
-        SNAPSHOT["snapshot.sh\nbtrfs snapshot"]
-    end
+---
 
-    subgraph Modes["🚀 Run Modes"]
-        INTERACTIVE["Interactive\n(default)"]
-        UNATTENDED["Unattended\n--config config.yaml"]
-    end
+## Configuration Object
 
-    FSM --> HANDLERS
-    HANDLERS --> CONFIG
-    HANDLERS --> CHECKPOINT
-    HANDLERS <-->|"input/display"| SCREENS
-    HANDLERS --> DISK & CONFIGURE & SNAPSHOT
-    INTERACTIVE --> FSM
-    UNATTENDED -->|"skip TUI screens"| FSM
+The installer uses nested dataclasses from `config.py`:
+
+```python
+@dataclass
+class InstallerConfig:
+    disk: DiskConfig           # device, use_luks, btrfs_label, swap_type
+    locale: LocaleConfig       # locale, keymap, timezone
+    network: NetworkConfig     # hostname, enable_networkd, enable_iwd, enable_resolved
+    user: UserConfig           # username, password_hash, groups, shell
+    # Runtime state (not persisted to YAML):
+    install_target: str        # mount point (default: /mnt)
+    extra_packages: list[str]  # additional packages
+    enable_luks: bool
+    unattended: bool
+    post_install_action: str   # "reboot" | "shutdown" | "none"
 ```
 
-This separation allows:
-- Unit testing state logic without UI
-- Swapping TUI for a GUI in the future
-- Unattended (headless) installation by bypassing TUI entirely
+See [configuration-format.md](./configuration-format.md) for the full YAML schema.
+
+---
+
+## Progress Tracking
+
+| State | Progress Range | Label |
+|-------|---------------|-------|
+| INIT | 0–5% | Iniciando |
+| PREFLIGHT | 5–10% | Verificando requisitos |
+| LOCALE | 10–20% | Configurando idioma |
+| PARTITION | 20–30% | Seleccionando disco |
+| FORMAT | 30–45% | Preparando disco |
+| INSTALL | 45–70% | Instalando paquetes |
+| CONFIGURE | 70–90% | Configurando sistema |
+| SNAPSHOT | 90–95% | Creando snapshot |
+| FINISH | 95–100% | Finalizando |
+
+---
+
+## Error Handling
+
+| Error Type | Recovery Strategy |
+|------------|------------------|
+| Preflight failure | Exit with `FATAL`, show diagnostic |
+| Disk write error | Transition to `ERROR_RECOVERABLE` |
+| pacstrap failure | Retry up to 3x, then `ERROR_RECOVERABLE` |
+| chroot command failure | Log to `/tmp/ouroborOS-install.log`, prompt retry |
+| Bootloader install failure | Retry `bootctl install`, check ESP mount |
+
+All errors are logged to `/tmp/ouroborOS-install.log` on the live system.

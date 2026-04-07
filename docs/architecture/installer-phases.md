@@ -2,7 +2,9 @@
 
 ## Overview
 
-The ouroborOS installer is a multi-phase, stateful process. Each phase has a defined entry condition, set of operations, exit condition, and rollback strategy.
+The ouroborOS installer is a multi-phase, stateful process modelled as a finite state machine (FSM). Each phase has a defined entry condition, set of operations, exit condition, and rollback strategy.
+
+The FSM is implemented in Python (`state_machine.py`) and orchestrates Bash operations (`ops/*.sh`) for system-level changes.
 
 ---
 
@@ -12,26 +14,28 @@ The ouroborOS installer is a multi-phase, stateful process. Each phase has a def
 flowchart TD
     START(["▶ START"])
 
-    PREFLIGHT["0 · PREFLIGHT\nUEFI check · RAM · disk size\nnetwork · clock sync"]
+    INIT["INIT\nLoad/check config\nDetect resume checkpoint"]
 
-    LOCALE["1 · LOCALE\nlanguage · keymap · timezone"]
+    PREFLIGHT["PREFLIGHT\nUEFI check · RAM · disk size\nnetwork · clock sync"]
 
-    PARTITION["2 · PARTITION\ndisk selection · layout plan\nLUKS option · confirmation"]
+    LOCALE["LOCALE\nlanguage · keymap · timezone"]
 
-    FORMAT["3 · FORMAT\nsgdisk GPT · mkfs.btrfs\nBtrfs subvolumes · mount\n📌 checkpoint: FORMATTED"]
+    PARTITION["PARTITION\ndisk selection · layout plan\nLUKS option · confirmation"]
 
-    INSTALL["4 · INSTALL\npacstrap base packages\ngenfstab · fstab validation\n📌 checkpoint: INSTALLED"]
+    FORMAT["FORMAT\nsgdisk GPT · mkfs.btrfs\nBtrfs subvolumes · mount\n📌 checkpoint: FORMATTED"]
 
-    CONFIGURE["5 · CONFIGURE\nlocale · hostname · initramfs\nsystemd-boot · network units\nusers · sudoers\n📌 checkpoint: CONFIGURED"]
+    INSTALL["INSTALL\npacstrap base packages\ngenfstab · fstab validation\n📌 checkpoint: INSTALLED"]
 
-    SNAPSHOT["6 · SNAPSHOT\nbtrfs snapshot -r @ → @snapshots/install\nsystemd-boot baseline entry\n📌 checkpoint: SNAPSHOT"]
+    CONFIGURE["CONFIGURE\nlocale · hostname · initramfs\nsystemd-boot · network units\nusers · sudoers\n📌 checkpoint: CONFIGURED"]
 
-    FINISH(["7 · FINISH\nunmount · summary\nReboot / Stay"])
+    SNAPSHOT["SNAPSHOT\nbtrfs snapshot -r @ → @snapshots/install\nsystemd-boot baseline entry\n📌 checkpoint: SNAPSHOT"]
+
+    FINISH(["FINISH\nunmount · summary\nreboot / shutdown / stay"])
 
     ERR_REC["⚠️ ERROR_RECOVERABLE\nretry / back / abort"]
-    ERR_FATAL(["💀 ERROR_FATAL\nexit"])
+    ERR_FATAL(["💀 FATAL\nexit"])
 
-    START --> PREFLIGHT
+    START --> INIT --> PREFLIGHT
     PREFLIGHT -- pass --> LOCALE
     PREFLIGHT -- fail --> ERR_FATAL
 
@@ -70,9 +74,54 @@ flowchart TD
 
 ---
 
+## State Enum
+
+```python
+class State(Enum):
+    INIT = auto()              # Load config, detect resume
+    PREFLIGHT = auto()         # Validate environment
+    LOCALE = auto()            # Set regional settings
+    PARTITION = auto()         # Define disk layout
+    FORMAT = auto()            # Write partitions + filesystems
+    INSTALL = auto()           # pacstrap base packages
+    CONFIGURE = auto()         # Bootloader, network, users
+    SNAPSHOT = auto()          # Baseline snapshot
+    FINISH = auto()            # Cleanup + post-install action
+    ERROR_RECOVERABLE = auto() # Retry possible
+    FATAL = auto()             # Abort
+```
+
+---
+
+## Checkpoint System
+
+Checkpoints are saved to `/tmp/ouroborOS-checkpoints/` (on the live ISO) after each destructive state:
+
+| Checkpoint File | State |
+|----------------|-------|
+| `formatted.done` | FORMAT |
+| `installed.done` | INSTALL |
+| `configured.done` | CONFIGURE |
+| `snapshot.done` | SNAPSHOT |
+
+The full `InstallerConfig` is serialized to `config.json` alongside each checkpoint, enabling `--resume` to pick up where the installer left off.
+
+---
+
 ## Phase Details
 
-### Phase 0: PREFLIGHT
+### INIT
+**Purpose:** Load configuration and detect if a previous installation can be resumed.
+
+**Actions:**
+- Parse CLI arguments (`--config`, `--resume`, `--validate-config`)
+- Search for unattended config via `find_unattended_config()` (kernel cmdline → `/tmp` → `/run` → USB drives)
+- If `--resume`: load last checkpoint from `/tmp/ouroborOS-checkpoints/` and skip to that state
+- If no config found: launch interactive TUI
+
+---
+
+### PREFLIGHT
 **Purpose:** Validate that installation can proceed safely.
 
 **Checks:**
@@ -82,11 +131,11 @@ flowchart TD
 - [ ] Internet connectivity (ping archlinux.org or cached packages)
 - [ ] System clock synchronized (timedatectl status)
 
-**On failure:** Display diagnostic message, exit with `ERROR_FATAL`. No changes made to disk.
+**On failure:** Display diagnostic message, exit with `FATAL`. No changes made to disk.
 
 ---
 
-### Phase 1: LOCALE
+### LOCALE
 **Purpose:** Set regional settings for the installed system.
 
 **User inputs:**
@@ -94,23 +143,16 @@ flowchart TD
 - Keyboard layout (e.g., `us`, `es`, `de`)
 - Timezone (e.g., `America/New_York`)
 
-**Actions:**
-- Store selection in `/tmp/ouroborOS-config.yaml`
-- Set live environment locale immediately (`localectl set-locale`)
-
 **Rollback:** N/A (no disk changes).
 
 ---
 
-### Phase 2: PARTITION
+### PARTITION
 **Purpose:** Define disk layout without writing to disk yet.
 
 **User inputs:**
 - Target disk selection
-- Partition scheme:
-  - Auto (recommended): ESP 512M + Btrfs remainder
-  - Manual: Custom sizes and additional partitions
-- Encryption: LUKS on root? (optional)
+- LUKS encryption? (optional)
 
 **Actions:**
 - Display disk overview (`lsblk`, `fdisk -l`)
@@ -121,50 +163,30 @@ flowchart TD
 
 ---
 
-### Phase 3: FORMAT
+### FORMAT
 **Purpose:** Write partition table and create filesystems.
 
 **Actions:**
-1. Write GPT with `sgdisk` or `systemd-repart`
-2. Format ESP: `mkfs.fat -F32 /dev/sda1`
-3. Format root: `mkfs.btrfs -L ouroborOS /dev/sda2`
-4. Create Btrfs subvolumes:
-   ```bash
-   mount /dev/sda2 /mnt
-   btrfs subvolume create /mnt/@
-   btrfs subvolume create /mnt/@var
-   btrfs subvolume create /mnt/@etc
-   btrfs subvolume create /mnt/@home
-   btrfs subvolume create /mnt/@snapshots
-   umount /mnt
-   ```
+1. Write GPT with `sgdisk`
+2. Format ESP: `mkfs.fat -F32`
+3. Format root: `mkfs.btrfs -L ouroborOS`
+4. Create Btrfs subvolumes: `@`, `@var`, `@etc`, `@home`, `@snapshots`
 5. Mount subvolumes with correct options (see [immutability-strategy.md](./immutability-strategy.md))
+6. Generate fstab
 
-**Rollback:** Wipe partition table with `sgdisk --zap-all`. Present re-entry to PARTITION phase.
+**Rollback:** Wipe partition table with `sgdisk --zap-all`.
 
 **Checkpoint saved:** `FORMATTED`
 
 ---
 
-### Phase 4: INSTALL
+### INSTALL
 **Purpose:** Install base system packages into the mounted target.
 
 **Actions:**
-1. Install base packages:
-   ```bash
-   pacstrap /mnt \
-     base linux-zen linux-zen-headers linux-firmware \
-     btrfs-progs systemd-boot efibootmgr \
-     iwd networkmanager-iwd \
-     neovim git sudo man-db
-   ```
-2. Generate fstab:
-   ```bash
-   genfstab -U /mnt >> /mnt/etc/fstab
-   ```
+1. Install base packages via `pacstrap /mnt` (packages from `packages.x86_64`)
+2. Generate fstab: `genfstab -U /mnt >> /mnt/etc/fstab`
 3. Validate fstab for `ro` flag on root subvolume
-
-**Progress display:** Package download + install progress bar.
 
 **Rollback:** Unmount and reformat (return to FORMAT phase).
 
@@ -172,55 +194,20 @@ flowchart TD
 
 ---
 
-### Phase 5: CONFIGURE
+### CONFIGURE
 **Purpose:** Configure the installed system (bootloader, network, users).
 
-**Actions (inside systemd-nspawn chroot):**
+**Actions (via `arch-chroot`):**
 
-1. **Locale & timezone:**
-   ```bash
-   ln -sf /usr/share/zoneinfo/ZONE /etc/localtime
-   hwclock --systohc
-   echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
-   locale-gen
-   echo "LANG=en_US.UTF-8" > /etc/locale.conf
-   echo "KEYMAP=us" > /etc/vconsole.conf
-   ```
-
-2. **Hostname:**
-   ```bash
-   echo "ouroborOS" > /etc/hostname
-   ```
-
-3. **Initramfs** (with btrfs hook):
-   ```bash
-   # /etc/mkinitcpio.conf HOOKS: base udev autodetect modconf kms keyboard keymap consolefont block btrfs filesystems fsck
-   mkinitcpio -P
-   ```
-
-4. **Bootloader:**
-   ```bash
-   bootctl install
-   # Write /boot/loader/loader.conf
-   # Write /boot/loader/entries/ouroborOS.conf
-   ```
-
-5. **Network units:**
-   ```bash
-   systemctl enable systemd-networkd systemd-resolved iwd
-   ```
-
-6. **User creation:**
-   ```bash
-   useradd -m -G wheel -s /bin/bash USER
-   echo "USER:PASS" | chpasswd
-   # or: homectl create USER --storage=luks
-   ```
-
-7. **sudoers:**
-   ```bash
-   echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/wheel
-   ```
+1. **Locale & timezone:** `locale-gen`, `/etc/locale.conf`, `/etc/vconsole.conf`
+2. **Hostname:** `/etc/hostname`
+3. **Initramfs:** `mkinitcpio -P` with btrfs hook
+4. **Bootloader:** `bootctl install` + EFI boot entry via `efibootmgr` (from host, since chroot cannot write real NVRAM)
+5. **Microcode:** Auto-detect CPU vendor → install `intel-ucode` or `amd-ucode`, add initrd to boot entry
+6. **Network:** Enable `systemd-networkd`, `systemd-resolved`, `iwd`
+7. **Immutable root:** `_write_systemd_enables_to_root()` — mirror essential systemd files to `@` subvolume
+8. **User creation:** `useradd` with hashed password, wheel group
+9. **Journal:** Mask `/var/log/journal` on `@` to prevent FAILED socket at boot
 
 **Rollback:** Return to INSTALL phase.
 
@@ -228,7 +215,7 @@ flowchart TD
 
 ---
 
-### Phase 6: SNAPSHOT
+### SNAPSHOT
 **Purpose:** Create the baseline immutable snapshot of the clean install.
 
 **Actions:**
@@ -238,24 +225,17 @@ btrfs subvolume snapshot -r /mnt/@ /mnt/.snapshots/install
 
 This snapshot is the **golden baseline** — always available for rollback.
 
-Boot entry for baseline:
-```ini
-# /boot/loader/entries/ouroborOS-baseline.conf
-title   ouroborOS (baseline install)
-linux   /vmlinuz-linux-zen
-initrd  /initramfs-linux-zen.img
-options root=UUID=XXX rootflags=subvol=@snapshots/install,ro quiet
-```
+Boot entry for baseline written to `/boot/loader/entries/`.
 
 ---
 
-### Phase 7: FINISH
+### FINISH
 **Purpose:** Clean up and present completion to user.
 
 **Actions:**
 1. Unmount all filesystems in reverse order
 2. Display installation summary
-3. Prompt: **Reboot now** or **Stay in live environment**
+3. Execute `post_install_action`: **reboot** (default), **shutdown**, or **stay** in live environment
 
 ---
 
@@ -263,9 +243,9 @@ options root=UUID=XXX rootflags=subvol=@snapshots/install,ro quiet
 
 | Error Type | Recovery Strategy |
 |------------|------------------|
-| Preflight failure | Exit, show diagnostic |
+| Preflight failure | Exit with `FATAL`, show diagnostic |
 | Disk write error | Wipe disk, return to PARTITION |
-| pacstrap failure | Retry up to 3x (network), then manual intervention |
+| pacstrap failure | Retry up to 3x (network), then `ERROR_RECOVERABLE` |
 | chroot command failure | Log to `/tmp/ouroborOS-install.log`, prompt retry |
 | Bootloader install failure | Retry `bootctl install`, check ESP mount |
 

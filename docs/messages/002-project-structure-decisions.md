@@ -73,7 +73,7 @@
 **Rationale:**
 - Bash is universal on ArchLinux live environments, no extra dependencies
 - Python provides clean state machine implementation, YAML parsing, input validation
-- Python `whiptail`/`dialog` bindings handle TUI rendering
+- Python **Rich** library handles TUI rendering (primary), with `whiptail` as fallback
 - Avoids pulling in Rust/Go toolchain as a build dependency
 
 ---
@@ -86,7 +86,7 @@ docs/
 ├── build/           ← ISO build process
 ├── installer/       ← Installer architecture
 ├── messages/        ← Project log and decisions (this folder)
-└── scripts/         ← Executable build and setup scripts
+└── build-and-flash.md ← Build, flash, and QEMU instructions
 ```
 
 **Rationale:** Separates concerns. Architecture docs live with design decisions. Build docs live with build artifacts. Messages capture *why* decisions were made (ADR-style).

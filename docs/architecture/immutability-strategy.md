@@ -31,13 +31,15 @@ Btrfs was chosen for its native integration with the ArchLinux/pacman ecosystem.
 ```mermaid
 block-beta
   columns 1
-  block:disk["💿 /dev/sda  —  GPT"]
+  block:disk["💿 Target Disk — GPT"]
     sda1["sda1 · 512 MB · FAT32\nESP · /boot\nUEFI bootloader + kernels"]
     sda2["sda2 · remainder · Btrfs\nSystem pool\nAll subvolumes"]
   end
 ```
 
 For single-disk installs, `/home` can share the root Btrfs pool via subvolumes.
+
+> **Note:** The installer uses `sgdisk` for partitioning. `systemd-repart` was evaluated but not yet implemented.
 
 ---
 
@@ -87,39 +89,44 @@ Certain paths need to remain writable at runtime:
 | `/etc` | Separate `@etc` Btrfs subvolume (read-write) |
 | `/var` | Separate `@var` Btrfs subvolume (read-write) |
 | `/tmp` | tmpfs |
-| `/home` | Separate `@home` subvolume or systemd-homed |
-| `/usr/local` | Bind-mount from `/var/usrlocal` |
+| `/home` | Separate `@home` subvolume |
 
-### Symlinks for compatibility
-```
-/usr/local → /var/usrlocal   (or overlayfs upper)
-```
+### Early Boot Gotcha: systemd reads /etc before @etc is mounted
+
+**This is critical.** systemd-networkd, systemd-resolved, and systemd generators start *before* `/etc` is mounted from the `@etc` btrfs subvolume. They read files from the `@` subvolume directly — where the installer wrote them via `${TARGET}/etc/`.
+
+The function `_write_systemd_enables_to_root()` in `configure.sh` handles this by mirroring essential files to the `@` subvolume:
+
+- `machine-id`, `passwd`, `group`, `shadow`, `gshadow` → for login/getty
+- systemd enable symlinks (`systemd-networkd.service`, etc.) → for service startup
+- `.network` files → for DHCP at boot
+- `resolved.conf` → for DNS at boot
+- `zram-generator.conf` → for swap at boot
+- journal directory mask → prevents FAILED socket
 
 ---
 
 ## Atomic Update Flow
 
+The root filesystem is read-only, so direct `pacman` calls fail. The `ouroboros-upgrade` wrapper handles the full lifecycle:
+
 ```mermaid
 sequenceDiagram
     actor User
-    participant pacman
-    participant Hook as pacman hook
+    participant Upgrade as ouroboros-upgrade
     participant Btrfs
     participant Boot as systemd-boot
     participant Kernel
 
-    User->>pacman: pacman -Syu
-    pacman->>Hook: pre-upgrade trigger
-    Hook->>Btrfs: snapshot -r @ → @snapshots/YYYY-MM-DD_pre-update
-    Hook->>Boot: write new .conf entry for snapshot
-    Btrfs-->>Hook: snapshot created ✓
-    Hook->>Btrfs: remount @ as rw (temporarily)
-    Hook-->>pacman: ready ✓
+    User->>Upgrade: sudo ouroboros-upgrade -Syu
+    Upgrade->>Btrfs: snapshot -r @ → @snapshots/YYYY-MM-DD_pre-update
+    Upgrade->>Boot: write new .conf entry for snapshot
+    Btrfs-->>Upgrade: snapshot created ✓
 
-    pacman->>Btrfs: write updated packages to @
-    pacman->>Hook: post-upgrade trigger
-    Hook->>Btrfs: remount @ as ro
-    Hook-->>pacman: done ✓
+    Upgrade->>Btrfs: remount @ as rw
+    Upgrade->>Upgrade: pacman "$@"
+    Upgrade->>Btrfs: remount @ as ro
+    Upgrade-->>User: done ✓
 
     User->>Kernel: reboot
     Kernel->>Boot: reads loader.conf
@@ -134,6 +141,8 @@ sequenceDiagram
     end
 ```
 
+> **Note:** pacman pre/post upgrade hooks were evaluated but found useless — pacman checks filesystem writability BEFORE running hooks. The `ouroboros-upgrade` wrapper (like MicroOS `transactional-update`) is the correct approach.
+
 ### systemd-boot snapshot entries
 Each snapshot gets a boot entry in `/boot/loader/entries/`:
 ```ini
@@ -141,7 +150,7 @@ Each snapshot gets a boot entry in `/boot/loader/entries/`:
 title   ouroborOS (snapshot 2025-01-15)
 linux   /vmlinuz-linux-zen
 initrd  /initramfs-linux-zen.img
-options root=UUID=XXX rootflags=subvol=@snapshots/2025-01-15,ro quiet
+options root=UUID=XXX rootflags=subvol=@snapshots/2025-01-15,ro loglevel=4
 ```
 
 ---
@@ -166,7 +175,7 @@ btrfs subvolume set-default <id> /
 ## Installer Responsibilities
 
 The installer must:
-1. Format disk with GPT
+1. Format disk with GPT (via `sgdisk`)
 2. Create ESP and Btrfs partitions
 3. Create all subvolumes (`@`, `@var`, `@etc`, `@home`, `@snapshots`)
 4. Mount with correct options
@@ -174,10 +183,10 @@ The installer must:
 6. Generate correct `fstab` with `ro` flag on `@`
 7. Configure mkinitcpio with `btrfs` hook
 8. Create initial snapshot: `@snapshots/install`
+9. Mirror essential systemd files to `@` subvolume (via `_write_systemd_enables_to_root()`)
 
 ---
 
 ## References
 - [Btrfs Wiki — Snapper](https://wiki.archlinux.org/title/Snapper)
 - [ArchLinux Btrfs](https://wiki.archlinux.org/title/Btrfs)
-- [systemd-repart](https://www.freedesktop.org/software/systemd/man/systemd-repart.html)

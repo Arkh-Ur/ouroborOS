@@ -18,7 +18,7 @@ ouroborOS takes its name from the ouroboros, the ancient symbol of a serpent con
 graph TB
     subgraph UserSpace["🧑 User Space"]
         Apps["User Applications\nFlatpak / pacman packages"]
-        Home["/home\nsystemd-homed · per-user LUKS encryption"]
+        Home["/home\n@home subvolume"]
     end
 
     subgraph Mutable["✏️ Writable System Layer  (Btrfs subvolumes)"]
@@ -55,16 +55,16 @@ graph LR
     ISO -->|boots| Live["Live Environment\ntty1 autologin"]
     Live -->|launches| Installer["TUI Installer\nPython + Bash"]
 
-    Installer -->|partitions| REPART["systemd-repart\nGPT layout"]
+    Installer -->|partitions| SGDISK["sgdisk\nGPT layout"]
     Installer -->|formats| BTRFS["Btrfs\nsubvolumes"]
     Installer -->|installs| PACSTRAP["pacstrap\nbase packages"]
-    Installer -->|configures| NSPAWN["systemd-nspawn\nchroot"]
+    Installer -->|configures| ARCHCHROOT["arch-chroot\nchroot operations"]
 
-    NSPAWN -->|bootloader| SDBOOT["systemd-boot\nbootctl install"]
-    NSPAWN -->|network| NETWORKD["systemd-networkd\n+ iwd"]
-    NSPAWN -->|dns| RESOLVED["systemd-resolved\nDoT + DNSSEC"]
-    NSPAWN -->|users| HOMED["systemd-homed\nencrypted homes"]
-    NSPAWN -->|snapshot| SNAP["Btrfs snapshot\n@snapshots/install"]
+    ARCHCHROOT -->|bootloader| SDBOOT["systemd-boot\nbootctl install"]
+    ARCHCHROOT -->|network| NETWORKD["systemd-networkd\n+ iwd"]
+    ARCHCHROOT -->|dns| RESOLVED["systemd-resolved\nDoT + DNSSEC"]
+    ARCHCHROOT -->|users| USERADD["useradd\nstandard Linux users"]
+    ARCHCHROOT -->|snapshot| SNAP["Btrfs snapshot\n@snapshots/install"]
 
     SDBOOT -->|boot entry| RO_ROOT["/ mounted ro\nBtrfs @ subvol"]
 ```
@@ -78,14 +78,14 @@ graph LR
 | **archiso** | Live ISO build framework |
 | **systemd-boot** | UEFI bootloader (replaces GRUB) |
 | **Btrfs** | Filesystem with snapshots and subvolumes |
-| **overlayfs** | Writable layer over read-only root |
-| **systemd-repart** | Declarative partition layout at install time |
+| **sgdisk** | GPT partitioning during install |
 | **systemd-networkd** | Network configuration (wired + wireless) |
 | **systemd-resolved** | DNS resolution with DoT support |
-| **systemd-homed** | Portable, encrypted home directories |
+| **arch-chroot** | Chroot operations during installation |
 | **systemd-firstboot** | First-boot configuration wizard |
-| **systemd-nspawn** | Isolated chroot during installation |
 | **mkinitcpio** | Initramfs generation with custom hooks |
+| **systemd-repart** | *Future evaluation* — declarative partition layout |
+| **systemd-homed** | *Future evaluation* — portable, encrypted home directories |
 
 ---
 
@@ -100,7 +100,7 @@ GRUB adds complexity (grub.cfg, update-grub, theme management). systemd-boot is 
 ### 3. Installer written in Bash + Python
 - **Bash**: Low-level operations (partitioning, mounting, pacstrap, chroot)
 - **Python**: TUI logic (state machine, user input validation, config serialization)
-- **whiptail/dialog**: Terminal UI rendering
+- **Rich**: Terminal UI rendering (primary), whiptail as fallback
 
 ### 4. No NetworkManager
 `systemd-networkd` + `iwd` (for WiFi) covers all networking needs without the overhead of NetworkManager.
@@ -112,15 +112,19 @@ GRUB adds complexity (grub.cfg, update-grub, theme management). systemd-boot is 
 ```
 ouroborOS/
 ├── CLAUDE.md                  # Claude Code project instructions
+├── AGENTS.md                  # Agent knowledge base
 ├── IMPLEMENTATION_PLAN.md     # Phased implementation roadmap
 ├── README.md                  # Public project README
-├── docs/                      # Technical documentation
-│   ├── architecture/          # System design decisions
-│   ├── build/                 # ISO build process
-│   ├── installer/             # Installer architecture
-│   ├── messages/              # Project log and decisions
-│   └── scripts/               # Build and setup scripts
-└── skills/                    # Claude Code expert skill definitions
+├── src/
+│   ├── installer/             # Python FSM installer + Bash ops (core app)
+│   ├── scripts/               # Build, flash, dev-env shell scripts
+│   └── ouroborOS-profile/     # archiso profile (airootfs, efiboot, packages)
+├── templates/                 # Default install config template for interactive mode
+├── docs/                      # Architecture, build, installer documentation
+├── tests/                     # Docker-based test infra + shell scripts
+├── agents/                    # Agent role definitions (qa-tester, developer, etc.)
+├── skills/                    # Domain skill docs (systemd, archiso, filesystem, etc.)
+└── .github/workflows/         # CI workflows (lint, test, code-review, opencode)
 ```
 
 ---
