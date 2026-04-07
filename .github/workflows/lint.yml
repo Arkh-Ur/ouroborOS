@@ -1,0 +1,118 @@
+name: Lint
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [dev, master]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed shellcheck git findutils grep
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          FAILURES=0
+          SCRIPTS=()
+
+          while IFS= read -r -d '' f; do
+            SCRIPTS+=("$f")
+          done < <(find "$WORKSPACE" \
+            -not -path "$WORKSPACE/.git/*" \
+            -name "*.sh" \
+            -type f \
+            -print0 | sort -z)
+
+          if [[ ${#SCRIPTS[@]} -eq 0 ]]; then
+            echo "No .sh files found — nothing to check."
+            exit 0
+          fi
+
+          echo "Found ${#SCRIPTS[@]} shell script(s)."
+
+          for script in "${SCRIPTS[@]}"; do
+            rel="${script#"$WORKSPACE/"}"
+            # --format=gcc produces GitHub-compatible annotations
+            if ! shellcheck -S style --format=gcc "$script"; then
+              echo "::error file=${rel}::shellcheck failed"
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+
+          # Verify set -euo pipefail in every script
+          for script in "${SCRIPTS[@]}"; do
+            rel="${script#"$WORKSPACE/"}"
+            if ! head -10 "$script" | grep -q "set -euo pipefail"; then
+              echo "::error file=${rel}::Missing 'set -euo pipefail' guard"
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+
+          if [[ $FAILURES -gt 0 ]]; then
+            echo "::error::$FAILURES shellcheck violation(s) found."
+            exit 1
+          fi
+
+          echo "All shell scripts passed shellcheck."
+
+  python-lint:
+    name: Python Lint (ruff)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed python python-pip git findutils
+          pip install --no-cache-dir --break-system-packages ruff
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ruff
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t PY_FILES < <(
+            find "$WORKSPACE" \
+              -not -path "$WORKSPACE/.git/*" \
+              -name "*.py" \
+              -type f | sort
+          )
+
+          if [[ ${#PY_FILES[@]} -eq 0 ]]; then
+            echo "No .py files found — skipping ruff."
+            exit 0
+          fi
+
+          echo "Found ${#PY_FILES[@]} Python file(s)."
+
+          # --output-format=github produces inline PR annotations
+          # --line-length 120: project standard (some log/string lines exceed 88)
+          ruff check \
+            --select "E,W,F,I,UP,ANN001,ANN201,E722" \
+            --line-length 120 \
+            --output-format github \
+            "${PY_FILES[@]}"

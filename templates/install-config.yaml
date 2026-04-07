@@ -1,0 +1,33 @@
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+
+user:
+  username: admin
+  password: changeme
+  groups:
+    - wheel
+    - audio
+    - video
+    - input
+  shell: /bin/bash
+
+extra_packages:
+  - openssh
+
+# What to do after installation completes.
+# Options: "reboot" (default), "shutdown", "none"
+post_install_action: reboot

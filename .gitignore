@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.whl
+
+# Test artifacts
+.coverage
+coverage.xml
+.pytest_cache/
+htmlcov/
+
+# Build artifacts
+out/
+work/
+*.iso
+*.sha256
+ *.sig
+src/ouroborOS-profile/airootfs/usr/lib/
+
+imagen_*.img*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Checkpoints (runtime)
+/tmp/ouroborOS-checkpoints/
+
+# Agent tooling
+.atl/
+.sisyphus/
+
+# Build / dev temp
+src/temp/
+src/logs/
+build-tmp/
+
+# Archiso build artifacts
+src/ouroborOS-profile/airootfs/tmp/
+
+# Tool logs
+opencode.log

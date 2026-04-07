@@ -1,0 +1,1 @@
+"""ouroborOS installer test suite."""

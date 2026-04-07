@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# sshd-hostkeys — Set root password for the live ISO (debug only).
+# WARNING: This is for DEBUGGING ONLY. Do NOT use in production.
+set -euo pipefail
+
+# Set root password for SSH access in live ISO (debug only)
+# Password: ouroborOS
+HASH='$6$ubXHlO6QkmfT0kgx$0SKT8f8dz2tS1YMoySz3DHa80IBstMwO.NNbqpnl40CEvXJWnNslEcMMXqexUE.qCS00oWHzOyQFzjGNsqxuW0'
+usermod -p "${HASH}" root 2>/dev/null || echo "root:ouroborOS" | chpasswd 2>/dev/null || true

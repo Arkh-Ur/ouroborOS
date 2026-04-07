@@ -1,0 +1,60 @@
+# ouroborOS — package list for live ISO
+# Keep minimal: only what the live env and installer need.
+
+# Base system
+base
+linux-zen
+linux-zen-headers
+linux-firmware
+
+# Filesystem
+btrfs-progs
+dosfstools
+util-linux
+parted
+gptfdisk
+
+# ArchLinux install helpers
+arch-install-scripts
+archiso
+mkinitcpio-archiso
+pacman-contrib
+reflector
+
+# Bootloader
+efibootmgr
+edk2-shell
+memtest86+-efi
+intel-ucode
+amd-ucode
+
+# Network (live environment)
+iwd
+wireless_tools
+dhcpcd
+openssh
+
+# Terminal & TUI
+dialog
+libnewt
+
+# Python (installer runtime)
+python
+python-yaml
+python-rich
+python-pyaml
+
+# Text utilities
+less
+nano
+vim
+
+# System tools
+htop
+rsync
+wget
+curl
+git
+
+# Shellcheck (for dev/CI usage inside live)
+shellcheck

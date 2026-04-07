@@ -1,0 +1,78 @@
+version: "3.8"
+
+# Shared base configuration for all test services
+x-test-base: &test-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - ..:/workspace:ro   # Repo root mounted read-only
+  working_dir: /workspace
+  environment:
+    - TERM=xterm-256color
+
+services:
+
+  # ── Shell script linting ────────────────────────────────────────────────────
+  shellcheck-suite:
+    <<: *test-base
+    command: bash /workspace/tests/scripts/test-shellcheck.sh
+
+  # ── Script structure and API validation ─────────────────────────────────────
+  validate-scripts:
+    <<: *test-base
+    command: bash /workspace/tests/scripts/validate-scripts.sh
+
+  # ── build-iso.sh dry-run with mocked mkarchiso ──────────────────────────────
+  dry-run-build:
+    <<: *test-base
+    tmpfs:
+      - /tmp:exec,mode=1777    # Writable+executable /tmp for mock binaries
+    command: bash /workspace/tests/scripts/test-build-dry-run.sh
+
+  # ── Python lint with ruff ───────────────────────────────────────────────────
+  python-lint:
+    <<: *test-base
+    command: bash /workspace/tests/scripts/lint-python.sh
+
+  # ── pytest + coverage (no-op if installer/ doesn't exist yet) ───────────────
+  pytest-suite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace     # Read-WRITE needed for coverage.xml and .coverage output
+    working_dir: /workspace
+    environment:
+      - TERM=xterm-256color
+    command: bash /workspace/tests/scripts/run-pytest.sh
+
+  # ── archiso profile structure validation ────────────────────────────────────
+  smoke-test:
+    <<: *test-base
+    command: bash /workspace/tests/scripts/smoke-test.sh
+
+  # ── Run all suites sequentially ─────────────────────────────────────────────
+  full-suite:
+    <<: *test-base
+    tmpfs:
+      - /tmp:exec,mode=1777
+    volumes:
+      - ..:/workspace     # Read-WRITE for pytest coverage output
+    command: >
+      bash -c "
+        set -e
+        echo '══ shellcheck-suite ════════════════════════' &&
+        bash /workspace/tests/scripts/test-shellcheck.sh &&
+        echo '══ validate-scripts ════════════════════════' &&
+        bash /workspace/tests/scripts/validate-scripts.sh &&
+        echo '══ dry-run-build ═══════════════════════════' &&
+        bash /workspace/tests/scripts/test-build-dry-run.sh &&
+        echo '══ lint-python ═════════════════════════════' &&
+        bash /workspace/tests/scripts/lint-python.sh &&
+        echo '══ run-pytest ══════════════════════════════' &&
+        bash /workspace/tests/scripts/run-pytest.sh &&
+        echo '══ smoke-test ══════════════════════════════' &&
+        bash /workspace/tests/scripts/smoke-test.sh &&
+        echo '══ ALL SUITES PASSED ════════════════════════'
+      "

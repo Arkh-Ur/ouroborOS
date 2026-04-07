@@ -1,0 +1,11 @@
+[Unit]
+Description=Set root password for live ISO (debug)
+After=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sshd-hostkeys
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

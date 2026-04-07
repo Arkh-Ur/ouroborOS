@@ -1,0 +1,123 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev, master]
+
+jobs:
+  test-shell-validation:
+    name: Shell validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
+
+      - name: Run shellcheck suite
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/test-shellcheck.sh
+
+      - name: Run validate-scripts
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/validate-scripts.sh
+
+      - name: Run dry-run build test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            --tmpfs /tmp:exec \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/test-build-dry-run.sh
+
+  test-python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
+
+      - name: Run Python lint
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/lint-python.sh
+
+      - name: Run pytest
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -e WORKSPACE=/workspace \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/run-pytest.sh
+
+  test-profile-smoke:
+    name: Profile smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: |
+          for i in 1 2 3; do
+            docker build -t ouroboros-test:ci tests/ && break
+            echo "Docker build attempt $i failed, retrying..."
+            sleep 10
+          done
+
+      - name: Run smoke test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -e WORKSPACE=/workspace \
+            ouroboros-test:ci \
+            bash /workspace/tests/scripts/smoke-test.sh
+
+  report:
+    name: Test report
+    needs: [test-shell-validation, test-python, test-profile-smoke]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Write job summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## ouroborOS Test Suite Results
+
+          | Suite | Status |
+          |-------|--------|
+          | Shell validation | ${{ needs.test-shell-validation.result }} |
+          | Python tests | ${{ needs.test-python.result }} |
+          | Profile smoke test | ${{ needs.test-profile-smoke.result }} |
+
+          **Triggered by:** `${{ github.event_name }}` on `${{ github.ref_name }}`
+          **Commit:** `${{ github.sha }}`
+          EOF

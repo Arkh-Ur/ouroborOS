@@ -1,0 +1,290 @@
+"""config.py — ouroborOS installer configuration model and YAML parser.
+
+InstallerConfig is the single source of truth for all installation parameters.
+It is populated from either TUI interaction or an unattended YAML config file.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NetworkConfig:
+    """Network configuration for the installed system."""
+
+    hostname: str = "ouroboros"
+    enable_networkd: bool = True
+    enable_iwd: bool = True
+    enable_resolved: bool = True
+
+
+@dataclass
+class UserConfig:
+    """Primary user account configuration."""
+
+    username: str = ""
+    password_hash: str = ""          # SHA-512 crypt hash — never plaintext
+    groups: list[str] = field(
+        default_factory=lambda: ["wheel", "audio", "video", "input"]
+    )
+    shell: str = "/bin/bash"
+    create_home: bool = True
+
+
+@dataclass
+class DiskConfig:
+    """Disk and filesystem configuration."""
+
+    device: str = ""                 # e.g. /dev/sda (never /dev/sdX in fstab)
+    use_luks: bool = False
+    luks_passphrase: str = ""        # cleared after encrypt_partition() is called
+    btrfs_label: str = "ouroborOS"
+    swap_type: str = "zram"          # "zram" or "none"
+
+
+@dataclass
+class LocaleConfig:
+    """Locale, timezone, and keyboard configuration."""
+
+    locale: str = "en_US.UTF-8"
+    keymap: str = "us"
+    timezone: str = "UTC"
+
+
+@dataclass
+class InstallerConfig:
+    """Complete installation configuration.
+
+    This dataclass is serialised to JSON as a checkpoint after every
+    state transition so the installer can resume if interrupted.
+    """
+
+    disk: DiskConfig = field(default_factory=DiskConfig)
+    locale: LocaleConfig = field(default_factory=LocaleConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+    user: UserConfig = field(default_factory=UserConfig)
+
+    # Runtime state — not persisted to YAML config
+    install_target: str = "/mnt"
+    extra_packages: list[str] = field(default_factory=list)
+    enable_luks: bool = False
+    unattended: bool = False
+    post_install_action: str = "reboot"  # "reboot" | "shutdown" | "none"
+
+
+# ---------------------------------------------------------------------------
+# YAML schema validation
+# ---------------------------------------------------------------------------
+
+# Required keys in an unattended config file
+_REQUIRED_KEYS: set[str] = {"disk", "locale", "network", "user"}
+
+# Valid timezone pattern (basic check — full validation via /usr/share/zoneinfo)
+_TIMEZONE_RE = re.compile(r"^[A-Za-z_]+(/[A-Za-z_]+)*$")
+
+# Valid username (POSIX portable)
+_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+
+# Valid hostname (RFC 1123)
+_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$")
+
+
+class ConfigValidationError(ValueError):
+    """Raised when an installer config file fails validation."""
+
+
+def _require(mapping: dict, key: str, parent: str = "") -> object:
+    """Return mapping[key] or raise ConfigValidationError."""
+    path = f"{parent}.{key}" if parent else key
+    if key not in mapping:
+        raise ConfigValidationError(f"Missing required field: '{path}'")
+    return mapping[key]
+
+
+def validate_config(data: dict) -> None:
+    """Validate a parsed YAML config dictionary.
+
+    Raises ConfigValidationError with a descriptive message on the first
+    violation found.
+    """
+    for key in _REQUIRED_KEYS:
+        if key not in data:
+            raise ConfigValidationError(f"Missing required top-level key: '{key}'")
+
+    # disk section
+    disk = data["disk"]
+    device = _require(disk, "device", "disk")
+    if not isinstance(device, str) or not device.startswith("/dev/"):
+        raise ConfigValidationError(
+            f"disk.device must be an absolute /dev/ path, got: {device!r}"
+        )
+    if re.match(r"^/dev/sd[a-z]\d+", str(device)):
+        raise ConfigValidationError(
+            "disk.device must reference a whole disk, not a partition"
+            " (e.g. /dev/sda not /dev/sda1)"
+        )
+
+    # locale section
+    locale = data["locale"]
+    tz = _require(locale, "timezone", "locale")
+    if not _TIMEZONE_RE.match(str(tz)):
+        raise ConfigValidationError(f"locale.timezone format invalid: {tz!r}")
+
+    # network section
+    network = data["network"]
+    hostname = _require(network, "hostname", "network")
+    if not _HOSTNAME_RE.match(str(hostname)):
+        raise ConfigValidationError(
+            f"network.hostname is not a valid hostname: {hostname!r}"
+        )
+
+    # user section
+    user = data["user"]
+    username = _require(user, "username", "user")
+    if not _USERNAME_RE.match(str(username)):
+        raise ConfigValidationError(
+            f"user.username must be a valid POSIX username: {username!r}"
+        )
+    if "password_hash" not in user and "password" not in user:
+        raise ConfigValidationError(
+            "user section must include 'password_hash' (SHA-512 crypt) or 'password'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# YAML config loader
+# ---------------------------------------------------------------------------
+
+
+def load_config(path: Path) -> InstallerConfig:
+    """Load and validate an unattended install config YAML file.
+
+    Args:
+        path: Path to the YAML configuration file.
+
+    Returns:
+        A fully-populated InstallerConfig instance.
+
+    Raises:
+        FileNotFoundError: If the config file does not exist.
+        ConfigValidationError: If the config fails validation.
+        yaml.YAMLError: If the file is not valid YAML.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+
+    with path.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+
+    if not isinstance(data, dict):
+        raise ConfigValidationError(
+            "Config file must be a YAML mapping at the top level."
+        )
+
+    validate_config(data)
+
+    cfg = InstallerConfig()
+
+    # Disk
+    d = data["disk"]
+    cfg.disk.device = d["device"]
+    cfg.disk.use_luks = bool(d.get("use_luks", False))
+    cfg.disk.btrfs_label = str(d.get("btrfs_label", "ouroborOS"))
+    cfg.disk.swap_type = str(d.get("swap_type", "zram"))
+    cfg.enable_luks = cfg.disk.use_luks
+
+    # Locale
+    loc = data["locale"]
+    cfg.locale.locale = str(loc.get("locale", "en_US.UTF-8"))
+    cfg.locale.keymap = str(loc.get("keymap", "us"))
+    cfg.locale.timezone = str(loc["timezone"])
+
+    # Network
+    net = data["network"]
+    cfg.network.hostname = str(net["hostname"])
+    cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
+    cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
+    cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
+
+    # User
+    usr = data["user"]
+    cfg.user.username = str(usr["username"])
+    if "password_hash" in usr:
+        cfg.user.password_hash = str(usr["password_hash"])
+    elif "password" in usr:
+        result = subprocess.run(
+            ["openssl", "passwd", "-6", "-stdin"],
+            input=str(usr["password"]),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        cfg.user.password_hash = result.stdout.strip()
+    cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
+    cfg.user.shell = str(usr.get("shell", "/bin/bash"))
+
+    # Extra packages
+    cfg.extra_packages = list(data.get("extra_packages", []))
+    cfg.unattended = True
+
+    # Post-install action (optional — defaults to "reboot")
+    action = str(data.get("post_install_action", "reboot")).lower()
+    if action not in ("reboot", "shutdown", "none"):
+        raise ConfigValidationError(
+            f"Invalid post_install_action: '{action}'. "
+            "Must be 'reboot', 'shutdown', or 'none'."
+        )
+    cfg.post_install_action = action
+
+    return cfg
+
+
+def find_unattended_config() -> Path | None:
+    """Search standard locations for an unattended install config.
+
+    Search order:
+    1. Kernel cmdline: ``ouroborOS.config=/path/to/config.yaml``
+    2. /tmp/ouroborOS-config.yaml  (e.g. injected via cloud-init or live ISO)
+    3. /run/ouroborOS-config.yaml
+    4. First *.yaml on USB drives under /run/media/
+
+    Returns:
+        Path to a config file if found, else None.
+    """
+    # 1. Kernel cmdline
+    try:
+        cmdline = Path("/proc/cmdline").read_text(encoding="utf-8")
+        for token in cmdline.split():
+            if token.startswith("ouroborOS.config="):
+                candidate = Path(token.split("=", 1)[1])
+                if candidate.exists():
+                    return candidate
+    except OSError:
+        pass
+
+    # 2 & 3. Known temp paths
+    for candidate in (
+        Path("/tmp/ouroborOS-config.yaml"),
+        Path("/run/ouroborOS-config.yaml"),
+    ):
+        if candidate.exists():
+            return candidate
+
+    # 4. USB drives
+    media_root = Path("/run/media")
+    if media_root.is_dir():
+        for yaml_file in sorted(media_root.rglob("*.yaml")):
+            if yaml_file.stem in ("ouroborOS-config", "ouroborOS", "installer-config"):
+                return yaml_file
+
+    return None
