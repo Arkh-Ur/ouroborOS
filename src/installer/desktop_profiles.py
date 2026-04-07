@@ -21,7 +21,7 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "waybar",
         "foot",
         "wofi",
-        "polkit-kde-agent",
+        "hyprpolkitagent",
         "qt5-wayland",
         "qt6-wayland",
     ],
