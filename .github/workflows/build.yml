@@ -94,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          git config --global --add safe.directory "$(pwd)"
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
