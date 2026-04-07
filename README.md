@@ -1,8 +1,8 @@
 # ouroborOS
 
-[![Build ISO](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/build.yml/badge.svg)](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/build.yml)
-[![Test Suite](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/test.yml/badge.svg)](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/test.yml)
-[![Lint](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/lint.yml/badge.svg)](https://github.com/Arkhur-Vo/ouroborOS/actions/workflows/lint.yml)
+[![Build ISO](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml)
+[![Test Suite](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml)
+[![Lint](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml)
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**.
 
@@ -34,7 +34,7 @@ An ArchLinux-based Linux distribution with an **immutable root filesystem**, a f
 
 ### Download
 
-Download the latest ISO from the [Releases page](https://github.com/Arkhur-Vo/ouroborOS/releases).
+Download the latest ISO from the [Releases page](https://github.com/Arkh-Ur/ouroborOS/releases).
 
 Verify the checksum:
 
@@ -45,7 +45,7 @@ sha256sum -c ouroborOS-SHA256SUMS.txt
 ### Build from source
 
 ```bash
-git clone https://github.com/Arkhur-Vo/ouroborOS.git
+git clone https://github.com/Arkh-Ur/ouroborOS.git
 cd ouroborOS
 
 # Install build dependencies (Arch Linux host required)
