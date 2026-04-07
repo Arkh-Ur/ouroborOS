@@ -156,7 +156,7 @@ jobs:
           git config --global --add safe.directory "$(pwd)"
           git remote add public \
             https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/Arkh-Ur/ouroborOS.git
-          git push public main:main --force
+          git push public HEAD:main --force
           git push public "${{ github.ref }}"
 
       - name: Create GitHub Release in public repo
