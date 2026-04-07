@@ -151,20 +151,26 @@ jobs:
           fi
           echo "ISO size OK."
 
-      - name: Push main and tag to public repo
+      - name: Sync main branch and tag to public repo
         env:
-          PUBLIC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
-          git config --global --add safe.directory "$(pwd)"
-          # actions/checkout sets url.insteadOf to inject GITHUB_TOKEN for
-          # all github.com URLs. Remove that section so our explicit token wins.
-          git config --global --remove-section \
-            "url.https://x-access-token@github.com/" 2>/dev/null || true
-          git config --global credential.helper ''
-          git remote add public \
-            "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
-          git push public HEAD:main --force
-          git push public "${{ github.ref }}"
+          TAG="${{ github.ref_name }}"
+          SHA=$(git rev-parse HEAD)
+
+          # Sync the main branch from private to public repo
+          gh repo sync Arkh-Ur/ouroborOS \
+            --source Arkh-Ur/ouroborOS-dev \
+            --branch main \
+            --force
+
+          # Create the release tag in the public repo (idempotent)
+          gh api repos/Arkh-Ur/ouroborOS/git/refs/tags/"${TAG}" \
+            --method DELETE 2>/dev/null || true
+          gh api repos/Arkh-Ur/ouroborOS/git/refs \
+            --method POST \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${SHA}"
 
       - name: Create GitHub Release in public repo
         env:
