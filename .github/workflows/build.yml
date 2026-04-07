@@ -30,7 +30,8 @@ jobs:
             libisoburn \
             git \
             erofs-utils \
-            mtools
+            mtools \
+            github-cli
 
       - name: Checkout
         uses: actions/checkout@v4
