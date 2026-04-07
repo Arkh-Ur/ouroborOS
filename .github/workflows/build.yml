@@ -154,6 +154,9 @@ jobs:
       - name: Push main and tag to public repo
         run: |
           git config --global --add safe.directory "$(pwd)"
+          # Remove the credential helper that actions/checkout injects so our
+          # explicit token in the remote URL is used instead.
+          git config --global credential.helper ''
           git remote add public \
             https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/Arkh-Ur/ouroborOS.git
           git push public HEAD:main --force
