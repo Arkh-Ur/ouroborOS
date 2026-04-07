@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build ouroborOS ISO
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
       image: archlinux:latest
       options: --privileged
