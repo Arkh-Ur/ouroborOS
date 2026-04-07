@@ -3,6 +3,7 @@
 [![Build ISO](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml)
 [![Test Suite](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml)
 [![Lint](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml)
+[![Donate](https://nowpayments.io/images/embeds/donation-button-black.svg)](https://nowpayments.io/donations/arkh_ur)
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**.
 
@@ -178,6 +179,14 @@ ouroborOS/
 3. Open a pull request against `dev`.
 
 All shell scripts must pass `shellcheck`. Python code must pass `ruff`. Tests must pass.
+
+---
+
+## Support the project
+
+ouroborOS is an independent open-source project. If it saves you time or you want to see it grow, consider donating — crypto accepted via NOWPayments:
+
+[![Donate with crypto](https://nowpayments.io/images/embeds/donation-button-black.svg)](https://nowpayments.io/donations/arkh_ur)
 
 ---
 
