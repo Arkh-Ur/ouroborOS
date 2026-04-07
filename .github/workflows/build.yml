@@ -75,7 +75,10 @@ jobs:
       - name: Upload ISO artifact
         # Only upload on tagged releases or manual trigger — dev pushes just
         # validate the build succeeds without consuming storage quota.
+        # continue-on-error: artifact storage quota may be exhausted; the ISO
+        # is uploaded directly to the GitHub Release by the next step anyway.
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ouroborOS-iso-${{ github.ref_name }}
