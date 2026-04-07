@@ -240,24 +240,35 @@ The connection persists across reboots — `iwd` saves known networks to `/var/l
 
 ## 8. Install software
 
-ouroborOS uses `pacman` for package management. The root filesystem is read-only, but `pacman` handles this transparently.
+ouroborOS uses `pacman` for package management. Because the root filesystem is **read-only**, you must use the `ouroboros-upgrade` wrapper instead of calling `pacman` directly. The wrapper:
+
+1. Creates a timestamped Btrfs snapshot (pre-upgrade state)
+2. Generates a boot entry for that snapshot
+3. Remounts the root read-write
+4. Calls `pacman` with your arguments
+5. Remounts root read-only after the operation completes
 
 ```bash
-# Search for a package
+# Search for a package (search does not write — pacman directly is fine)
 pacman -Ss neovim
 
 # Install a package
-sudo pacman -S neovim tmux htop
+sudo ouroboros-upgrade -S neovim tmux htop
 
 # Update the entire system
-sudo pacman -Syu
+sudo ouroboros-upgrade -Syu
 
 # Remove a package
-sudo pacman -Rns packagename
+sudo ouroboros-upgrade -Rns packagename
 ```
 
-> Every `sudo pacman -S/R/U` automatically creates a Btrfs snapshot before applying changes.
-> If an update breaks something, you can roll back (see next section).
+> **Do not use `sudo pacman -S/R/U` directly** — it will fail because the root
+> filesystem is mounted read-only. `ouroboros-upgrade` is the correct entry point
+> for any write operation on the root filesystem.
+
+> **Snapshot created automatically:** before every `ouroboros-upgrade` invocation,
+> a snapshot is saved and a boot entry is added. If the upgrade breaks something,
+> you can roll back (see next section).
 
 ---
 
