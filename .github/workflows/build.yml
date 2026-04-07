@@ -3,14 +3,19 @@ name: Build ISO
 on:
   push:
     branches: [dev]
+    tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
+  # ── Dev / PR builds: validate only, no release ────────────────────────────
   build:
     name: Build ouroborOS ISO
+    if: "!startsWith(github.ref, 'refs/tags/v')"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     container:
       image: archlinux:latest
       options: --privileged
@@ -22,14 +27,8 @@ jobs:
           pacman-key --populate archlinux
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
-            archiso \
-            dosfstools \
-            e2fsprogs \
-            squashfs-tools \
-            libisoburn \
-            git \
-            erofs-utils \
-            mtools
+            archiso dosfstools e2fsprogs squashfs-tools \
+            libisoburn git erofs-utils mtools
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,27 +70,12 @@ jobs:
           fi
           echo "ISO size OK."
 
-      - name: Upload ISO artifact
-        # Only upload on tagged releases or manual trigger — dev pushes just
-        # validate the build succeeds without consuming storage quota.
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ouroborOS-iso-${{ github.ref_name }}
-          path: |
-            out/ouroborOS-*.iso
-            out/ouroborOS-SHA256SUMS.txt
-          retention-days: 30
-          if-no-files-found: error
-
       - name: Write build summary
         if: always()
         run: |
           ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -1 || echo "not built")
           SIZE_MB=0
-          if [[ -f "$ISO" ]]; then
-            SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 ))
-          fi
+          if [[ -f "$ISO" ]]; then SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 )); fi
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## ouroborOS ISO Build
 
@@ -99,7 +83,145 @@ jobs:
           |-------|-------|
           | Branch | \`${{ github.ref_name }}\` |
           | Commit | \`${{ github.sha }}\` |
-          | ISO | \`$(basename "$ISO" 2>/dev/null || echo "N/A")\` |
-          | Size | ${SIZE_MB} MiB |
-          | SHA256 | \`$(cat out/ouroborOS-SHA256SUMS.txt 2>/dev/null | awk '{print $1}' || echo "N/A")\` |
+          | ISO    | \`$(basename "$ISO" 2>/dev/null || echo "N/A")\` |
+          | Size   | ${SIZE_MB} MiB |
+          | SHA256 | \`$(awk '{print $1}' out/ouroborOS-SHA256SUMS.txt 2>/dev/null || echo "N/A")\` |
+          EOF
+
+  # ── Release builds: build + push to public repo + GitHub Release ──────────
+  release:
+    name: Build ISO and Publish Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: archlinux:latest
+      options: --privileged
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            archiso dosfstools e2fsprogs squashfs-tools \
+            libisoburn git erofs-utils mtools github-cli
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Disable credential injection so our PUBLIC_REPO_TOKEN in the
+          # git remote URL is used without being overridden by GITHUB_TOKEN.
+          persist-credentials: false
+
+      - name: Set up loop devices
+        run: |
+          for i in $(seq 0 7); do
+            mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
+          done
+          modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Build ISO
+        run: |
+          bash src/scripts/build-iso.sh \
+            --clean \
+            --workdir /tmp/ouroborOS-build \
+            --output out/
+
+      - name: Generate SHA256 checksum
+        run: |
+          cd out/
+          sha256sum ouroborOS-*.iso > ouroborOS-SHA256SUMS.txt
+          cat ouroborOS-SHA256SUMS.txt
+
+      - name: Verify ISO size (800 MiB – 2.5 GiB)
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          SIZE=$(stat -c%s "$ISO")
+          MIN=$((800 * 1024 * 1024))
+          MAX=$((2560 * 1024 * 1024))
+          echo "ISO size: $(( SIZE / 1024 / 1024 )) MiB"
+          if [[ $SIZE -lt $MIN ]]; then
+            echo "::error::ISO too small: $(( SIZE / 1024 / 1024 )) MiB (min 800 MiB)"
+            exit 1
+          fi
+          if [[ $SIZE -gt $MAX ]]; then
+            echo "::error::ISO too large: $(( SIZE / 1024 / 1024 )) MiB (max 2560 MiB)"
+            exit 1
+          fi
+          echo "ISO size OK."
+
+      - name: Push main and tag to public repo
+        env:
+          PUBLIC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git config --global --add safe.directory '*'
+          git remote add public \
+            "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
+          git push public "HEAD:refs/heads/main" --force
+          git push public "${{ github.ref }}"
+
+      - name: Create GitHub Release in public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+
+          gh release create "$TAG" \
+            --repo Arkh-Ur/ouroborOS \
+            --title "ouroborOS ${TAG}" \
+            --target main \
+            --notes "$(cat <<'NOTES'
+          ## ouroborOS ${{ github.ref_name }}
+
+          ### Installation
+
+          1. Download the ISO below and verify the checksum:
+             \`\`\`bash
+             sha256sum -c ouroborOS-SHA256SUMS.txt
+             \`\`\`
+          2. Flash to USB:
+             \`\`\`bash
+             sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso
+             \`\`\`
+          3. Boot from USB (UEFI required) and follow the installer.
+
+          See the [User Guide](https://github.com/Arkh-Ur/ouroborOS/blob/main/docs/user-guide.md) for the full walkthrough.
+
+          ### Known limitations
+
+          | Limitation | Notes |
+          |-----------|-------|
+          | UEFI only | By design |
+          | No GUI installer | TUI + YAML only |
+          | No AUR helper | Use `makepkg` manually |
+          | No Secure Boot | Deferred to v0.2 |
+          | English only | Multi-language deferred |
+          NOTES
+          )" \
+            "$ISO" \
+            "$CHECKSUM"
+
+      - name: Write build summary
+        if: always()
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -1 || echo "not built")
+          SIZE_MB=0
+          if [[ -f "$ISO" ]]; then SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 )); fi
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## ouroborOS ${TAG} Release Build
+
+          | Field | Value |
+          |-------|-------|
+          | Tag    | \`${{ github.ref_name }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | ISO    | \`$(basename "$ISO" 2>/dev/null || echo "N/A")\` |
+          | Size   | ${SIZE_MB} MiB |
+          | SHA256 | \`$(awk '{print $1}' out/ouroborOS-SHA256SUMS.txt 2>/dev/null || echo "N/A")\` |
+          | Public | https://github.com/Arkh-Ur/ouroborOS/releases/tag/${{ github.ref_name }} |
           EOF
