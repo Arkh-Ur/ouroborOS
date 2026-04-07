@@ -1,7 +1,7 @@
 # BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Generado:** 2026-04-04
-**Commit:** de2950d
+**Generado:** 2026-04-07
+**Commit:** 45be5ee
 **Branch:** dev
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
@@ -20,6 +20,12 @@
 
 ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa systemd-boot, snapshots de Btrfs, y un instalador FSM en Python con operaciones en Bash. Rolling release, mínimo bloat, solo UEFI. Rich como backend TUI primario (whiptail como fallback). ISO live con SSH server habilitado.
 
+**Repositorios:** `Arkh-Ur/ouroborOS-dev` (privado, dev) → `Arkh-Ur/ouroborOS` (público, releases). Tag push en dev dispara build + release en público.
+
+**Release v0.1.0:** Publicado el 2026-04-07 con ISO (1.3GB) + SHA256SUMS. Fases 1-5 completadas.
+
+**Estado actual:** Phase 2 (post-v0.1.0) en progreso — namespace `our-*` (`our-pac`, `our-box`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`.
+
 ## ESTRUCTURA
 
 ```
@@ -33,7 +39,7 @@ ouroborOS/
 ├── tests/                 # Docker-based test infra + shell scripts
 ├── agents/                # Agent role definitions (qa-tester, developer, etc.)
 ├── skills/                # Domain skill docs (systemd, archiso, filesystem, etc.)
-├── .github/workflows/     # CI workflows (lint, test, code-review, opencode)
+├── .github/workflows/     # CI workflows (lint, test, build, opencode)
 ├── CLAUDE.md              # Canonical project constraints
 ├── IMPLEMENTATION_PLAN.md # Phased roadmap
 └── README.md
@@ -46,6 +52,7 @@ ouroborOS/
 | Agregar estado/fase del instalador | `src/installer/state_machine.py` | FSM con checkpoints, ver installer/AGENTS.md |
 | Agregar pantalla TUI | `src/installer/tui.py` | Wrapper de UI Rich (primario) + whiptail (fallback) |
 | Cambiar esquema de configuración | `src/installer/config.py` | Dataclasses + validación YAML |
+| Agregar perfil de desktop | `src/installer/desktop_profiles.py` | PROFILE_PACKAGES, PROFILE_DM, 5 perfiles |
 | Agregar operación de disco/snapshot/config | `src/installer/ops/*.sh` | Librerías Bash invocadas via `_run_op()` |
 | Agregar paquete al ISO | `src/ouroborOS-profile/packages.x86_64` | Debe justificarse (preocupación de bloat) |
 | Cambiar entradas de boot | `src/ouroborOS-profile/efiboot/` | Archivos .conf de systemd-boot |
@@ -53,20 +60,24 @@ ouroborOS/
 | Construir ISO | `src/scripts/build-iso.sh` | Wrapper de mkarchiso |
 | Flashear USB | `src/scripts/flash-usb.sh` | Wrapper seguro de dd |
 | Entorno de desarrollo | `src/scripts/setup-dev-env.sh` | Instala deps de build en host Arch |
-| Agregar check de CI | `.github/workflows/` | lint.yml, test.yml, code-review.yml, opencode.yml |
+| Agregar check de CI | `.github/workflows/` | lint.yml, test.yml, build.yml, opencode.yml |
 | Agregar test | `src/installer/tests/` o `tests/scripts/` | pytest o scripts shell |
 | Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, installer-phases |
 | Config default interactiva | `templates/install-config.yaml` | Template YAML con contraseña plaintext, auto-hasseada |
-| CI workflows | `.github/workflows/` | 4 workflows: lint, test, code-review, opencode |
+| Plan Phase 2 | `docs/PHASE_2_PLAN.md` | our-pac, our-box, desktop profiles, homed |
+| CI build + release | `.github/workflows/build.yml` | Tag push → ISO build → release en repo público |
 
 ## MAPA DE CÓDIGO
 
 | Símbolo | Tipo | Ubicación | Rol |
 |---------|------|-----------|-----|
 | `Installer` | clase | `src/installer/state_machine.py` | Orquestador FSM principal |
-| `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
+| `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→USER→DESKTOP→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
 | `TUI` | clase | `src/installer/tui.py` | Wrapper de UI Rich (primario) + whiptail (fallback) |
-| `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario) |
+| `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario, desktop) |
+| `DesktopConfig` | dataclass | `src/installer/config.py` | Config de desktop profile y homed storage |
+| `PROFILE_PACKAGES` | dict | `src/installer/desktop_profiles.py` | Paquetes por perfil (minimal/hyprland/niri/gnome/kde) |
+| `PROFILE_DM` | dict | `src/installer/desktop_profiles.py` | Display manager por perfil (gdm, sddm, o ninguno) |
 | `load_config` | func | `src/installer/config.py` | Cargador YAML→InstallerConfig |
 | `validate_config` | func | `src/installer/config.py` | Validación de esquema (ruta disco, timezone, hostname, username) |
 | `find_unattended_config` | func | `src/installer/config.py` | Descubre YAML en cmdline/USB/tmp |
@@ -74,7 +85,9 @@ ouroborOS/
 | `main` | func | `src/installer/main.py` | Entry point CLI (--resume, --config, --validate-config) |
 | `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab completo |
 | `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
-| configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root |
+| configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM enable, homed |
+| `our-pac` | script | instalado en target | Wrapper de pacman con snapshot + remount (antes `ouroboros-upgrade`) |
+| `our-box` | script | instalado en target | Wrapper de systemd-nspawn para containers |
 
 ## CONVENCIONES
 
@@ -83,7 +96,7 @@ ouroborOS/
 - **Estrategia de branches:** `dev` o `feature/*` solamente. PR para mergear. Nunca push directo a `master`.
 - **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck -S style` (cero warnings).
 - **Lint Python:** Ruff con E,W,F,I,UP,ANN001,ANN201,E722.
-- **Cobertura mínima de tests:** 70% (forzado por `tests/scripts/run-pytest.sh`).
+- **Cobertura mínima de tests:** 93% (forzado por `tests/scripts/run-pytest.sh`, mínimo 70%).
 - **No GRUB, no NetworkManager, no /dev/sdX, no root rw en producción.** Ver ANTIPATRONES.
 
 ## ANTIPATRONES
@@ -157,3 +170,8 @@ tests/scripts/test-shellcheck.sh
 - El ISO live tiene SSH server habilitado con generación de host keys al boot.
 - `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
 - `skills/qemu-e2e-test.md` — plan completo de test E2E: build ISO → install en QEMU (desatendido) → verificar sistema instalado via SSH + serial log.
+- Dual-repo: `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push en dev dispara build.yml que construye ISO y publica release en el repo público.
+- `our-pac` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-box` es el wrapper de systemd-nspawn.
+- `desktop_profiles.py` define 5 perfiles: minimal, hyprland, niri, gnome, kde. GNOME usa gdm, KDE usa sddm, el resto arranca desde TTY.
+- La FSM ahora tiene estados USER y DESKTOP antes de PARTITION — todas las decisiones humanas se toman antes de cualquier operación destructiva.
+- pacman PreTransaction hooks NO funcionan para remount rw (pacman verifica escritura antes de ejecutar hooks). Por eso existe el wrapper `our-pac`.

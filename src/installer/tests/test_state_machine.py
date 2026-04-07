@@ -71,8 +71,8 @@ class TestCheckpointSystem:
 class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
-            "INIT", "PREFLIGHT", "LOCALE", "PARTITION",
-            "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
+            "INIT", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
         }
         actual = {s.name for s in State}
@@ -762,22 +762,58 @@ class TestHandleConfigure:
             with pytest.raises(InstallerError, match="configuration failed"):
                 installer._handle_configure()
 
-    def test_tui_mode_prompts_user_creation(self, tmp_path: Path) -> None:
+    def test_configure_no_longer_prompts_user(self, tmp_path: Path) -> None:
+        """Phase 2: _handle_configure must NOT call show_user_creation.
+
+        User prompt was moved to _handle_user, which runs before PARTITION,
+        so the disk wipe can't happen on a cancelled user prompt.
+        """
         installer = Installer()
         installer._update_progress = MagicMock()
         installer.config.disk.device = "/dev/vda"
+        installer.config.user.username = "prefilled"
+        installer.config.user.password_hash = "$6$xxx"
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "testuser",
-            "password_hash": "$6$xxx",
-        }
         installer.tui = mock_tui
         ok = MagicMock()
         ok.returncode = 0
         with patch("subprocess.run", return_value=ok), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
+        mock_tui.show_user_creation.assert_not_called()
+        assert installer.config.user.username == "prefilled"
+
+    def test_handle_user_prompts_before_disk_touch(self) -> None:
+        """Phase 2: _handle_user collects credentials pre-wipe."""
+        installer = Installer()
+        installer._update_progress = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "testuser",
+            "password_hash": "$6$xxx",
+        }
+        installer.tui = mock_tui
+        installer._handle_user()
         assert installer.config.user.username == "testuser"
+        assert installer.config.user.password_hash == "$6$xxx"
+
+    def test_handle_desktop_sets_profile(self) -> None:
+        """Phase 2: _handle_desktop stores the selected profile."""
+        installer = Installer()
+        installer._update_progress = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_desktop_selection.return_value = "hyprland"
+        installer.tui = mock_tui
+        installer._handle_desktop()
+        assert installer.config.desktop.profile == "hyprland"
+
+    def test_user_state_runs_before_partition(self) -> None:
+        """Phase 2: USER and DESKTOP must come before PARTITION in _STATE_ORDER."""
+        from installer.state_machine import _STATE_ORDER, State
+        order = _STATE_ORDER
+        assert order.index(State.USER) < order.index(State.PARTITION)
+        assert order.index(State.DESKTOP) < order.index(State.PARTITION)
+        assert order.index(State.USER) < order.index(State.FORMAT)
 
 
 # ---------------------------------------------------------------------------

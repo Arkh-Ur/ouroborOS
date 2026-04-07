@@ -108,17 +108,17 @@ The function `_write_systemd_enables_to_root()` in `configure.sh` handles this b
 
 ## Atomic Update Flow
 
-The root filesystem is read-only, so direct `pacman` calls fail. The `ouroboros-upgrade` wrapper handles the full lifecycle:
+The root filesystem is read-only, so direct `pacman` calls fail. The `our-pac` wrapper handles the full lifecycle:
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant Upgrade as ouroboros-upgrade
+    participant Upgrade as our-pac
     participant Btrfs
     participant Boot as systemd-boot
     participant Kernel
 
-    User->>Upgrade: sudo ouroboros-upgrade -Syu
+    User->>Upgrade: sudo our-pac -Syu
     Upgrade->>Btrfs: snapshot -r @ → @snapshots/YYYY-MM-DD_pre-update
     Upgrade->>Boot: write new .conf entry for snapshot
     Btrfs-->>Upgrade: snapshot created ✓
@@ -141,7 +141,7 @@ sequenceDiagram
     end
 ```
 
-> **Note:** pacman pre/post upgrade hooks were evaluated but found useless — pacman checks filesystem writability BEFORE running hooks. The `ouroboros-upgrade` wrapper (like MicroOS `transactional-update`) is the correct approach.
+> **Note:** pacman pre/post upgrade hooks were evaluated but found useless — pacman checks filesystem writability BEFORE running hooks. The `our-pac` wrapper (like MicroOS `transactional-update`) is the correct approach.
 
 ### systemd-boot snapshot entries
 Each snapshot gets a boot entry in `/boot/loader/entries/`:

@@ -405,6 +405,58 @@ class TUI:
         )
 
     # ------------------------------------------------------------------
+    # Desktop profile selection
+    # ------------------------------------------------------------------
+
+    _DESKTOP_PROFILES: list[tuple[str, str]] = [
+        ("minimal",  "Nothing extra — TTY-only base (you install the DE yourself)"),
+        ("hyprland", "Hyprland + waybar + foot + wofi (Wayland tiling)"),
+        ("niri",     "Niri + foot + fuzzel (scrollable-tiling Wayland)"),
+        ("gnome",    "GNOME desktop + gdm (auto-login)"),
+        ("kde",      "KDE Plasma + sddm (auto-login)"),
+    ]
+
+    def show_desktop_selection(self) -> str:
+        """Prompt for a desktop profile. Returns the profile name."""
+        if self._backend == "rich":
+            return self._rich_desktop_selection()
+        return self._whiptail_desktop_selection()
+
+    def _rich_desktop_selection(self) -> str:
+        assert self._console is not None
+        table = Table(show_header=True, header_style="bold cyan", box=None)
+        table.add_column("Profile", style="bold")
+        table.add_column("Description")
+        for name, desc in self._DESKTOP_PROFILES:
+            table.add_row(name, desc)
+        self._console.print(
+            Panel(table, title="[bold]Desktop Profile[/bold]", border_style="cyan")
+        )
+        choices = [name for name, _ in self._DESKTOP_PROFILES]
+        return Prompt.ask(
+            "Choose desktop profile",
+            choices=choices,
+            default="minimal",
+            console=self._console,
+        )
+
+    def _whiptail_desktop_selection(self) -> str:
+        items: list[str] = []
+        for name, desc in self._DESKTOP_PROFILES:
+            items += [name, desc, "OFF" if name != "minimal" else "ON"]
+        rc, out = _whiptail(
+            *self._args(
+                "--radiolist",
+                "Select desktop profile:",
+                "20", "78", "5",
+                *items,
+            )
+        )
+        if rc != 0 or not out:
+            return "minimal"
+        return out.strip()
+
+    # ------------------------------------------------------------------
     # Disk selection
     # ------------------------------------------------------------------
 

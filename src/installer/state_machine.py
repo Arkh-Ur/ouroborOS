@@ -25,6 +25,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 from installer.config import InstallerConfig, find_unattended_config, load_config
+from installer.desktop_profiles import display_manager_for, packages_for
 from installer.tui import TUI
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,8 @@ class State(Enum):
     INIT = auto()
     PREFLIGHT = auto()
     LOCALE = auto()
+    USER = auto()
+    DESKTOP = auto()
     PARTITION = auto()
     FORMAT = auto()
     INSTALL = auto()
@@ -65,11 +68,17 @@ class State(Enum):
     FATAL = auto()
 
 
-# State execution order (excludes error states)
+# State execution order (excludes error states).
+#
+# IMPORTANT: every state that requires human input (LOCALE, USER, DESKTOP,
+# PARTITION confirmation) runs BEFORE FORMAT. Once FORMAT begins, the disk
+# is wiped — we never ask the user anything after that point.
 _STATE_ORDER: list[State] = [
     State.INIT,
     State.PREFLIGHT,
     State.LOCALE,
+    State.USER,
+    State.DESKTOP,
     State.PARTITION,
     State.FORMAT,
     State.INSTALL,
@@ -79,9 +88,11 @@ _STATE_ORDER: list[State] = [
 ]
 
 _STEP_RANGES: dict[State, tuple[int, int]] = {
-    State.INIT: (0, 5),
-    State.PREFLIGHT: (5, 10),
-    State.LOCALE: (10, 20),
+    State.INIT: (0, 3),
+    State.PREFLIGHT: (3, 8),
+    State.LOCALE: (8, 13),
+    State.USER: (13, 16),
+    State.DESKTOP: (16, 20),
     State.PARTITION: (20, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
@@ -94,6 +105,8 @@ _STEP_LABELS: dict[State, str] = {
     State.INIT: "Iniciando",
     State.PREFLIGHT: "Verificando requisitos",
     State.LOCALE: "Configurando idioma",
+    State.USER: "Creando usuario",
+    State.DESKTOP: "Seleccionando escritorio",
     State.PARTITION: "Seleccionando disco",
     State.FORMAT: "Preparando disco",
     State.INSTALL: "Instalando paquetes",
@@ -185,6 +198,8 @@ class Installer:
             State.INIT: self._handle_init,
             State.PREFLIGHT: self._handle_preflight,
             State.LOCALE: self._handle_locale,
+            State.USER: self._handle_user,
+            State.DESKTOP: self._handle_desktop,
             State.PARTITION: self._handle_partition,
             State.FORMAT: self._handle_format,
             State.INSTALL: self._handle_install,
@@ -333,6 +348,29 @@ class Installer:
             self.config.locale.timezone,
         )
         self._update_progress(State.LOCALE, 100)
+
+    def _handle_user(self) -> None:
+        """USER — collect username and password BEFORE touching the disk.
+
+        This state used to live inside CONFIGURE (after pacstrap). It was
+        moved forward so a cancelled prompt cannot waste a disk wipe.
+        """
+        self._update_progress(State.USER, 0)
+        if self.tui:
+            user_cfg = self.tui.show_user_creation()
+            self.config.user.username = user_cfg["username"]
+            self.config.user.password_hash = user_cfg["password_hash"]
+        log.info("User configured: %s", self.config.user.username)
+        self._update_progress(State.USER, 100)
+
+    def _handle_desktop(self) -> None:
+        """DESKTOP — pick a desktop profile (package set)."""
+        self._update_progress(State.DESKTOP, 0)
+        if self.tui:
+            profile = self.tui.show_desktop_selection()
+            self.config.desktop.profile = profile
+        log.info("Desktop profile: %s", self.config.desktop.profile)
+        self._update_progress(State.DESKTOP, 100)
 
     def _handle_partition(self) -> None:
         """PARTITION — disk selection, layout preview, confirmation."""
@@ -496,7 +534,9 @@ class Installer:
             "sudo",
             "zram-generator",
             "openssh",
-        ] + self.config.extra_packages
+            # systemd-nspawn + machinectl ship with the `systemd` package
+            # (already in base), used by `our-box` for container workflows.
+        ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
 
         ucode = self._detect_microcode_package()
         if ucode:
@@ -593,14 +633,13 @@ class Installer:
         self._run_op(args, progress_title="Regenerating fstab", final_msg="fstab regenerated.")
 
     def _handle_configure(self) -> None:
-        """CONFIGURE — chroot post-install configuration."""
+        """CONFIGURE — chroot post-install configuration.
+
+        No TUI prompts here anymore. Username/password are collected in
+        the USER state before the disk is touched; desktop profile is
+        collected in the DESKTOP state.
+        """
         self._update_progress(State.CONFIGURE, 0, "Configurando sistema...")
-
-        if self.tui:
-            user_cfg = self.tui.show_user_creation()
-            self.config.user.username = user_cfg["username"]
-            self.config.user.password_hash = user_cfg["password_hash"]
-
         self._update_progress(State.CONFIGURE, 20, "Ejecutando configuración...")
 
         configure_script = OPS_DIR / "configure.sh"
@@ -619,6 +658,8 @@ class Installer:
                 "USER_SHELL": self.config.user.shell,
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
+                "DESKTOP_DM": display_manager_for(self.config.desktop.profile),
+                "DESKTOP_PROFILE": self.config.desktop.profile,
             }
         )
 

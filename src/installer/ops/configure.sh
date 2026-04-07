@@ -440,7 +440,10 @@ EOF
     # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
-    # ouroboros-upgrade — the ONLY safe way to install/upgrade packages on ouroborOS.
+    # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+    # (Renamed from ouroboros-upgrade in Phase 2. A compatibility symlink is
+    # created below so existing scripts keep working.)
+    #
     # pacman checks filesystem writability before PreTransaction hooks run, so a hook
     # cannot remount rw in time. This wrapper:
     #   1. Remounts / rw so pacman can write
@@ -448,33 +451,185 @@ EOF
     #   3. Invokes real pacman with all arguments forwarded
     #   4. The 99-post-upgrade hook remounts / ro after the transaction
     #
-    # Usage: sudo ouroboros-upgrade -Syu
-    #        sudo ouroboros-upgrade -S <pkg>
-    #        sudo ouroboros-upgrade -R <pkg>
-    cat > "${TARGET}/usr/local/bin/ouroboros-upgrade" << 'SCRIPT'
+    # Usage: sudo our-pac -Syu
+    #        sudo our-pac -S <pkg>
+    #        sudo our-pac -R <pkg>
+    cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
-    exec sudo /usr/local/bin/ouroboros-upgrade "$@"
+    exec sudo /usr/local/bin/our-pac "$@"
 fi
 
 source /usr/local/lib/ouroboros/snapshot.sh
 
-echo "[ouroboros] Preparing package operation..."
+echo "[our-pac] Preparing package operation..."
 
 # Step 1: Remount root rw — must happen BEFORE pacman checks disk space
 mount -o remount,rw /
-echo "[ouroboros] Root remounted read-write"
+echo "[our-pac] Root remounted read-write"
 
 # Step 2: Create pre-upgrade Btrfs snapshot (timestamped, with boot entry)
 pre_upgrade_snapshot
 
 # Step 3: Run real pacman — 99-post-upgrade hook will remount ro after
-echo "[ouroboros] Running pacman $*"
+echo "[our-pac] Running pacman $*"
 exec /usr/bin/pacman "$@"
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/our-pac"
+
+    # Compatibility symlink — keeps pre-Phase-2 scripts and muscle memory working.
+    # Deprecated; will be removed in a future release.
+    ln -sf our-pac "${TARGET}/usr/local/bin/ouroboros-upgrade"
+    log_ok "our-pac installed (with ouroboros-upgrade compat symlink)."
+
+    # our-box — thin wrapper over systemd-nspawn / machinectl for container
+    # workflows. Lets users run browsers, IDEs, games, or proprietary software
+    # in isolated containers without polluting the immutable root. Containers
+    # live under /var/lib/machines/ (writable @var subvolume), each as its own
+    # Btrfs subvolume for independent snapshots.
+    cat > "${TARGET}/usr/local/bin/our-box" << 'SCRIPT'
+#!/usr/bin/env bash
+# our-box — systemd-nspawn container wrapper for ouroborOS.
+#
+# Usage:
+#   our-box create <name> [distro]   # bootstrap a container (default: arch)
+#   our-box enter <name>              # machinectl shell into a container
+#   our-box start <name>              # boot the container
+#   our-box stop <name>               # stop the container
+#   our-box list                      # list machines
+#   our-box remove <name>             # delete container + its subvolume
+set -euo pipefail
+
+MACHINES_ROOT="/var/lib/machines"
+
+die() { echo "our-box: $*" >&2; exit 1; }
+
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        exec sudo /usr/local/bin/our-box "$@"
+    fi
+}
+
+cmd_create() {
+    local name="${1:-}"
+    local distro="${2:-arch}"
+    [[ -n "$name" ]] || die "usage: our-box create <name> [distro]"
+    require_root "create" "$name" "$distro"
+
+    local target="${MACHINES_ROOT}/${name}"
+    [[ ! -e "$target" ]] || die "container '${name}' already exists at ${target}"
+
+    mkdir -p "$MACHINES_ROOT"
+    # Create a dedicated Btrfs subvolume so the container can be snapshotted
+    # independently. Falls back to plain directory on non-Btrfs.
+    if btrfs subvolume create "$target" 2>/dev/null; then
+        echo "[our-box] Created Btrfs subvolume: ${target}"
+    else
+        mkdir -p "$target"
+        echo "[our-box] Created directory (non-Btrfs): ${target}"
+    fi
+
+    case "$distro" in
+        arch)
+            command -v pacstrap >/dev/null \
+                || die "pacstrap not found — install arch-install-scripts"
+            pacstrap -c "$target" base
+            ;;
+        debian|ubuntu)
+            command -v debootstrap >/dev/null \
+                || die "debootstrap not found — install it with: sudo our-pac -S debootstrap"
+            debootstrap --include=systemd-container "$distro" "$target"
+            ;;
+        *)
+            die "unsupported distro: ${distro} (supported: arch, debian, ubuntu)"
+            ;;
+    esac
+
+    # Set a sensible default root password prompt on first login
+    systemd-nspawn -D "$target" --pipe passwd -d root || true
+
+    echo "[our-box] Container '${name}' ready. Enter with: our-box enter ${name}"
+}
+
+cmd_enter() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-box enter <name>"
+    require_root "enter" "$name"
+    exec machinectl shell "${name}" 2>/dev/null \
+        || exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+}
+
+cmd_start() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-box start <name>"
+    require_root "start" "$name"
+    exec machinectl start "$name"
+}
+
+cmd_stop() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-box stop <name>"
+    require_root "stop" "$name"
+    exec machinectl stop "$name"
+}
+
+cmd_list() {
+    machinectl list --all 2>/dev/null || true
+    echo
+    echo "Container storage: ${MACHINES_ROOT}"
+    ls -1 "${MACHINES_ROOT}" 2>/dev/null || true
+}
+
+cmd_remove() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-box remove <name>"
+    require_root "remove" "$name"
+
+    local target="${MACHINES_ROOT}/${name}"
+    [[ -e "$target" ]] || die "container '${name}' not found"
+
+    machinectl stop "$name" 2>/dev/null || true
+
+    if btrfs subvolume show "$target" >/dev/null 2>&1; then
+        btrfs subvolume delete "$target"
+    else
+        rm -rf "$target"
+    fi
+    echo "[our-box] Container '${name}' removed."
+}
+
+case "${1:-}" in
+    create) shift; cmd_create "$@" ;;
+    enter)  shift; cmd_enter "$@" ;;
+    start)  shift; cmd_start "$@" ;;
+    stop)   shift; cmd_stop "$@" ;;
+    list|ls) cmd_list ;;
+    remove|rm) shift; cmd_remove "$@" ;;
+    ""|-h|--help|help)
+        cat <<'HELP'
+our-box — systemd-nspawn container wrapper for ouroborOS
+
+USAGE
+    our-box create <name> [distro]   Bootstrap a new container (default: arch)
+    our-box enter <name>              Open a shell in the container
+    our-box start <name>              Boot the container as a machine
+    our-box stop <name>               Stop a running machine
+    our-box list                      List all containers
+    our-box remove <name>             Delete a container and its subvolume
+
+Containers live under /var/lib/machines/ and use Btrfs subvolumes when
+available, so each one can be snapshotted independently of the host.
+HELP
+        ;;
+    *)
+        die "unknown command: $1 (try 'our-box help')"
+        ;;
+esac
+SCRIPT
+    chmod 0755 "${TARGET}/usr/local/bin/our-box"
+    log_ok "our-box installed (systemd-nspawn container wrapper)."
 
     cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
@@ -540,6 +695,16 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
+
+    # Display manager — enabled only for desktop profiles that ship one
+    # (gnome → gdm, kde → sddm). Minimalist profiles (minimal/hyprland/niri)
+    # leave DESKTOP_DM empty and log in from tty.
+    if [[ -n "${DESKTOP_DM:-}" ]]; then
+        in_chroot systemctl enable "${DESKTOP_DM}.service"
+        log_ok "Display manager enabled: ${DESKTOP_DM}."
+    else
+        log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
+    fi
 
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.

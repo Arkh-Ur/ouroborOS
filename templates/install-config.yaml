@@ -24,6 +24,15 @@ user:
     - video
     - input
   shell: /bin/bash
+  # systemd-homed storage backend for the home directory.
+  # Options: subvolume (default, Btrfs) | luks | directory | classic
+  homed_storage: subvolume
+
+# Desktop profile — a starting-point package set. Optional; defaults to
+# "minimal" (no extra packages, TTY-only base) if omitted.
+# Options: minimal | hyprland | niri | gnome | kde
+desktop:
+  profile: minimal
 
 extra_packages:
   - openssh

@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from installer.desktop_profiles import VALID_PROFILES
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -39,6 +41,16 @@ class UserConfig:
     )
     shell: str = "/bin/bash"
     create_home: bool = True
+    # systemd-homed storage backend: "subvolume" (Btrfs, default) | "luks"
+    # | "directory" | "classic" (legacy /etc/passwd, opt-out).
+    homed_storage: str = "subvolume"
+
+
+@dataclass
+class DesktopConfig:
+    """Desktop environment profile — package set only, no curation."""
+
+    profile: str = "minimal"  # minimal | hyprland | niri | gnome | kde
 
 
 @dataclass
@@ -73,6 +85,7 @@ class InstallerConfig:
     locale: LocaleConfig = field(default_factory=LocaleConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     user: UserConfig = field(default_factory=UserConfig)
+    desktop: DesktopConfig = field(default_factory=DesktopConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -159,6 +172,22 @@ def validate_config(data: dict) -> None:
         raise ConfigValidationError(
             "user section must include 'password_hash' (SHA-512 crypt) or 'password'"
         )
+    homed_storage = user.get("homed_storage", "subvolume")
+    if homed_storage not in ("subvolume", "luks", "directory", "classic"):
+        raise ConfigValidationError(
+            f"user.homed_storage must be one of "
+            f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
+        )
+
+    # desktop section (optional — defaults to 'minimal')
+    desktop = data.get("desktop", {})
+    if desktop:
+        profile = desktop.get("profile", "minimal")
+        if profile not in VALID_PROFILES:
+            raise ConfigValidationError(
+                f"desktop.profile must be one of {sorted(VALID_PROFILES)}, "
+                f"got: {profile!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +261,11 @@ def load_config(path: Path) -> InstallerConfig:
         cfg.user.password_hash = result.stdout.strip()
     cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
     cfg.user.shell = str(usr.get("shell", "/bin/bash"))
+    cfg.user.homed_storage = str(usr.get("homed_storage", "subvolume"))
+
+    # Desktop profile (optional)
+    desk = data.get("desktop", {}) or {}
+    cfg.desktop.profile = str(desk.get("profile", "minimal"))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
