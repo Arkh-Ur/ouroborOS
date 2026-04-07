@@ -155,6 +155,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
+          git config --global --add safe.directory '*'
           TAG="${{ github.ref_name }}"
           SHA=$(git rev-parse HEAD)
 
