@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from installer.main import _build_parser, cmd_validate_config, main
-
 
 # ---------------------------------------------------------------------------
 # _build_parser
