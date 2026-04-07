@@ -16,9 +16,9 @@ This is useful for:
 The installer searches for a config file in this order:
 
 1. Kernel cmdline parameter: `ouroborOS.config=/path/to/config.yaml`
-2. USB drive root: `/run/media/*/ouroborOS-config.yaml`
-3. Live ISO root: `/ouroborOS-config.yaml`
-4. `/tmp/ouroborOS-config.yaml` (written interactively during session)
+2. `/tmp/ouroborOS-config.yaml` (e.g. injected via cloud-init or live ISO)
+3. `/run/ouroborOS-config.yaml`
+4. First `*.yaml` on USB drives under `/run/media/` matching filenames: `ouroborOS-config.yaml`, `ouroborOS.yaml`, or `installer-config.yaml`
 
 ---
 
@@ -26,100 +26,48 @@ The installer searches for a config file in this order:
 
 ```yaml
 # ouroborOS Installer Configuration
-# Version: 1.0
 # All fields with defaults are optional.
 
-# ─── LOCALE ─────────────────────────────────────────────────────────────────
-locale:
-  language: "en_US.UTF-8"      # locale name (see /etc/locale.gen)
-  keymap: "us"                  # keyboard layout (see localectl list-keymaps)
-  timezone: "America/New_York"  # TZ database name (see timedatectl list-timezones)
-
-# ─── DISK & PARTITIONS ───────────────────────────────────────────────────────
+# ─── DISK ──────────────────────────────────────────────────────────────────────
 disk:
-  target: "/dev/sda"            # Target disk (CAUTION: will be wiped)
-  scheme: "auto"                # "auto" | "manual"
-  wipe: true                    # Confirm wipe — required to be true
+  device: "/dev/sda"             # Target disk device path (required)
+  use_luks: false                # Enable LUKS2 full-disk encryption
+  btrfs_label: "ouroborOS"       # Btrfs filesystem label
+  swap_type: "zram"              # "zram" or "none" (no swap partition)
 
-  # Auto scheme: ESP + Btrfs (recommended)
-  auto:
-    esp_size: "512M"
-    swap: false                 # No swap; use zram instead
-    encryption: false           # LUKS on root partition
+# ─── LOCALE ────────────────────────────────────────────────────────────────────
+locale:
+  locale: "en_US.UTF-8"          # Locale name (see /etc/locale.gen)
+  keymap: "us"                   # Keyboard layout (see localectl list-keymaps)
+  timezone: "America/New_York"   # TZ database name (required)
 
-  # Manual scheme (advanced)
-  # manual:
-  #   partitions:
-  #     - device: "/dev/sda1"
-  #       type: "esp"
-  #       size: "512M"
-  #       format: "vfat"
-  #       mountpoint: "/boot"
-  #     - device: "/dev/sda2"
-  #       type: "linux"
-  #       format: "btrfs"
-  #       mountpoint: "/"
-
-# ─── BTRFS SUBVOLUMES ────────────────────────────────────────────────────────
-btrfs:
-  subvolumes:
-    root: "@"
-    var: "@var"
-    etc: "@etc"
-    home: "@home"
-    snapshots: "@snapshots"
-  compression: "zstd:3"         # zstd:1–22 | lzo | zlib | none
-  mountflags: "noatime"
-
-# ─── SYSTEM ──────────────────────────────────────────────────────────────────
-system:
-  hostname: "ouroborOS"
-  kernel: "linux-zen"           # linux | linux-zen | linux-lts | linux-hardened
-
-# ─── USERS ───────────────────────────────────────────────────────────────────
-users:
-  root:
-    password: ""                # Leave empty to disable root login (recommended)
-    password_hash: ""           # SHA-512 hash (use `openssl passwd -6`)
-
-  create:
-    - username: "alice"
-      realname: "Alice"
-      groups: ["wheel", "audio", "video", "storage"]
-      password_hash: "$6$rounds=..."
-      shell: "/bin/bash"
-      use_homed: false          # true = systemd-homed encrypted home
-
-# ─── PACKAGES ────────────────────────────────────────────────────────────────
-packages:
-  extra:                        # Additional packages beyond base
-    - neovim
-    - htop
-    - tmux
-  aur: []                       # AUR packages (requires AUR helper)
-
-# ─── NETWORK ─────────────────────────────────────────────────────────────────
+# ─── NETWORK ───────────────────────────────────────────────────────────────────
 network:
-  manager: "systemd-networkd"   # Only option for now
-  dns:
-    servers: ["1.1.1.1", "9.9.9.9"]
-    over_tls: true
-    dnssec: true
-  wifi:
-    enabled: false
-    ssid: ""
-    passphrase: ""
+  hostname: "ouroboros"          # System hostname (required)
+  enable_networkd: true          # Enable systemd-networkd
+  enable_iwd: true               # Enable iwd (WiFi)
+  enable_resolved: true          # Enable systemd-resolved
 
-# ─── BOOTLOADER ──────────────────────────────────────────────────────────────
-bootloader:
-  type: "systemd-boot"
-  timeout: 3
-  secure_boot: false
+# ─── USER ──────────────────────────────────────────────────────────────────────
+user:
+  username: "alice"              # Primary user username (required)
+  password: "changeme"           # Plaintext password (auto-hashed to SHA-512)
+  # password_hash: "$6$rounds=..."  # Or provide a pre-computed SHA-512 hash
+  groups:                        # Groups for the primary user
+    - wheel
+    - audio
+    - video
+    - input
+  shell: "/bin/bash"             # Login shell
 
-# ─── POST-INSTALL ─────────────────────────────────────────────────────────────
-post_install:
-  reboot: true                  # Reboot automatically after install
-  scripts: []                   # Paths to custom scripts run in chroot
+# ─── EXTRA PACKAGES ────────────────────────────────────────────────────────────
+extra_packages:                  # Additional packages beyond the base set
+  - neovim
+  - htop
+  - tmux
+
+# ─── POST-INSTALL ACTION ──────────────────────────────────────────────────────
+post_install_action: "reboot"    # "reboot" | "shutdown" | "none"
 ```
 
 ---
@@ -129,26 +77,18 @@ post_install:
 Minimal configuration for a typical single-user install:
 
 ```yaml
-locale:
-  language: "es_ES.UTF-8"
-  keymap: "es"
-  timezone: "Europe/Madrid"
-
 disk:
-  target: "/dev/vda"
-  scheme: "auto"
-  wipe: true
+  device: /dev/vda
 
-system:
-  hostname: "mi-ouroboros"
+locale:
+  timezone: Europe/Madrid
 
-users:
-  root:
-    password: ""
-  create:
-    - username: "usuario"
-      password_hash: "$6$rounds=656000$..."
-      groups: ["wheel", "audio", "video"]
+network:
+  hostname: mi-ouroboros
+
+user:
+  username: usuario
+  password_hash: $6$rounds=656000$...
 ```
 
 ---
@@ -162,6 +102,8 @@ openssl passwd -6 "mypassword"
 python3 -c "import crypt; print(crypt.crypt('mypassword', crypt.mksalt(crypt.METHOD_SHA512)))"
 ```
 
+Alternatively, use `password` (plaintext) in the config file — the installer auto-hashes it via `openssl passwd -6 -stdin` at load time.
+
 ---
 
 ## Schema Validation
@@ -173,11 +115,13 @@ ouroborOS-installer --validate-config /path/to/config.yaml
 ```
 
 Validation checks:
-- Required fields present (`disk.target`, `disk.wipe: true`)
-- Disk device exists
-- Password hashes are valid SHA-512 format
-- Timezone is valid
-- Locale is available
+- Required top-level sections present (`disk`, `locale`, `network`, `user`)
+- `disk.device` is an absolute `/dev/` path pointing to a whole disk (not a partition)
+- `locale.timezone` matches a valid timezone format
+- `network.hostname` is a valid RFC 1123 hostname
+- `user.username` is a valid POSIX username
+- `user` section includes either `password_hash` or `password`
+- `post_install_action` is one of: `reboot`, `shutdown`, `none`
 
 ---
 

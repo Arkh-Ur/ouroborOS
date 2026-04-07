@@ -20,14 +20,11 @@ graph LR
     end
 
     subgraph Storage["💾 Storage"]
-        REPART["systemd-repart\npartition layout"]
         BTRFS["Btrfs\nimmutable root"]
-        HOMED["systemd-homed\nencrypted homes"]
     end
 
     subgraph Init["🔧 Init & Config"]
         FIRSTBOOT["systemd-firstboot\nfirst-run setup"]
-        NSPAWN["systemd-nspawn\ninstall chroot"]
         TMPFILES["systemd-tmpfiles\ncompat symlinks"]
         OOMD["systemd-oomd\nOOM handling"]
         TIMESYNCD["systemd-timesyncd\nNTP"]
@@ -38,10 +35,6 @@ graph LR
     SDBOOT --> INITRAMFS --> BTRFS
     NETWORKD <--> IWD
     NETWORKD --> RESOLVED
-    REPART --> BTRFS
-    BTRFS --> HOMED
-    NSPAWN --> FIRSTBOOT
-    NSPAWN --> TMPFILES
 ```
 
 ---
@@ -73,6 +66,8 @@ sequenceDiagram
     SD-->>SD: multi-user.target reached ✓
 ```
 
+> **Note:** systemd-networkd, systemd-resolved, and generators start *before* `/etc` is mounted from `@etc`. Essential files are mirrored to `@` by the installer's `_write_systemd_enables_to_root()` function.
+
 ---
 
 ## Bootloader: systemd-boot
@@ -89,30 +84,32 @@ sequenceDiagram
 ├── loader/
 │   ├── loader.conf          ← global bootloader config
 │   └── entries/
-│       ├── ouroborOS.conf   ← default boot entry
-│       └── ouroborOS-fallback.conf
+│       ├── 01-ouroborOS.conf        ← default boot entry
+│       └── 02-ouroborOS-fallback.conf
 └── vmlinuz-linux-zen
 └── initramfs-linux-zen.img
 ```
 
 ### loader.conf
 ```ini
-default  ouroborOS.conf
+default  01-ouroborOS.conf
 timeout  3
 console-mode max
 editor   no
 ```
 
-### Boot entry (ouroborOS.conf)
+### Boot entry (01-ouroborOS.conf)
 ```ini
 title   ouroborOS
 linux   /vmlinuz-linux-zen
+initrd  /intel-ucode.img       # or /amd-ucode.img (auto-detected)
 initrd  /initramfs-linux-zen.img
-options root=UUID=XXXX rootflags=subvol=@,ro quiet splash loglevel=3
+options root=UUID=XXXX rootflags=subvol=@,ro loglevel=4
 ```
 
 **Installation:** `bootctl install` during installer post-config phase.
-**Updates:** `bootctl update` via pacman hook.
+**UEFI NVRAM entry:** `efibootmgr` from the host (chroot cannot write real NVRAM variables).
+**Updates:** `bootctl update` via the `ouroboros-upgrade` wrapper or manual execution.
 
 ---
 
@@ -128,8 +125,6 @@ Name=en*
 
 [Network]
 DHCP=yes
-DNS=1.1.1.1
-DNSSec=yes
 ```
 
 ### Wireless (iwd backend)
@@ -157,6 +152,8 @@ systemctl enable systemd-networkd.service
 systemctl enable iwd.service
 ```
 
+> **Important:** `.network` files and unit enable symlinks must exist on BOTH `@etc` AND `@` subvolumes. The installer's `_write_systemd_enables_to_root()` handles this.
+
 ---
 
 ## DNS: systemd-resolved
@@ -180,51 +177,31 @@ ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 ---
 
-## Storage / Partitioning: systemd-repart
+## Swap: systemd-zram-generator
 
-**Role:** Declarative partition creation during first boot or installation.
-Used during the installer to define the target disk layout in code.
+**Role:** Compressed RAM-based swap (no swap partition needed).
 
-### Partition definitions
 ```ini
-# /usr/lib/repart.d/10-esp.conf
-[Partition]
-Type=esp
-Format=vfat
-SizeMinBytes=512M
-SizeMaxBytes=512M
-
-# /usr/lib/repart.d/20-root.conf
-[Partition]
-Type=root
-Format=btrfs
-SizeMinBytes=10G
+# /etc/systemd/zram-generator.conf
+[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+swap-priority = 100
 ```
 
-**Usage in installer:**
-```bash
-systemd-repart --dry-run=no --empty=force /dev/sda
-```
+Enabled by default. The `zram-generator.conf` file must also be mirrored to the `@` subvolume for early-boot availability.
 
 ---
 
 ## Home Directories: systemd-homed
 
-**Role:** Portable, encrypted home directories per user.
-Each user's home is a LUKS-encrypted image, unlockable via password or FIDO2 key.
+> **Status:** Not yet implemented. Planned for future evaluation. Currently uses standard `useradd` with `@home` Btrfs subvolume.
 
-```bash
-# Create user with homed
-homectl create alice --real-name="Alice" --storage=luks
+---
 
-# Inspect
-homectl inspect alice
-```
+## Partitioning: systemd-repart
 
-**Benefits for ouroborOS:**
-- Home directory is portable (copy the image to another machine)
-- Automatic encryption without separate LUKS setup
-- Works with immutable root (home is always separate)
+> **Status:** Not yet implemented. Planned for future evaluation. The installer currently uses `sgdisk` for GPT partition layout, which is simpler and sufficient for the single-disk use case.
 
 ---
 
@@ -238,7 +215,7 @@ systemd-firstboot \
   --locale-messages=en_US.UTF-8 \
   --keymap=us \
   --timezone=UTC \
-  --hostname=ouroborOS \
+  --hostname=ouroboros \
   --root-password-hashed="$6$..."
 ```
 
@@ -246,21 +223,19 @@ Used by the installer to pre-seed system configuration before handing off to use
 
 ---
 
-## Container / Chroot: systemd-nspawn
+## Chroot: arch-chroot
 
-**Role:** Used during installation to chroot into the target system with full systemd support (instead of plain `arch-chroot`).
+**Role:** Used during installation to execute operations inside the target system.
+
+The installer uses `arch-chroot` (from the `arch-install-scripts` package) wrapped in an `in_chroot()` function:
 
 ```bash
-# Chroot into installed system
-systemd-nspawn -D /mnt \
-  --bind /etc/resolv.conf \
-  /bin/bash
+in_chroot() {
+    arch-chroot "$TARGET" "$@"
+}
 ```
 
-Benefits over plain chroot:
-- Proper namespace isolation
-- Mounts `/proc`, `/sys`, `/dev` correctly
-- Can run systemd units inside the container
+`arch-chroot` was chosen over `systemd-nspawn` for simplicity — we only need to run commands inside the mounted tree, not a full isolated container. A future version may evaluate `nspawn` for pre-flight boot testing.
 
 ---
 
@@ -277,6 +252,22 @@ d /var/usrlocal 0755 root root -
 
 ---
 
+## Package Updates: ouroboros-upgrade
+
+**Role:** Wrapper script that replaces direct `pacman` usage. Creates a pre-upgrade Btrfs snapshot, remounts root read-write, runs pacman, then remounts read-only.
+
+```bash
+# Full system upgrade (snapshot created automatically)
+sudo ouroboros-upgrade -Syu
+
+# Install specific packages
+sudo ouroboros-upgrade -S neovim tmux
+```
+
+> pacman pre/post upgrade hooks were evaluated but found useless — pacman checks filesystem writability BEFORE running hooks. This wrapper approach (like MicroOS `transactional-update`) is the correct solution.
+
+---
+
 ## Unit Summary
 
 | Unit | Enable at install | Purpose |
@@ -284,9 +275,7 @@ d /var/usrlocal 0755 root root -
 | `systemd-networkd.service` | Yes | Network configuration |
 | `systemd-resolved.service` | Yes | DNS resolution |
 | `iwd.service` | Yes | WiFi management |
-| `systemd-homed.service` | Yes | Encrypted home dirs |
 | `systemd-timesyncd.service` | Yes | NTP time sync |
-| `systemd-boot-update.service` | Yes | Auto-update bootloader |
 | `fstrim.timer` | Yes | Weekly SSD TRIM |
 | `systemd-oomd.service` | Yes | Out-of-memory daemon |
 
