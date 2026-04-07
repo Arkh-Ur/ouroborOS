@@ -3,8 +3,9 @@ name: Build ISO
 on:
   push:
     branches: [dev]
+    tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -83,6 +84,50 @@ jobs:
             out/ouroborOS-SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+
+          gh release create "$TAG" \
+            --title "ouroborOS ${TAG}" \
+            --target main \
+            --notes "$(cat <<'NOTES'
+          ## ouroborOS ${{ github.ref_name }}
+
+          ### Installation
+
+          1. Download the ISO below and verify the checksum:
+             \`\`\`bash
+             sha256sum -c ouroborOS-SHA256SUMS.txt
+             \`\`\`
+          2. Flash to USB:
+             \`\`\`bash
+             sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso
+             \`\`\`
+          3. Boot from USB (UEFI required) and follow the installer.
+
+          See the [User Guide](https://github.com/Arkh-Ur/ouroborOS/blob/main/docs/user-guide.md) for the full walkthrough.
+
+          ### Known limitations
+
+          | Limitation | Notes |
+          |-----------|-------|
+          | UEFI only | By design |
+          | x86_64 only | ARM deferred |
+          | No GUI installer | TUI + YAML only |
+          | No AUR helper | Use `makepkg` manually |
+          | No Secure Boot | Deferred to v0.2 |
+          | English only | Multi-language deferred |
+          NOTES
+          )" \
+            "$ISO" \
+            "$CHECKSUM"
 
       - name: Write build summary
         if: always()
