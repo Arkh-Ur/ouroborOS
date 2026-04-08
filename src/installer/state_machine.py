@@ -660,6 +660,7 @@ class Installer:
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
                 "DESKTOP_DM": display_manager_for(self.config.desktop.profile),
                 "DESKTOP_PROFILE": self.config.desktop.profile,
+                "HOMED_STORAGE": self.config.user.homed_storage,
             }
         )
 

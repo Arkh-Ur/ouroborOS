@@ -34,6 +34,7 @@ set -euo pipefail
 : "${USER_SHELL:='/bin/bash'}"
 : "${ENABLE_IWD:='1'}"
 : "${ENABLE_LUKS:='0'}"
+: "${HOMED_STORAGE:='subvolume'}"
 : "${ROOT_DEVICE:=''}"
 
 TARGET="$INSTALL_TARGET"
@@ -506,6 +507,23 @@ STUB
         chmod 0755 "${TARGET}/usr/local/bin/our-box"
     fi
 
+    # our-box-autostart — oneshot service that starts containers listed in
+    # /etc/our-box/autostart.conf at boot.  The wrapper script reads the conf
+    # and calls `our-box start <name>` for each entry.
+    local AUTOSTART_SRC="/usr/local/bin/our-box-autostart"
+    if [[ -f "${AUTOSTART_SRC}" && -r "${AUTOSTART_SRC}" ]]; then
+        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-box-autostart"
+        chmod 0755 "${TARGET}/usr/local/bin/our-box-autostart"
+    fi
+
+    # Install the systemd unit file for autostart
+    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-box-autostart.service"
+    if [[ -f "${AUTOSTART_UNIT_SRC}" && -r "${AUTOSTART_UNIT_SRC}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-box-autostart.service"
+        log_ok "our-box-autostart.service installed."
+    fi
+
     cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -546,6 +564,60 @@ EOF
     log_ok "os-release written."
 }
 
+# --- Step 11: systemd-homed migration setup ---------------------------------
+
+configure_homed() {
+    log_info "Configuring systemd-homed (storage: ${HOMED_STORAGE})"
+
+    case "$HOMED_STORAGE" in
+        subvolume|directory|luks) ;;
+        classic)
+            log_info "homed_storage=classic — skipping migration setup."
+            return 0
+            ;;
+        *)
+            log_error "Unknown homed_storage: ${HOMED_STORAGE}"
+            return 1
+            ;;
+    esac
+
+    in_chroot systemctl enable systemd-homed.service
+
+    local homed_migrate_src=""
+    homed_migrate_src="/usr/local/lib/ouroboros/homed-migrate.sh"
+    if [[ -f "$homed_migrate_src" && -r "$homed_migrate_src" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp "$homed_migrate_src" "${TARGET}/usr/local/lib/ouroboros/homed-migrate.sh"
+        chmod 0755 "${TARGET}/usr/local/lib/ouroboros/homed-migrate.sh"
+        log_ok "homed-migrate.sh installed."
+    else
+        log_warn "homed-migrate.sh not found on live ISO — migration will not work."
+    fi
+
+    mkdir -p "${TARGET}/etc/systemd/system"
+    local service_src="/etc/systemd/system/ouroboros-homed-migration.service"
+    if [[ -f "$service_src" && -r "$service_src" ]]; then
+        cp "$service_src" "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service"
+        log_ok "ouroboros-homed-migration.service installed."
+    else
+        log_warn "Migration service unit not found on live ISO."
+    fi
+
+    mkdir -p "${TARGET}/etc/ouroboros"
+    cat > "${TARGET}/etc/ouroboros/homed-migration.conf" << EOF
+HOMED_USERNAME=${USERNAME}
+HOMED_STORAGE=${HOMED_STORAGE}
+EOF
+
+    # The migration service runs only when this file exists; the script
+    # removes it after success to prevent re-execution on subsequent boots.
+    touch "${TARGET}/etc/ouroboros/homed-migration-pending"
+
+    in_chroot systemctl enable ouroboros-homed-migration.service
+
+    log_ok "systemd-homed migration configured (runs on first boot)."
+}
+
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -561,6 +633,7 @@ main() {
     configure_users
     configure_immutable_root
     configure_os_release
+    configure_homed
 
     # --- Fixes that need to land on BOTH @etc (overlay) and @ (root subvolume) ---
     # systemd loads unit files from @ BEFORE @etc mounts over /etc.
@@ -579,6 +652,23 @@ main() {
         log_ok "Display manager enabled: ${DESKTOP_DM}."
     else
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
+    fi
+
+    # our-box autostart — copy default config and enable service if containers are listed.
+    # The autostart.conf shipped in the ISO is empty (comments only); users add container
+    # names post-install.  During unattended installs the config can be pre-populated.
+    local AUTOSTART_CONF_SRC="/etc/our-box/autostart.conf"
+    mkdir -p "${TARGET}/etc/our-box"
+    if [[ -f "${AUTOSTART_CONF_SRC}" && -r "${AUTOSTART_CONF_SRC}" ]]; then
+        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-box/autostart.conf"
+    fi
+
+    # Enable the service only if autostart.conf has at least one real entry
+    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-box/autostart.conf" 2>/dev/null; then
+        in_chroot systemctl enable our-box-autostart.service
+        log_ok "our-box-autostart.service enabled (containers found in autostart.conf)."
+    else
+        log_info "our-box-autostart.service not enabled (no containers in autostart.conf)."
     fi
 
     # sshd_config: disable reverse DNS lookup.
@@ -703,6 +793,25 @@ main() {
             mkdir -p "${mnt}/etc/systemd"
             cp "${TARGET}/etc/systemd/zram-generator.conf" "${mnt}/etc/systemd/zram-generator.conf"
             log_ok "zram-generator.conf mirrored to @ subvolume."
+        fi
+
+        # Mirror homed migration service + config: systemd-homed starts before
+        # @etc is mounted. Without this, the migration unit is invisible at
+        # first boot and the user is never migrated.
+        if [[ -f "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service" ]]; then
+            mkdir -p "${mnt}/etc/systemd/system"
+            cp "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service" \
+                "${mnt}/etc/systemd/system/ouroboros-homed-migration.service"
+        fi
+        if [[ -f "${TARGET}/etc/ouroboros/homed-migration.conf" ]]; then
+            mkdir -p "${mnt}/etc/ouroboros"
+            cp "${TARGET}/etc/ouroboros/homed-migration.conf" \
+                "${mnt}/etc/ouroboros/homed-migration.conf"
+        fi
+        if [[ -f "${TARGET}/etc/ouroboros/homed-migration-pending" ]]; then
+            mkdir -p "${mnt}/etc/ouroboros"
+            cp "${TARGET}/etc/ouroboros/homed-migration-pending" \
+                "${mnt}/etc/ouroboros/homed-migration-pending"
         fi
     }
     write_to_root_subvolume _write_systemd_enables_to_root || true
