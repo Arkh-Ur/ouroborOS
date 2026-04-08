@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# our-box-autostart — read /etc/our-box/autostart.conf and start listed containers.
+#
+# Called by our-box-autostart.service at boot.
+# Each container is started sequentially; failures are logged but do NOT abort.
+set -euo pipefail
+
+readonly CONF="/etc/our-box/autostart.conf"
+readonly PROGRAM_NAME="our-box-autostart"
+
+_log() {
+    local level="$1"; shift
+    local ts
+    ts="$(date '+%Y-%m-%d %H:%M:%S')" || ts="????"
+    echo "[${ts}] [${PROGRAM_NAME}] [${level}] $*" >&2
+}
+
+if [[ ! -f "$CONF" ]]; then
+    _log "INFO" "No autostart config found at ${CONF} — nothing to do"
+    exit 0
+fi
+
+started=0
+failed=0
+skipped=0
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    # Strip leading/trailing whitespace
+    line="${line## }"
+    line="${line%% }"
+
+    # Skip empty lines and comments
+    [[ -z "$line" ]] && continue
+    [[ "$line" == \#* ]] && continue
+
+    if our-box start "$line"; then
+        _log "INFO" "Started container '${line}'"
+        ((started++)) || true
+    else
+        _log "ERROR" "Failed to start container '${line}'"
+        ((failed++)) || true
+    fi
+done < "$CONF"
+
+_log "INFO" "Autostart complete: ${started} started, ${failed} failed, ${skipped} skipped"
+
+# Return failure only if ALL containers failed
+if (( started == 0 && failed > 0 )); then
+    exit 1
+fi
+exit 0
