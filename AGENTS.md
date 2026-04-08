@@ -65,6 +65,10 @@ ouroborOS/
 | Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, installer-phases |
 | Config default interactiva | `templates/install-config.yaml` | Template YAML con contraseña plaintext, auto-hasseada |
 | Plan Phase 2 | `docs/PHASE_2_PLAN.md` | our-pac, our-box, desktop profiles, homed |
+| Documentación our-box | `docs/our-box.md` | Guía de usuario completa (651 líneas) |
+| Tests E2E our-box | `tests/scripts/e2e-our-box.sh` | 15 fases, 1382 líneas, QEMU+SSH |
+| Tests unitarios our-box | `tests/our_box/` | pytest unit tests |
+| Tests integración our-box | `src/installer/tests/test_our_box_integration.py` | pytest integration tests |
 | CI build + release | `.github/workflows/build.yml` | Tag push → ISO build → release en repo público |
 
 ## MAPA DE CÓDIGO
@@ -87,7 +91,7 @@ ouroborOS/
 | `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
 | configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM enable, homed |
 | `our-pac` | script | instalado en target | Wrapper de pacman con snapshot + remount (antes `ouroboros-upgrade`) |
-| `our-box` | script | instalado en target | Wrapper de systemd-nspawn para containers |
+| `our-box` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-box` | Wrapper systemd-nspawn: create/enter/start/stop/list/remove, snapshot, storage mount, image pull, monitor, diagnose, stats, logs, check (17 comandos, 1786 líneas) |
 
 ## CONVENCIONES
 
@@ -171,7 +175,7 @@ tests/scripts/test-shellcheck.sh
 - `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
 - `skills/qemu-e2e-test.md` — plan completo de test E2E: build ISO → install en QEMU (desatendido) → verificar sistema instalado via SSH + serial log.
 - Dual-repo: `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push en dev dispara build.yml que construye ISO y publica release en el repo público.
-- `our-pac` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-box` es el wrapper de systemd-nspawn.
+- `our-pac` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-box` es el wrapper de systemd-nspawn con 17 comandos (create/enter/start/stop/list/remove, snapshot create/list/restore, storage mount/umount, cleanup, disk-usage, image pull/list/remove, monitor, diagnose, stats, logs, check). Documentación en `docs/our-box.md`. Tests E2E en `tests/scripts/e2e-our-box.sh` (15 fases, 1382 líneas). Tests unitarios en `tests/our_box/`. Tests de integración en `src/installer/tests/test_our_box_integration.py`.
 - `desktop_profiles.py` define 5 perfiles: minimal, hyprland, niri, gnome, kde. GNOME usa gdm, KDE usa sddm, el resto arranca desde TTY.
 - La FSM ahora tiene estados USER y DESKTOP antes de PARTITION — todas las decisiones humanas se toman antes de cualquier operación destructiva.
 - pacman PreTransaction hooks NO funcionan para remount rw (pacman verifica escritura antes de ejecutar hooks). Por eso existe el wrapper `our-pac`.
