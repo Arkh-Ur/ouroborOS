@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+#
+# On the installed system:
+#   1. Remounts / read-write (root is normally read-only)
+#   2. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
+#   3. Invokes pacman with all arguments forwarded
+#   4. The 99-post-upgrade hook remounts / read-only after the transaction
+#
+# On the live ISO:
+#   Simply forwards to pacman (root is already writable, no snapshots needed).
+#
+# Usage: sudo our-pac -Syu
+#        sudo our-pac -S <pkg>
+#        sudo our-pac -R <pkg>
+set -euo pipefail
+
+readonly PROGRAM_NAME="our-pac"
+
+_msg()    { echo "[${PROGRAM_NAME}] $*"; }
+_err()    { _msg "ERROR: $*" >&2; }
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
+fi
+
+is_immutable_root() {
+    findmnt / -o OPTIONS -n 2>/dev/null | grep -q '\bro\b'
+}
+
+if is_immutable_root; then
+    _msg "Preparing package operation on immutable root..."
+
+    snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
+    if [[ -r "$snapshot_lib" ]]; then
+        source "$snapshot_lib"
+
+        mount -o remount,rw /
+        _msg "Root remounted read-write"
+
+        pre_upgrade_snapshot
+    else
+        _msg "Snapshot library not found — skipping snapshot (direct remount)"
+        mount -o remount,rw /
+        _msg "Root remounted read-write"
+    fi
+
+    _msg "Running pacman $*"
+    exec /usr/bin/pacman "$@"
+else
+    _msg "Running pacman $* (writable root)"
+    exec /usr/bin/pacman "$@"
+fi
