@@ -58,3 +58,6 @@ git
 
 # Shellcheck (for dev/CI usage inside live)
 shellcheck
+
+# Container bootstrapping (our-box: Debian/Ubuntu containers)
+debootstrap

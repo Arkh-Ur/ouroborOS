@@ -484,152 +484,27 @@ SCRIPT
     ln -sf our-pac "${TARGET}/usr/local/bin/ouroboros-upgrade"
     log_ok "our-pac installed (with ouroboros-upgrade compat symlink)."
 
-    # our-box — thin wrapper over systemd-nspawn / machinectl for container
-    # workflows. Lets users run browsers, IDEs, games, or proprietary software
-    # in isolated containers without polluting the immutable root. Containers
-    # live under /var/lib/machines/ (writable @var subvolume), each as its own
-    # Btrfs subvolume for independent snapshots.
-    cat > "${TARGET}/usr/local/bin/our-box" << 'SCRIPT'
+    # our-box — full-featured systemd-nspawn container wrapper for ouroborOS.
+    # Copy from the live ISO (which ships the complete version with snapshots,
+    # storage management, image management, monitoring, diagnostics, and stats).
+    # Falls back to a minimal inline version if the ISO copy is missing.
+    local OUR_BOX_SRC="/usr/local/bin/our-box"
+    if [[ -f "${OUR_BOX_SRC}" && -r "${OUR_BOX_SRC}" ]]; then
+        cp "${OUR_BOX_SRC}" "${TARGET}/usr/local/bin/our-box"
+        chmod 0755 "${TARGET}/usr/local/bin/our-box"
+        log_ok "our-box installed (copied full version from live ISO)."
+    else
+        log_warn "our-box not found on live ISO at ${OUR_BOX_SRC} — installing minimal stub"
+        cat > "${TARGET}/usr/local/bin/our-box" << 'STUB'
 #!/usr/bin/env bash
-# our-box — systemd-nspawn container wrapper for ouroborOS.
-#
-# Usage:
-#   our-box create <name> [distro]   # bootstrap a container (default: arch)
-#   our-box enter <name>              # machinectl shell into a container
-#   our-box start <name>              # boot the container
-#   our-box stop <name>               # stop the container
-#   our-box list                      # list machines
-#   our-box remove <name>             # delete container + its subvolume
+# our-box — minimal stub (full version was not available on the ISO at install time)
 set -euo pipefail
-
-MACHINES_ROOT="/var/lib/machines"
-
 die() { echo "our-box: $*" >&2; exit 1; }
-
-require_root() {
-    if [[ $EUID -ne 0 ]]; then
-        exec sudo /usr/local/bin/our-box "$@"
+echo "our-box: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
+exit 1
+STUB
+        chmod 0755 "${TARGET}/usr/local/bin/our-box"
     fi
-}
-
-cmd_create() {
-    local name="${1:-}"
-    local distro="${2:-arch}"
-    [[ -n "$name" ]] || die "usage: our-box create <name> [distro]"
-    require_root "create" "$name" "$distro"
-
-    local target="${MACHINES_ROOT}/${name}"
-    [[ ! -e "$target" ]] || die "container '${name}' already exists at ${target}"
-
-    mkdir -p "$MACHINES_ROOT"
-    # Create a dedicated Btrfs subvolume so the container can be snapshotted
-    # independently. Falls back to plain directory on non-Btrfs.
-    if btrfs subvolume create "$target" 2>/dev/null; then
-        echo "[our-box] Created Btrfs subvolume: ${target}"
-    else
-        mkdir -p "$target"
-        echo "[our-box] Created directory (non-Btrfs): ${target}"
-    fi
-
-    case "$distro" in
-        arch)
-            command -v pacstrap >/dev/null \
-                || die "pacstrap not found — install arch-install-scripts"
-            pacstrap -c "$target" base
-            ;;
-        debian|ubuntu)
-            command -v debootstrap >/dev/null \
-                || die "debootstrap not found — install it with: sudo our-pac -S debootstrap"
-            debootstrap --include=systemd-container "$distro" "$target"
-            ;;
-        *)
-            die "unsupported distro: ${distro} (supported: arch, debian, ubuntu)"
-            ;;
-    esac
-
-    # Set a sensible default root password prompt on first login
-    systemd-nspawn -D "$target" --pipe passwd -d root || true
-
-    echo "[our-box] Container '${name}' ready. Enter with: our-box enter ${name}"
-}
-
-cmd_enter() {
-    local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box enter <name>"
-    require_root "enter" "$name"
-    exec machinectl shell "${name}" 2>/dev/null \
-        || exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
-}
-
-cmd_start() {
-    local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box start <name>"
-    require_root "start" "$name"
-    exec machinectl start "$name"
-}
-
-cmd_stop() {
-    local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box stop <name>"
-    require_root "stop" "$name"
-    exec machinectl stop "$name"
-}
-
-cmd_list() {
-    machinectl list --all 2>/dev/null || true
-    echo
-    echo "Container storage: ${MACHINES_ROOT}"
-    ls -1 "${MACHINES_ROOT}" 2>/dev/null || true
-}
-
-cmd_remove() {
-    local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box remove <name>"
-    require_root "remove" "$name"
-
-    local target="${MACHINES_ROOT}/${name}"
-    [[ -e "$target" ]] || die "container '${name}' not found"
-
-    machinectl stop "$name" 2>/dev/null || true
-
-    if btrfs subvolume show "$target" >/dev/null 2>&1; then
-        btrfs subvolume delete "$target"
-    else
-        rm -rf "$target"
-    fi
-    echo "[our-box] Container '${name}' removed."
-}
-
-case "${1:-}" in
-    create) shift; cmd_create "$@" ;;
-    enter)  shift; cmd_enter "$@" ;;
-    start)  shift; cmd_start "$@" ;;
-    stop)   shift; cmd_stop "$@" ;;
-    list|ls) cmd_list ;;
-    remove|rm) shift; cmd_remove "$@" ;;
-    ""|-h|--help|help)
-        cat <<'HELP'
-our-box — systemd-nspawn container wrapper for ouroborOS
-
-USAGE
-    our-box create <name> [distro]   Bootstrap a new container (default: arch)
-    our-box enter <name>              Open a shell in the container
-    our-box start <name>              Boot the container as a machine
-    our-box stop <name>               Stop a running machine
-    our-box list                      List all containers
-    our-box remove <name>             Delete a container and its subvolume
-
-Containers live under /var/lib/machines/ and use Btrfs subvolumes when
-available, so each one can be snapshotted independently of the host.
-HELP
-        ;;
-    *)
-        die "unknown command: $1 (try 'our-box help')"
-        ;;
-esac
-SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/our-box"
-    log_ok "our-box installed (systemd-nspawn container wrapper)."
 
     cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
