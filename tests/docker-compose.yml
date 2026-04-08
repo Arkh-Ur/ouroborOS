@@ -52,6 +52,18 @@ services:
     <<: *test-base
     command: bash /workspace/tests/scripts/smoke-test.sh
 
+  # ── our-box E2E (QEMU required — cannot run in Docker) ──────────────────────
+  e2e-our-box:
+    <<: *test-base
+    tmpfs:
+      - /tmp:exec,mode=1777
+    privileged: true
+    devices:
+      - /dev/kvm:/dev/kvm
+    command: bash /workspace/tests/scripts/e2e-our-box.sh
+    profiles:
+      - e2e
+
   # ── Run all suites sequentially ─────────────────────────────────────────────
   full-suite:
     <<: *test-base
