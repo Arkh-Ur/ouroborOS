@@ -1,7 +1,7 @@
 # BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Generado:** 2026-04-07
-**Commit:** 45be5ee
+**Generado:** 2026-04-08
+**Commit:** 6473e67
 **Branch:** dev
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
@@ -24,7 +24,7 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Release v0.1.0:** Publicado el 2026-04-07 con ISO (1.3GB) + SHA256SUMS. Fases 1-5 completadas.
 
-**Estado actual:** Phase 2 (post-v0.1.0) en progreso — namespace `our-*` (`our-pac`, `our-box`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`.
+**Estado actual:** Phase 2 completa — namespace `our-*` (`our-pac`, `our-box`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`. Phase 3 pendiente.
 
 ## ESTRUCTURA
 
@@ -90,7 +90,7 @@ ouroborOS/
 | `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab completo |
 | `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
 | configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM enable, homed |
-| `our-pac` | script | instalado en target | Wrapper de pacman con snapshot + remount (antes `ouroboros-upgrade`) |
+| `our-pac` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-pac` | Wrapper de pacman con snapshot + remount rw (antes `ouroboros-upgrade`, symlink de compat) |
 | `our-box` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-box` | Wrapper systemd-nspawn: create/enter/start/stop/list/remove, snapshot, storage mount, image pull, monitor, diagnose, stats, logs, check (17 comandos, 1786 líneas) |
 
 ## CONVENCIONES
