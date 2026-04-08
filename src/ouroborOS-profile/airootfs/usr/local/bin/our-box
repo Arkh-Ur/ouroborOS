@@ -1673,6 +1673,27 @@ STORAGE
 IMAGES
     Cached base images live under /var/lib/machines/.images/<distro>.
 
+MONITORING
+    monitor   Real-time dashboard refreshed every N seconds (default 2).
+              Shows container name, state, PID, and IP address.
+              Press Ctrl+C to exit. Optional --interval N to change speed.
+
+    diagnose  Runs health checks: service status, storage health, container
+              integrity, network connectivity, and running process health.
+              Reports issues and warnings with fix suggestions.
+
+    stats     For each running container (or a specific one), shows CPU usage
+              percentage, memory (RSS/VIRT/Peak), thread count, disk usage,
+              and open TCP connections. CPU measurement takes ~1 second.
+
+    logs      Displays journal logs for a container using journalctl --machine.
+              Supports --follow (-f) for tail mode and --lines (-n) to limit
+              output (default: 100 lines).
+
+    check     Verifies Btrfs filesystem health, service availability, required
+              tools, container registration consistency, and boot entry
+              integrity. Returns non-zero if errors are found.
+
 SUPPORTED DISTROS (for create and image pull)
     arch      Arch Linux (default, uses pacstrap)
     debian    Debian (uses debootstrap)
@@ -1687,11 +1708,17 @@ EXAMPLES
     our-box disk-usage                     Check space usage
     our-box cleanup --threshold 80         Clean old snapshots if disk > 80%
     our-box image pull debian              Cache a Debian base image
+    our-box monitor                        Watch all containers in real time
+    our-box diagnose                       Run diagnostics
+    our-box stats mydev                    Show performance stats for mydev
+    our-box logs mydev -f -n 50            Follow logs (last 50 lines)
+    our-box check                          Verify system integrity
     our-box remove mydev                   Delete it
 
 EXIT CODES
     0   Success
     1   Error (invalid usage, operation failed)
+    N   Number of issues found (diagnose, check)
 HELP
 }
 
@@ -1731,6 +1758,11 @@ case "${1:-}" in
         ;;
     cleanup)     shift; cmd_cleanup "$@" ;;
     disk-usage|du) cmd_disk_usage ;;
+    monitor)     shift; cmd_monitor "$@" ;;
+    diagnose)    cmd_diagnose ;;
+    stats)       shift; cmd_stats "$@" ;;
+    logs)        shift; cmd_logs "$@" ;;
+    check)       cmd_check ;;
     image)
         shift
         case "${1:-}" in
