@@ -1,6 +1,6 @@
 # Phase 2 — Plan
 
-> **Status:** planning → in progress
+> **Status:** complete
 > **Follows:** v0.1.0 (Phase 1 complete)
 > **Goal:** fix the two biggest friction points in v0.1.0 and introduce the `our-*` command namespace alongside desktop selection and container support.
 
@@ -185,18 +185,18 @@ Phase 2 stops there — no Wayland/PipeWire passthrough, no GUI-app launchers. T
 
 ## Deliverables checklist
 
-- [ ] `docs/PHASE_2_PLAN.md` (this file)
-- [ ] `src/installer/desktop_profiles.py` — `PROFILE_PACKAGES`, `PROFILE_DM`
-- [ ] `src/installer/config.py` — `DesktopConfig` dataclass, `UserConfig.homed_storage`, validation, YAML loader
-- [ ] `src/installer/tui.py` — `show_desktop_selection()` (Rich + whiptail)
-- [ ] `src/installer/state_machine.py` — new `USER` and `DESKTOP` states, reordered `_STATE_ORDER`, profile injection in `_handle_install()`, `DESKTOP_DM` exported to configure env
-- [ ] `src/installer/ops/configure.sh` — conditional display manager enable, homed enable, homed registration unit
-- [ ] `src/ouroborOS-profile/airootfs/usr/local/bin/our-pac` — renamed from `ouroboros-upgrade`, with compatibility symlink
-- [ ] `src/ouroborOS-profile/airootfs/usr/local/bin/our-box` — new nspawn wrapper
-- [ ] `templates/install-config.yaml` — documented `desktop:` and `user.homed_storage:` sections
-- [ ] `docs/user-guide.md`, `README.md`, `CLAUDE.md` — replace `ouroboros-upgrade` with `our-pac`, document `our-box`
-- [ ] `src/installer/tests/` — update FSM order tests, config tests, TUI tests
-- [ ] `IMPLEMENTATION_PLAN.md` — mark Phase 2 in progress / complete
+- [x] `docs/PHASE_2_PLAN.md` (this file)
+- [x] `src/installer/desktop_profiles.py` — `PROFILE_PACKAGES`, `PROFILE_DM`
+- [x] `src/installer/config.py` — `DesktopConfig` dataclass, `UserConfig.homed_storage`, validation, YAML loader
+- [x] `src/installer/tui.py` — `show_desktop_selection()` (Rich + whiptail)
+- [x] `src/installer/state_machine.py` — new `USER` and `DESKTOP` states, reordered `_STATE_ORDER`, profile injection in `_handle_install()`, `DESKTOP_DM` exported to configure env
+- [x] `src/installer/ops/configure.sh` — conditional display manager enable, homed enable, homed registration unit
+- [x] `src/ouroborOS-profile/airootfs/usr/local/bin/our-pac` — renamed from `ouroboros-upgrade`, with compatibility symlink
+- [x] `src/ouroborOS-profile/airootfs/usr/local/bin/our-box` — new nspawn wrapper (17 commands, 1786 lines)
+- [x] `templates/install-config.yaml` — documented `desktop:` and `user.homed_storage:` sections
+- [x] `docs/user-guide.md`, `README.md`, `CLAUDE.md` — replace `ouroboros-upgrade` with `our-pac`, document `our-box`
+- [x] `src/installer/tests/` — update FSM order tests, config tests, TUI tests (280 passed, 0 failed)
+- [x] `IMPLEMENTATION_PLAN.md` — mark Phase 2 complete
 
 ---
 

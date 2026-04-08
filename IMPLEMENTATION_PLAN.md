@@ -1,10 +1,10 @@
 # ouroborOS — Implementation Plan
 
-**Version:** 0.1 roadmap (complete) → Phase 2 in progress
-**Date:** 2026-04-07
+**Version:** 0.1 roadmap (complete) → Phase 2 complete
+**Date:** 2026-04-08
 **Branch:** dev
 
-> **v0.1.0 released 2026-04-07.** All 5 phases complete. See [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md) for post-v0.1.0 work.
+> **v0.1.0 released 2026-04-07.** All 5 phases complete. Phase 2 (post-v0.1.0) complete. See [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md) for details.
 
 ---
 
