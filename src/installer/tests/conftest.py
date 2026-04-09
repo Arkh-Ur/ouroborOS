@@ -7,9 +7,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock
-
 import pytest
 
 
@@ -149,7 +146,6 @@ readonly PROGRAM_NAME="our-box"
         # Skip lines up to and including "set -euo pipefail" and the 3 readonly lines
         skip_until = 0
         found_set = False
-        found_constants = 0
         for i, line in enumerate(lines):
             if "set -euo pipefail" in line:
                 found_set = True
