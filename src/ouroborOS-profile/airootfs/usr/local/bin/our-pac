@@ -2,10 +2,14 @@
 # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
 # On the installed system:
-#   1. Remounts / read-write (root is normally read-only)
-#   2. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
-#   3. Invokes pacman with all arguments forwarded
-#   4. The 99-post-upgrade hook remounts / read-only after the transaction
+#   1. Makes / writable via btrfs property set ro=false (immutability is enforced
+#      at the Btrfs subvolume level, not just via mount options — the mount-option
+#      ro is overridden by the device's rw state when @var/@etc/@home are mounted
+#      rw from the same Btrfs device).
+#   2. Remounts / read-write at the VFS layer.
+#   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
+#   4. Invokes pacman with all arguments forwarded.
+#   5. The 99-post-upgrade hook restores ro via btrfs property set ro=true.
 #
 # On the live ISO:
 #   Simply forwards to pacman (root is already writable, no snapshots needed).
@@ -24,8 +28,12 @@ if [[ $EUID -ne 0 ]]; then
     exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
 fi
 
+# Check if the root subvolume is read-only at the Btrfs level.
+# NOTE: We check the Btrfs property, NOT the mount option — the mount-option ro
+# is unreliable on Btrfs because mounting any other subvolume of the same device
+# as rw (e.g. @var, @etc) causes the kernel to report the root mount as rw too.
 is_immutable_root() {
-    findmnt / -o OPTIONS -n 2>/dev/null | grep -q '\bro\b'
+    btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
 }
 
 if is_immutable_root; then
@@ -35,19 +43,23 @@ if is_immutable_root; then
     if [[ -r "$snapshot_lib" ]]; then
         source "$snapshot_lib"
 
+        # Unlock the root subvolume at the Btrfs level first, then remount rw
+        # at the VFS layer so the kernel path also allows writes.
+        btrfs property set / ro false
         mount -o remount,rw /
-        _msg "Root remounted read-write"
+        _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
 
         pre_upgrade_snapshot
     else
-        _msg "Snapshot library not found — skipping snapshot (direct remount)"
+        _msg "Snapshot library not found — unlocking root (direct)"
+        btrfs property set / ro false
         mount -o remount,rw /
-        _msg "Root remounted read-write"
+        _msg "Root unlocked and remounted read-write"
     fi
 
     _msg "Running pacman $*"
     exec /usr/bin/pacman "$@"
 else
-    _msg "Running pacman $* (writable root)"
+    _msg "Running pacman $* (writable root — live ISO or unlocked)"
     exec /usr/bin/pacman "$@"
 fi

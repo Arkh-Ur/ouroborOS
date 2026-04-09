@@ -24,8 +24,13 @@ from dataclasses import asdict
 from enum import Enum, auto
 from pathlib import Path
 
-from installer.config import InstallerConfig, find_unattended_config, load_config
-from installer.desktop_profiles import display_manager_for, packages_for
+from installer.config import InstallerConfig, find_unattended_config, load_config, load_config_from_url
+from installer.desktop_profiles import (
+    dm_package,
+    dm_service,
+    packages_for,
+    resolve_dm,
+)
 from installer.tui import TUI
 
 # ---------------------------------------------------------------------------
@@ -299,9 +304,28 @@ class Installer:
             log.info("Unattended config found: %s", config_path)
             self.config = load_config(config_path)
             self.tui = None
-        else:
-            self.tui = TUI(title="ouroborOS Installer")
-            self.tui.show_welcome()
+            return
+
+        # No config found — start interactive TUI
+        self.tui = TUI(title="ouroborOS Installer")
+        self.tui.show_welcome()
+
+        # Ask if user wants to provide a remote config URL
+        remote_url = self.tui.show_remote_config_prompt()
+        if remote_url:
+            try:
+                self.config = load_config_from_url(remote_url)
+                self.tui = None  # Switch to unattended mode
+                log.info("Remote config loaded successfully from: %s", remote_url)
+            except Exception as exc:
+                log.warning("Failed to load remote config: %s", exc)
+                if self.tui:
+                    self.tui.show_error(
+                        f"Failed to load remote config:\n{exc}\n\n"
+                        "Continuing in interactive mode.",
+                        recoverable=True,
+                    )
+                # Fall through to interactive mode — TUI is still alive
 
     def _handle_preflight(self) -> None:
         """PREFLIGHT — verify system requirements."""
@@ -360,16 +384,25 @@ class Installer:
             user_cfg = self.tui.show_user_creation()
             self.config.user.username = user_cfg["username"]
             self.config.user.password_hash = user_cfg["password_hash"]
+            if "password" in user_cfg:
+                self.config.user.password_plaintext = user_cfg["password"]
         log.info("User configured: %s", self.config.user.username)
         self._update_progress(State.USER, 100)
 
     def _handle_desktop(self) -> None:
-        """DESKTOP — pick a desktop profile (package set)."""
+        """DESKTOP — pick a desktop profile and display manager."""
         self._update_progress(State.DESKTOP, 0)
         if self.tui:
             profile = self.tui.show_desktop_selection()
             self.config.desktop.profile = profile
-        log.info("Desktop profile: %s", self.config.desktop.profile)
+            dm_choice = self.tui.show_dm_selection(profile=profile)
+            self.config.desktop.dm = dm_choice
+        log.info(
+            "Desktop profile: %s (dm: %s → %s)",
+            self.config.desktop.profile,
+            self.config.desktop.dm,
+            resolve_dm(self.config.desktop.profile, self.config.desktop.dm),
+        )
         self._update_progress(State.DESKTOP, 100)
 
     def _handle_partition(self) -> None:
@@ -415,43 +448,62 @@ class Installer:
 
         self.config.disk.luks_passphrase = ""
 
+    # Reflector args shared across all attempts.
+    _REFLECTOR_BASE_ARGS: list[str] = [
+        "--protocol", "https,http",
+        "--latest", "20",
+        "--age", "24",
+        "--sort", "score",
+        "--number", "10",
+    ]
+
     def _generate_mirrorlist(self) -> None:
-        """Generate a working mirrorlist on the live system for pacstrap."""
+        """Generate a working mirrorlist on the live system for pacstrap.
+
+        Strategy: broad pool → score → keep fastest 10.
+        1. Get the 50 most-recently-synced mirrors (age <= 24h).
+        2. Sort by MirrorStatus score (composite: delay + completion + speed).
+        3. Keep the fastest 10.
+        4. If that fails (e.g. geoip unavailable), fallback to worldwide with
+           the same filters.
+        """
         host_mirrorlist = Path("/etc/pacman.d/mirrorlist")
-        self._update_progress(State.INSTALL, 0, "Generando lista de mirrors...")
+        self._update_progress(State.INSTALL, 0, "Benchmarking mirrors...")
 
+        # Attempt 1: regional (auto-detected by reflector via geoip)
+        regional_args = [
+            "reflector",
+            *self._REFLECTOR_BASE_ARGS,
+            "--save", str(host_mirrorlist),
+        ]
         result = subprocess.run(
-            [
-                "reflector",
-                "--country", "CL,AR,BR,US",
-                "--latest", "10",
-                "--sort", "rate",
-                "--save", str(host_mirrorlist),
-            ],
-            capture_output=True,
-            text=True,
+            regional_args, capture_output=True, text=True, timeout=60,
         )
-        if result.returncode != 0:
-            log.warning(
-                "reflector (regional) failed: %s — trying global fallback",
-                result.stderr.strip(),
-            )
-            result = subprocess.run(
-                [
-                    "reflector",
-                    "--latest", "20",
-                    "--sort", "rate",
-                    "--save", str(host_mirrorlist),
-                ],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                raise InstallerError(
-                    f"reflector failed to generate mirrorlist: {result.stderr}"
-                )
+        if result.returncode == 0:
+            log.info("Host mirrorlist generated (regional): %s", host_mirrorlist)
+            return
 
-        log.info("Host mirrorlist generated: %s", host_mirrorlist)
+        log.warning(
+            "reflector (regional) failed: %s — trying worldwide fallback",
+            result.stderr.strip(),
+        )
+
+        # Attempt 2: worldwide (no country filter)
+        worldwide_args = [
+            "reflector",
+            *self._REFLECTOR_BASE_ARGS,
+            "--save", str(host_mirrorlist),
+        ]
+        result = subprocess.run(
+            worldwide_args, capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            log.info("Host mirrorlist generated (worldwide): %s", host_mirrorlist)
+            return
+
+        raise InstallerError(
+            f"reflector failed to generate mirrorlist: {result.stderr}"
+        )
 
     def _init_pacman_keyring(self) -> None:
         """Initialise the pacman keyring on the live system.
@@ -534,9 +586,17 @@ class Installer:
             "sudo",
             "zram-generator",
             "openssh",
+            "which",
             # systemd-nspawn + machinectl ship with the `systemd` package
             # (already in base), used by `our-box` for container workflows.
         ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
+
+        # Add DM package if explicitly chosen and not already in profile packages
+        resolved_dm = resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
+        if resolved_dm != "none":
+            dm_pkg = dm_package(resolved_dm)
+            if dm_pkg not in packages:
+                packages.append(dm_pkg)
 
         ucode = self._detect_microcode_package()
         if ucode:
@@ -654,17 +714,24 @@ class Installer:
                 "HOSTNAME": self.config.network.hostname,
                 "USERNAME": self.config.user.username,
                 "USER_PASSWORD_HASH": self.config.user.password_hash,
+                "USER_PASSWORD": self.config.user.password_plaintext,
                 "USER_GROUPS": ",".join(self.config.user.groups),
                 "USER_SHELL": self.config.user.shell,
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
-                "DESKTOP_DM": display_manager_for(self.config.desktop.profile),
+                "DESKTOP_DM": dm_service(
+                    resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
+                ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",
                 "DESKTOP_PROFILE": self.config.desktop.profile,
                 "HOMED_STORAGE": self.config.user.homed_storage,
             }
         )
 
         result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
+        
+        # Clear plaintext password after configure — no longer needed
+        self.config.user.password_plaintext = ""
+        
         if result.returncode != 0:
             raise InstallerError(
                 f"System configuration failed (exit {result.returncode}). "
@@ -690,6 +757,20 @@ class Installer:
             log.warning("Snapshot creation failed — continuing without snapshot.")
         else:
             log.info("Installation snapshot created.")
+
+        # Make @ truly read-only at the Btrfs level (not just mount-option ro).
+        # Btrfs superblock sharing: when @var/@etc/@home are mounted rw from the
+        # same device, the mount-option ro on @ is overridden at the kernel level.
+        # btrfs property set ro=true enforces immutability at the subvolume level
+        # regardless of the device's overall rw state.
+        ro_result = subprocess.run(
+            ["btrfs", "property", "set", self.config.install_target, "ro", "true"],
+            check=False,
+        )
+        if ro_result.returncode != 0:
+            log.warning("Could not set Btrfs ro property on root subvolume — root may not be immutable.")
+        else:
+            log.info("Root subvolume (@) set read-only via Btrfs property.")
 
         self._update_progress(State.SNAPSHOT, 100, "Snapshot creado")
 

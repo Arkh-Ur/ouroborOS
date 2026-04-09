@@ -14,12 +14,11 @@ set -euo pipefail
 #   HOSTNAME              — e.g. ouroboros
 #   USERNAME              — primary user account name
 #   USER_PASSWORD_HASH    — SHA-512 crypt hash
+#   USER_PASSWORD         — Plaintext password for systemd-homed migration
 #   USER_GROUPS           — comma-separated groups (e.g. wheel,audio,video)
 #   USER_SHELL            — e.g. /bin/bash
 #   ENABLE_IWD            — "1" to enable iwd, "0" to skip
 #   ENABLE_LUKS           — "1" if LUKS was used (add rd.luks.uuid to boot entry)
-#
-set -euo pipefail
 
 # --- Validation -------------------------------------------------------------
 
@@ -407,7 +406,7 @@ EOF
     # pacman hooks: only PostTransaction hooks here.
     # PreTransaction remount is NOT done via hook — pacman checks filesystem
     # writability BEFORE running any hook, making PreTransaction remount useless.
-    # Instead, ouroboros-upgrade (wrapper) handles remount + snapshot before
+    # Instead, our-pac (wrapper) handles unlock + remount + snapshot before
     # invoking the real pacman binary.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
 
@@ -433,24 +432,27 @@ Type = Package
 Target = *
 
 [Action]
-Description = Remount root read-only after package changes...
+Description = Restore root immutability after package changes...
 When = PostTransaction
-Exec = /usr/local/bin/ouroboros-post-upgrade
+Exec = /usr/local/bin/our-post-upgrade
 EOF
 
     # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
     # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
-    # (Renamed from ouroboros-upgrade in Phase 2. A compatibility symlink is
-    # created below so existing scripts keep working.)
     #
     # pacman checks filesystem writability before PreTransaction hooks run, so a hook
-    # cannot remount rw in time. This wrapper:
-    #   1. Remounts / rw so pacman can write
-    #   2. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
-    #   3. Invokes real pacman with all arguments forwarded
-    #   4. The 99-post-upgrade hook remounts / ro after the transaction
+    # cannot unlock root in time. This wrapper:
+    #   1. Unlocks root via btrfs property set ro=false (Btrfs-level immutability)
+    #   2. Remounts / rw at the VFS layer so pacman can write
+    #   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
+    #   4. Invokes real pacman with all arguments forwarded
+    #   5. The 99-post-upgrade hook restores ro via btrfs property set ro=true
+    #
+    # NOTE: mount-option ro alone is NOT sufficient for Btrfs immutability — when
+    # @var/@etc/@home are mounted rw from the same device, the superblock is rw,
+    # overriding the ro flag on @. btrfs property set ro=true is the real enforcement.
     #
     # Usage: sudo our-pac -Syu
     #        sudo our-pac -S <pkg>
@@ -459,31 +461,43 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly PROGRAM_NAME="our-pac"
+_msg()    { echo "[${PROGRAM_NAME}] $*"; }
+
 if [[ $EUID -ne 0 ]]; then
-    exec sudo /usr/local/bin/our-pac "$@"
+    exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
 fi
 
-source /usr/local/lib/ouroboros/snapshot.sh
+is_immutable_root() {
+    btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
+}
 
-echo "[our-pac] Preparing package operation..."
+if is_immutable_root; then
+    _msg "Preparing package operation on immutable root..."
 
-# Step 1: Remount root rw — must happen BEFORE pacman checks disk space
-mount -o remount,rw /
-echo "[our-pac] Root remounted read-write"
+    snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
+    if [[ -r "$snapshot_lib" ]]; then
+        source "$snapshot_lib"
+        btrfs property set / ro false
+        mount -o remount,rw /
+        _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
+        pre_upgrade_snapshot
+    else
+        _msg "Snapshot library not found — unlocking root (direct)"
+        btrfs property set / ro false
+        mount -o remount,rw /
+        _msg "Root unlocked and remounted read-write"
+    fi
 
-# Step 2: Create pre-upgrade Btrfs snapshot (timestamped, with boot entry)
-pre_upgrade_snapshot
-
-# Step 3: Run real pacman — 99-post-upgrade hook will remount ro after
-echo "[our-pac] Running pacman $*"
-exec /usr/bin/pacman "$@"
+    _msg "Running pacman $*"
+    exec /usr/bin/pacman "$@"
+else
+    _msg "Running pacman $* (writable root — live ISO or unlocked)"
+    exec /usr/bin/pacman "$@"
+fi
 SCRIPT
     chmod 0755 "${TARGET}/usr/local/bin/our-pac"
-
-    # Compatibility symlink — keeps pre-Phase-2 scripts and muscle memory working.
-    # Deprecated; will be removed in a future release.
-    ln -sf our-pac "${TARGET}/usr/local/bin/ouroboros-upgrade"
-    log_ok "our-pac installed (with ouroboros-upgrade compat symlink)."
+    log_ok "our-pac installed."
 
     # our-box — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
@@ -524,18 +538,31 @@ STUB
         log_ok "our-box-autostart.service installed."
     fi
 
-    cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
+    cat > "${TARGET}/usr/local/bin/our-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
-# Remount root read-only. If busy (active SSH session or open files), skip
-# gracefully — the fstab mount with ro option restores immutability on next boot.
-if mount -o remount,ro / 2>/dev/null; then
-    echo "[ouroboros] Root remounted read-only"
+# our-post-upgrade — restore root immutability after a package transaction.
+#
+# Called by the 99-post-upgrade pacman hook (PostTransaction).
+#
+# Strategy (belt-and-suspenders):
+#   1. btrfs property set ro=true: enforces immutability at the Btrfs subvolume
+#      level. This is the primary mechanism — it works even when other subvolumes
+#      from the same device are mounted rw (the mount-option ro alone is
+#      overridden by Btrfs superblock sharing).
+#   2. mount -o remount,ro: secondary VFS-layer enforcement. May fail if there
+#      are active SSH sessions or open file handles — that is expected and safe
+#      because btrfs property ro=true already protects the subvolume.
+if btrfs property set / ro true 2>/dev/null; then
+    echo "[our-post-upgrade] Root subvolume set read-only (Btrfs property)"
 else
-    echo "[ouroboros] Root busy — will be remounted ro on next boot (fstab)"
+    echo "[our-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
 fi
+# Best-effort VFS-layer remount (non-fatal)
+mount -o remount,ro / 2>/dev/null && echo "[our-post-upgrade] Root remounted ro (VFS)" || \
+    echo "[our-post-upgrade] Root busy — Btrfs property protects immutability regardless"
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-post-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/our-post-upgrade"
 
     # Install snapshot library to installed system
     mkdir -p "${TARGET}/usr/local/lib/ouroboros"
@@ -607,7 +634,9 @@ configure_homed() {
     cat > "${TARGET}/etc/ouroboros/homed-migration.conf" << EOF
 HOMED_USERNAME=${USERNAME}
 HOMED_STORAGE=${HOMED_STORAGE}
+HOMED_PASSWORD=${USER_PASSWORD}
 EOF
+    chmod 600 "${TARGET}/etc/ouroboros/homed-migration.conf"
 
     # The migration service runs only when this file exists; the script
     # removes it after success to prevent re-execution on subsequent boots.
