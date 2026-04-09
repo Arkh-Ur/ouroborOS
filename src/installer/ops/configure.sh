@@ -459,10 +459,25 @@ EOF
     #        sudo our-pac -R <pkg>
     cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
 #!/usr/bin/env bash
+# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+#
+# On the installed system:
+#   1. Mounts the Btrfs top-level (subvolid=5) to a temp dir so we can
+#      modify the @ subvolume's ro property WITHOUT being blocked by the
+#      VFS ro restriction on / itself (circular deadlock prevention).
+#   2. Sets ro=false on @ via the top-level mount, then umounts the temp dir.
+#   3. Remounts / read-write at the VFS layer.
+#   4. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
+#   5. Invokes pacman with all arguments forwarded.
+#   6. The 99-post-upgrade hook restores ro via btrfs property set ro=true.
+#
+# On the live ISO:
+#   Simply forwards to pacman (root is already writable, no snapshots needed).
 set -euo pipefail
 
 readonly PROGRAM_NAME="our-pac"
 _msg()    { echo "[${PROGRAM_NAME}] $*"; }
+_err()    { _msg "ERROR: $*" >&2; }
 
 if [[ $EUID -ne 0 ]]; then
     exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
@@ -472,21 +487,54 @@ is_immutable_root() {
     btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
 }
 
+# Unlock the root subvolume's Btrfs ro property WITHOUT being blocked by the
+# VFS ro mount restriction on /.
+#
+# The circular deadlock: btrfs property set / ro false writes Btrfs metadata,
+# but the VFS ro mount blocks ALL writes including metadata → EROFS → immediate exit.
+#
+# Fix: mount the Btrfs top-level (subvolid=5) to a temp dir. From there, we can
+# set ro=false on the @ subvolume path directly. The top-level mount is rw because
+# the underlying block device is rw (Btrfs property only makes the subvolume ro,
+# not the device). After setting the property, remount / rw at the VFS layer.
+unlock_root() {
+    local root_dev
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+
+    local tmp
+    tmp=$(mktemp -d)
+
+    if ! mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        rmdir "$tmp"
+        _err "Could not mount Btrfs top-level from ${root_dev}"
+        exit 1
+    fi
+
+    if ! btrfs property set "${tmp}/@" ro false 2>/dev/null; then
+        umount "$tmp"
+        rmdir "$tmp"
+        _err "Could not clear Btrfs ro property on @"
+        exit 1
+    fi
+
+    umount "$tmp"
+    rmdir "$tmp"
+
+    mount -o remount,rw /
+    _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
+}
+
 if is_immutable_root; then
     _msg "Preparing package operation on immutable root..."
 
     snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
     if [[ -r "$snapshot_lib" ]]; then
         source "$snapshot_lib"
-        btrfs property set / ro false
-        mount -o remount,rw /
-        _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
+        unlock_root
         pre_upgrade_snapshot
     else
         _msg "Snapshot library not found — unlocking root (direct)"
-        btrfs property set / ro false
-        mount -o remount,rw /
-        _msg "Root unlocked and remounted read-write"
+        unlock_root
     fi
 
     _msg "Running pacman $*"
