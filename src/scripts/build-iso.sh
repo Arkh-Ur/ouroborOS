@@ -14,6 +14,7 @@ set -euo pipefail
 #   -p, --profile DIR    Archiso profile directory (default: ./ouroborOS-profile)
 #   -c, --clean          Clean working directory before build
 #   -s, --sign           GPG-sign the ISO after build
+#   --e2e-config=PATH    Inject unattended test config (for CI/E2E only; not for production)
 #   -h, --help           Show this help message
 #
 # Requirements:
@@ -32,6 +33,7 @@ WORK_DIR="/tmp/ouroborOS-build"
 PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile"
 CLEAN_BUILD=false
 SIGN_ISO=false
+E2E_CONFIG=""
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -60,9 +62,11 @@ while [[ $# -gt 0 ]]; do
         -o|--output)  OUTPUT_DIR="$2"; shift 2 ;;
         -w|--workdir) WORK_DIR="$2"; shift 2 ;;
         -p|--profile) PROFILE_DIR="$2"; shift 2 ;;
-        -c|--clean)   CLEAN_BUILD=true; shift ;;
-        -s|--sign)    SIGN_ISO=true; shift ;;
-        -h|--help)    usage ;;
+        -c|--clean)          CLEAN_BUILD=true; shift ;;
+        -s|--sign)           SIGN_ISO=true; shift ;;
+        --e2e-config=*)      E2E_CONFIG="${1#*=}"; shift ;;
+        --e2e-config)        E2E_CONFIG="$2"; shift 2 ;;
+        -h|--help)           usage ;;
         *) log_error "Unknown option: $1"; usage ;;
     esac
 done
@@ -170,6 +174,32 @@ log_section "Setting Up Directories"
 mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 log_ok "Output dir: $OUTPUT_DIR"
 log_ok "Work dir:   $WORK_DIR"
+
+# ── E2E config injection (test builds only) ───────────────────────────────────
+_E2E_DROPIN_DIR="${PROFILE_DIR}/airootfs/etc/systemd/system/ouroborOS-installer.service.d"
+_E2E_CONFIG_DST="${PROFILE_DIR}/airootfs/etc/ouroborOS/e2e-config.yaml"
+
+_cleanup_e2e() {
+    rm -f "$_E2E_CONFIG_DST" "${_E2E_DROPIN_DIR}/e2e-unattended.conf"
+    rmdir "$_E2E_DROPIN_DIR" 2>/dev/null || true
+}
+
+if [[ -n "$E2E_CONFIG" ]]; then
+    log_section "E2E Config Injection"
+    if [[ ! -f "$E2E_CONFIG" ]]; then
+        log_error "--e2e-config: file not found: ${E2E_CONFIG}"
+        exit 1
+    fi
+    mkdir -p "${PROFILE_DIR}/airootfs/etc/ouroborOS" "$_E2E_DROPIN_DIR"
+    cp "$E2E_CONFIG" "$_E2E_CONFIG_DST"
+    cat > "${_E2E_DROPIN_DIR}/e2e-unattended.conf" << 'EOF'
+[Service]
+ExecStartPre=/usr/bin/cp /etc/ouroborOS/e2e-config.yaml /tmp/ouroborOS-config.yaml
+EOF
+    trap '_cleanup_e2e' EXIT
+    log_ok "E2E config injected from: ${E2E_CONFIG}"
+    log_warn "This ISO is for testing only — NOT for production use."
+fi
 
 # ── Sync installer modules to profile ──────────────────────────────────────
 INSTALLER_SRC="$REPO_ROOT/src/installer"
