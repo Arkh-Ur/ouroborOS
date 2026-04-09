@@ -9,6 +9,7 @@ set -euo pipefail
 # Required environment variables (passed via the systemd service):
 #   HOMED_USERNAME       — user login name
 #   HOMED_STORAGE        — storage backend: subvolume, directory, luks, or classic
+#   HOMED_PASSWORD       — plaintext password for non-interactive homectl create/activate
 #
 # Exit codes:
 #   0 — migration successful (or skipped because already migrated)
@@ -17,6 +18,7 @@ set -euo pipefail
 
 : "${HOMED_USERNAME:?HOMED_USERNAME must be set}"
 : "${HOMED_STORAGE:?HOMED_STORAGE must be set}"
+: "${HOMED_PASSWORD:?HOMED_PASSWORD must be set}"
 
 HOME_DIR="/home/${HOMED_USERNAME}"
 HOME_BACKUP="${HOME_DIR}.homed-migration-backup"
@@ -115,22 +117,42 @@ patch_pam() {
     # sshd authenticates via PAM. With homed active, PAM must include
     # pam_systemd_home.so — otherwise SSH logins fail because sshd looks
     # up the user in /etc/passwd (which no longer has the entry after migration).
-    local pam_file="/etc/pam.d/system-auth"
+    #
+    # On Arch Linux, sshd uses /etc/pam.d/sshd directly (no system-auth include).
+    # We patch both files to cover Arch and generic Linux distributions.
+    local patched=0
 
-    if [[ ! -f "$pam_file" ]]; then
-        # Arch may not have system-auth — check nsswitch instead
-        log_warn "system-auth not found at ${pam_file} — skipping PAM patch."
-        return 0
+    # Arch Linux / direct sshd PAM
+    local sshd_pam="/etc/pam.d/sshd"
+    if [[ -f "$sshd_pam" ]] && ! grep -q "pam_systemd_home.so" "$sshd_pam" 2>/dev/null; then
+        sed -i '/^auth.*include.*system-auth\|^auth.*required.*pam_unix/i auth       sufficient   pam_systemd_home.so' "$sshd_pam"
+        log_ok "PAM patched: pam_systemd_home.so added to /etc/pam.d/sshd."
+        patched=1
     fi
 
-    # Only add if not already present
-    if ! grep -q "pam_systemd_home.so" "$pam_file" 2>/dev/null; then
-        # Insert pam_systemd_home.so early enough in the auth stack
-        sed -i '/^auth.*pam_unix.so/i auth sufficient pam_systemd_home.so' "$pam_file"
-        log_ok "PAM patched: pam_systemd_home.so added to system-auth."
-    else
-        log_info "PAM already includes pam_systemd_home.so — skipping patch."
+    # Generic Linux: patch system-auth if present
+    local system_auth="/etc/pam.d/system-auth"
+    if [[ -f "$system_auth" ]] && ! grep -q "pam_systemd_home.so" "$system_auth" 2>/dev/null; then
+        sed -i '/^auth.*pam_unix.so/i auth sufficient pam_systemd_home.so' "$system_auth"
+        log_ok "PAM patched: pam_systemd_home.so added to /etc/pam.d/system-auth."
+        patched=1
     fi
+
+    [[ $patched -eq 0 ]] && log_warn "No PAM files patched — pam_systemd_home.so may not load for SSH."
+    return 0
+}
+
+# --- Update NSS for homed user resolution ------------------------------------
+
+update_nsswitch() {
+    # SSH needs NSS to resolve homed users (not in /etc/passwd after migration).
+    # Add 'systemd' to the passwd and group lines in nsswitch.conf.
+    local nss="/etc/nsswitch.conf"
+    [[ -f "$nss" ]] || { log_warn "nsswitch.conf not found — skipping NSS update."; return 0; }
+
+    sed -i '/^passwd:/ { /systemd/! s/$/ systemd/ }' "$nss"
+    sed -i '/^group:/  { /systemd/! s/$/ systemd/ }' "$nss"
+    log_ok "nsswitch.conf updated: 'systemd' added to passwd/group lookup."
 }
 
 # --- Migration ---------------------------------------------------------------
@@ -157,7 +179,7 @@ migrate() {
         rollback "before_backup"
     fi
 
-    # Step 3: Create the homed identity
+    # Step 3: Create the homed identity with JSON identity (non-interactive)
     local homectl_args=(
         create "$HOMED_USERNAME"
         --storage="$HOMED_STORAGE"
@@ -169,17 +191,34 @@ migrate() {
         homectl_args+=(--member-of="$groups")
     fi
 
-    log_info "Creating systemd-homed identity..."
-    if ! homectl "${homectl_args[@]}"; then
-        log_error "homectl create failed."
+    # Create a JSON identity file with the password for non-interactive create
+    local identity_json
+    identity_json=$(mktemp /tmp/homed-identity.XXXXXX.json)
+    chmod 600 "$identity_json"
+    # Build JSON identity — homectl --identity reads user record from file
+    cat > "$identity_json" << IDENTITY_EOF
+{"userName":"${HOMED_USERNAME}","secret":{"password":["${HOMED_PASSWORD}"]}}
+IDENTITY_EOF
+
+    log_info "Creating systemd-homed identity (non-interactive)..."
+    local homectl_out
+    if ! homectl_out=$(homectl "${homectl_args[@]}" --identity="$identity_json" 2>&1); then
+        rm -f "$identity_json"
+        log_error "homectl create failed: ${homectl_out}"
         rollback "after_backup"
     fi
+    rm -f "$identity_json"
 
-    # Step 4: Activate the home (mount it)
-    log_info "Activating home for '${HOMED_USERNAME}'..."
-    if ! homectl activate "$HOMED_USERNAME"; then
-        log_error "homectl activate failed."
-        rollback "after_homed_create"
+    # Step 4: Activate the home via D-Bus (bypasses TTY password prompt)
+    log_info "Activating home for '${HOMED_USERNAME}' (via D-Bus)..."
+    if ! busctl call org.freedesktop.home1 /org/freedesktop/home1 \
+        org.freedesktop.home1.Manager ActivateHome ss "$HOMED_USERNAME" "$HOMED_PASSWORD" 2>/dev/null; then
+        log_warn "D-Bus activation failed, trying homectl activate with pipe..."
+        # Fallback: pipe password to homectl (may work if stdin is read)
+        if ! printf '%s\n' "$HOMED_PASSWORD" | homectl activate "$HOMED_USERNAME" 2>/dev/null; then
+            log_error "homectl activate failed."
+            rollback "after_homed_create"
+        fi
     fi
 
     # Verify the new home mount exists
@@ -207,6 +246,9 @@ migrate() {
         fi
     done
 
+    # Step 7b: Update NSS so SSH can resolve the homed user
+    update_nsswitch
+
     # Step 8: Clean up backup
     log_info "Removing backup directory..."
     rm -rf "${HOME_BACKUP}"
@@ -215,7 +257,12 @@ migrate() {
     mkdir -p /etc/ouroboros
     touch "$MIGRATION_MARKER"
 
-    # Step 10: Remove the pending flag and disable this service
+    # Step 10: Remove password from migration conf (security cleanup)
+    if [[ -f /etc/ouroboros/homed-migration.conf ]]; then
+        sed -i '/^HOMED_PASSWORD=/d' /etc/ouroboros/homed-migration.conf
+    fi
+
+    # Step 11: Remove the pending flag and disable this service
     rm -f "$FLAG_FILE"
     systemctl disable ouroboros-homed-migration.service 2>/dev/null || true
 
