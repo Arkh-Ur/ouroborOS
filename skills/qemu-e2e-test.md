@@ -209,8 +209,8 @@ SSH="sshpass -p 7907 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/
 ### 3.4 System verification commands
 
 ```bash
-# --- Root filesystem is read-only ---
-$SSH 'findmnt / -o OPTIONS | grep -q "\bro\b"' && echo "✓ Root is RO" || echo "✗ Root is NOT read-only"
+# --- Root filesystem is read-only (Btrfs property — mount option alone is unreliable on Btrfs) ---
+$SSH "echo 7907 | sudo -S btrfs property get / ro 2>/dev/null | grep -q 'ro=true'" && echo "✓ Root is RO (Btrfs property)" || echo "✗ Root is NOT read-only"
 
 # --- No failed systemd units ---
 FAILED=$($SSH 'systemctl --failed --no-legend | wc -l')
@@ -246,7 +246,7 @@ done
 # --- our-pac and our-box binaries ---
 $SSH 'test -x /usr/local/bin/our-pac' && echo "✓ our-pac installed" || echo "✗ our-pac missing"
 $SSH 'test -x /usr/local/bin/our-box' && echo "✓ our-box installed" || echo "✗ our-box missing"
-$SSH 'test -L /usr/local/bin/ouroboros-upgrade' && echo "✓ ouroboros-upgrade symlink" || echo "✗ ouroboros-upgrade symlink missing"
+$SSH 'test -L /usr/local/bin/ouroboros-upgrade' && echo "✗ ouroboros-upgrade symlink still present (should be gone)" || echo "✓ ouroboros-upgrade symlink removed"
 
 # --- user created correctly ---
 $SSH 'id hbuddenberg' | grep -q "wheel" && echo "✓ User hbuddenberg in wheel" || echo "✗ User not in wheel"
@@ -280,13 +280,13 @@ echo "Teardown complete"
 | Boot | No FAILED units | ✓ |
 | Boot | Login prompt reached | ✓ |
 | Boot | systemd-boot snapshot entry visible | ✓ |
-| Verify | Root filesystem is RO | ✓ |
+| Verify | Root filesystem is RO (btrfs property ro=true) | ✓ |
 | Verify | 0 failed systemd units | ✓ |
 | Verify | All 5 Btrfs subvolumes + install snapshot | ✓ |
 | Verify | machine-id is 32-char hex | ✓ |
 | Verify | DNSOverTLS=opportunistic in resolved.conf | ✓ |
 | Verify | zram swap active | ✓ |
-| Verify | our-pac + our-box + ouroboros-upgrade symlink | ✓ |
+| Verify | our-pac + our-box present, ouroboros-upgrade symlink absent | ✓ |
 | Verify | User hbuddenberg in wheel group | ✓ |
 | Verify | EFI binary at /boot/EFI/systemd/ | ✓ |
 
