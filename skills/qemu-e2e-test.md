@@ -1,8 +1,8 @@
 ---
 name: qemu-e2e-test
 description: >
-  E2E test plan for ouroborOS: build ISO, unattended install in QEMU, and verify
-  the installed system via SSH and serial log. Covers the full lifecycle from source
+  E2E test plan for ouroborOS: build ISO with --e2e-config, unattended install in QEMU,
+  and verify the installed system via SSH and serial log. Covers the full lifecycle from source
   to running system. Invoked with /qemu-e2e-test or whenever a full integration test
   is needed after changes to the installer, configure.sh, snapshot.sh, or ISO profile.
 ---
@@ -15,7 +15,7 @@ You are executing the **ouroborOS E2E Test Suite** — full lifecycle from build
 
 ```bash
 # Required packages on host
-sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass
+sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass psmisc
 
 # OVMF firmware path (ArchLinux)
 /usr/share/edk2/x64/OVMF_CODE.4m.fd
@@ -29,13 +29,14 @@ git status  # must be clean
 ## Phase 1 — Build ISO
 
 ```bash
-# Build with workdir on /home to avoid /tmp space exhaustion (needs ~6-8 GB)
-# Use -S to feed password via stdin for autonomous/non-interactive testing
-echo "7907" | sudo -S bash src/scripts/build-iso.sh --clean --workdir /home/ouroborOS-build
+# Build with E2E config injected — workdir on /home (needs ~6-8 GB, /tmp too small)
+echo "7907" | sudo -S bash src/scripts/build-iso.sh --clean \
+  --e2e-config=tests/qemu/minimal-e2e.yaml \
+  --workdir /home/ouroborOS-build
 
 # Expected last lines:
 # [OK]  ouroborOS ISO ready.
-# ISO: out/ouroborOS-0.1.0-x86_64.iso
+# [WARN] This ISO is for testing only — NOT for production use.
 
 # Verify ISO exists and is ≥ 800 MB
 ls -lh out/ouroborOS-*.iso
@@ -53,20 +54,24 @@ ls -lh out/ouroborOS-*.iso
 ### 2.1 Prepare disk and launch QEMU
 
 ```bash
-# Clean previous test artifacts
-rm -f /tmp/ouroboros-test.qcow2 /tmp/ouroboros-serial-install.log
+# Kill any zombie QEMU holding port 2222
+fuser -k 2222/tcp 2>/dev/null || true
 
-# Create virtual disk (20 GB thin-provisioned)
-qemu-img create -f qcow2 /tmp/ouroboros-test.qcow2 20G
+# Clean previous test artifacts
+rm -f /home/ouroboros-test.qcow2 /tmp/ouroboros-serial-install.log
+
+# Create virtual disk on /home (NOT /tmp — tmpfs ~4 GB fills during pacstrap)
+qemu-img create -f qcow2 /home/ouroboros-test.qcow2 20G
 
 # Launch QEMU — headless, VNC on :1 (localhost:5901), SSH forwarded to 2222
-qemu-system-x86_64 \
+# Use setsid so QEMU survives tool/shell timeouts
+setsid qemu-system-x86_64 \
   -enable-kvm \
   -cpu host \
   -smp 2 \
   -m 2048 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
-  -drive file=/tmp/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
+  -drive file=/home/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
   -cdrom out/ouroborOS-*.iso \
   -boot d \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
@@ -75,15 +80,19 @@ qemu-system-x86_64 \
   -serial file:/tmp/ouroboros-serial-install.log \
   -vga virtio \
   -display none \
-  -vnc :1 &
+  -vnc :1 \
+  >/dev/null 2>&1 &
 
-QEMU_PID=$!
+# Get real QEMU PID ($! is setsid wrapper, not qemu)
+sleep 2
+QEMU_PID=$(pgrep -f "qemu.*ouroboros-test" | head -1)
 echo "QEMU PID: $QEMU_PID"
 ```
 
 > **VNC**: Connect to `localhost:5901` with any VNC client to watch visually.
 > **IMPORTANT**: Use `-device e1000` — virtio-net hangs under sustained pacstrap load.
 > **IMPORTANT**: Use `-display none -vga virtio` — never `-nographic` (disables VGA for VNC).
+> **IMPORTANT**: Use `setsid` — bash tool kills child processes on timeout.
 
 ### 2.2 Monitor install via serial log
 
@@ -97,16 +106,16 @@ tail -f /tmp/ouroboros-serial-install.log
 The installer shuts down the VM automatically (`post_install_action: shutdown`).
 
 ```bash
-# Poll until QEMU exits (timeout: 15 minutes)
-timeout 900 bash -c 'while kill -0 $QEMU_PID 2>/dev/null; do sleep 5; done'
+# Poll until QEMU exits (timeout: 20 minutes)
+timeout 1200 bash -c "while kill -0 $QEMU_PID 2>/dev/null; do sleep 5; done"
 echo "Install complete"
 ```
 
 ### 2.4 Verify install serial log
 
 ```bash
-# All 9 states must appear as completed
-for state in INIT PREFLIGHT LOCALE PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+# All 11 states must appear as completed
+for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
   if grep -q "State completed: ${state}" /tmp/ouroboros-serial-install.log; then
     echo "✓ ${state}"
   else
@@ -127,7 +136,7 @@ grep "Boot entry written" /tmp/ouroboros-serial-install.log && echo "✓ Boot en
 grep "Critical /etc files written" /tmp/ouroboros-serial-install.log && echo "✓ /etc seed OK" || echo "✗ /etc seed missing"
 ```
 
-**Pass criteria:** All 9 states ✓, no FAILED/ERROR from installer, snapshot ✓, boot entry ✓, /etc seed ✓.
+**Pass criteria:** All 11 states ✓, no FAILED/ERROR from installer, snapshot ✓, boot entry ✓, /etc seed ✓.
 
 ---
 
@@ -136,27 +145,33 @@ grep "Critical /etc files written" /tmp/ouroboros-serial-install.log && echo "�
 ### 3.1 Boot installed system (no ISO)
 
 ```bash
+# Kill any leftover QEMU on port 2222
+fuser -k 2222/tcp 2>/dev/null || true
+sleep 1
+
 rm -f /tmp/ouroboros-serial-boot.log
 
-qemu-system-x86_64 \
+setsid qemu-system-x86_64 \
   -enable-kvm \
   -cpu host \
   -smp 2 \
   -m 2048 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
-  -drive file=/tmp/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
+  -drive file=/home/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device e1000,netdev=net0 \
   -rtc base=utc,clock=host \
   -serial file:/tmp/ouroboros-serial-boot.log \
   -vga virtio \
   -display none \
-  -vnc :1 &
+  -vnc :1 \
+  >/dev/null 2>&1 &
 
-QEMU_PID=$!
+sleep 2
+QEMU_PID=$(pgrep -f "qemu.*ouroboros-test" | head -1)
 
-# Wait for login prompt (up to 60s)
-timeout 60 bash -c 'until grep -q "login:" /tmp/ouroboros-serial-boot.log 2>/dev/null; do sleep 2; done'
+# Wait for login prompt (up to 90s)
+timeout 90 bash -c 'until grep -q "ouroboros login:" /tmp/ouroboros-serial-boot.log 2>/dev/null; do sleep 2; done'
 echo "System booted"
 ```
 
@@ -177,15 +192,18 @@ grep -q "snapshot (install)" /tmp/ouroboros-serial-boot.log && echo "✓ Snapsho
 ### 3.3 SSH into installed system
 
 ```bash
-# User from ouroborOS-config.yaml: hbuddenberg / 7907
+# User from tests/qemu/minimal-e2e.yaml: hbuddenberg / 7907
 # SSH forwarded to localhost:2222
 
-# Wait for SSH to be available (up to 30s)
-timeout 30 bash -c 'until sshpass -p "7907" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -p 2222 hbuddenberg@localhost true 2>/dev/null; do sleep 3; done'
+# Clear stale host key from previous runs
+ssh-keygen -R "[localhost]:2222" 2>/dev/null || true
+
+# Wait for SSH to be available (up to 90s)
+timeout 90 bash -c 'until sshpass -p "7907" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p 2222 hbuddenberg@localhost true 2>/dev/null; do sleep 3; done'
 echo "SSH ready"
 
 # Helper alias
-SSH="sshpass -p 7907 ssh -o StrictHostKeyChecking=no -p 2222 hbuddenberg@localhost"
+SSH="sshpass -p 7907 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 hbuddenberg@localhost"
 ```
 
 ### 3.4 System verification commands
@@ -200,11 +218,11 @@ FAILED=$($SSH 'systemctl --failed --no-legend | wc -l')
 
 # --- Btrfs subvolumes present ---
 for sv in @ @var @etc @home @snapshots; do
-  $SSH "sudo btrfs subvolume list / | grep -q '${sv}$'" && echo "✓ Subvolume ${sv}" || echo "✗ Subvolume ${sv} missing"
+  $SSH "echo 7907 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '${sv}$'" && echo "✓ Subvolume ${sv}" || echo "✗ Subvolume ${sv} missing"
 done
 
 # --- Install snapshot exists ---
-$SSH "sudo btrfs subvolume list / | grep -q '@snapshots/install'" && echo "✓ Snapshot install" || echo "✗ Snapshot install missing"
+$SSH "echo 7907 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '@snapshots/install'" && echo "✓ Snapshot install" || echo "✗ Snapshot install missing"
 
 # --- systemd-boot entries ---
 $SSH "ls /boot/loader/entries/" | grep -q "ouroborOS.conf" && echo "✓ Main boot entry" || echo "✗ Main boot entry missing"
@@ -225,9 +243,10 @@ for svc in systemd-networkd systemd-resolved systemd-timesyncd; do
   $SSH "systemctl is-active ${svc}" | grep -q "active" && echo "✓ ${svc}" || echo "✗ ${svc} not active"
 done
 
-# --- pacman hooks present (3 hooks) ---
-HOOKS=$($SSH 'ls /etc/pacman.d/hooks/ | wc -l')
-[[ "$HOOKS" -eq 3 ]] && echo "✓ 3 pacman hooks" || echo "✗ Expected 3 hooks, found ${HOOKS}"
+# --- our-pac and our-box binaries ---
+$SSH 'test -x /usr/local/bin/our-pac' && echo "✓ our-pac installed" || echo "✗ our-pac missing"
+$SSH 'test -x /usr/local/bin/our-box' && echo "✓ our-box installed" || echo "✗ our-box missing"
+$SSH 'test -L /usr/local/bin/ouroboros-upgrade' && echo "✓ ouroboros-upgrade symlink" || echo "✗ ouroboros-upgrade symlink missing"
 
 # --- user created correctly ---
 $SSH 'id hbuddenberg' | grep -q "wheel" && echo "✓ User hbuddenberg in wheel" || echo "✗ User not in wheel"
@@ -242,8 +261,8 @@ $SSH 'cat /etc/systemd/resolved.conf' | grep "DNSOverTLS" && echo "✓ resolved.
 ### 3.5 Teardown
 
 ```bash
-kill $QEMU_PID 2>/dev/null
-rm -f /tmp/ouroboros-test.qcow2 /tmp/ouroboros-serial-*.log
+kill $QEMU_PID 2>/dev/null || pkill -f "qemu.*ouroboros-test" || true
+rm -f /home/ouroboros-test.qcow2 /tmp/ouroboros-serial-*.log
 echo "Teardown complete"
 ```
 
@@ -254,7 +273,7 @@ echo "Teardown complete"
 | Phase | Check | Expected |
 |-------|-------|----------|
 | Build | ISO exists, size 800M–2G | ✓ |
-| Install | All 9 states completed | ✓ |
+| Install | All 11 states completed | ✓ |
 | Install | No FAILED/ERROR from installer | ✓ |
 | Install | Snapshot + boot entry written | ✓ |
 | Install | /etc seed (machine-id, group) written | ✓ |
@@ -267,7 +286,7 @@ echo "Teardown complete"
 | Verify | machine-id is 32-char hex | ✓ |
 | Verify | DNSOverTLS=opportunistic in resolved.conf | ✓ |
 | Verify | zram swap active | ✓ |
-| Verify | 3 pacman hooks present | ✓ |
+| Verify | our-pac + our-box + ouroboros-upgrade symlink | ✓ |
 | Verify | User hbuddenberg in wheel group | ✓ |
 | Verify | EFI binary at /boot/EFI/systemd/ | ✓ |
 
@@ -283,5 +302,16 @@ echo "Teardown complete"
 | Host RAM ≥ 8 GB for `-m 2048` | Smaller allocation triggers OOM during pacstrap |
 | Use `-device e1000` | virtio-net hangs under sustained download load in QEMU userspace |
 | Use `-display none -vga virtio` | `-nographic` disables VGA device — VNC shows blank screen |
-| Build workdir on `/home` | `/tmp` is tmpfs (~4 GB), ISO build needs 6-8 GB |
+| Use `setsid` to launch QEMU | bash tool kills child processes on timeout; setsid detaches QEMU |
+| Use `fuser -k 2222/tcp` before launch | Zombie QEMU from prior run blocks port 2222 |
+| Build workdir + disk image on `/home` | `/tmp` is tmpfs (~4 GB), ISO build + qcow2 need 6-8 GB |
 | `sshpass` required | Automated SSH with password; install via `pacman -S sshpass` |
+| `ssh-keygen -R "[localhost]:2222"` before SSH | known_hosts persists between runs, breaking auth |
+| Use `echo 7907 \| sudo -S <cmd>` for privileged cmds | `sudo` in installed system is non-interactive over SSH |
+
+## Known Issues
+
+| Issue | Status |
+|-------|--------|
+| `homectl create --identity=JSON` fails in QEMU | Under investigation — use `homed_storage: classic` in E2E config |
+| homed-migrate.sh rollback leaves user as classic | Expected — system functional, home encryption disabled |
