@@ -423,7 +423,14 @@ When = PostTransaction
 Exec = /usr/bin/bootctl update --graceful
 EOF
 
-    cat > "${TARGET}/etc/pacman.d/hooks/99-post-upgrade.hook" << 'EOF'
+    # Hook named zzz- to guarantee it runs LAST.
+    # CRITICAL: pacman hooks are sorted alphabetically and numbers sort BEFORE letters
+    # in ASCII ('9'=57 < 'd'=100 < 'z'=122). A hook named 99-* always runs before
+    # dconf-update, fontconfig, glib-compile-schemas, gtk-update-icon-cache, and
+    # update-desktop-database — all of which write to /usr/share/* on the root @
+    # subvolume. If we lock root before those hooks, they fail with EROFS.
+    # zzz- ensures we always run after every other hook.
+    cat > "${TARGET}/etc/pacman.d/hooks/zzz-post-upgrade.hook" << 'EOF'
 [Trigger]
 Operation = Upgrade
 Operation = Install
@@ -462,17 +469,21 @@ EOF
 # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
 # On the installed system:
-#   1. Mounts the Btrfs top-level (subvolid=5) to a temp dir so we can
-#      modify the @ subvolume's ro property WITHOUT being blocked by the
-#      VFS ro restriction on / itself (circular deadlock prevention).
-#   2. Sets ro=false on @ via the top-level mount, then umounts the temp dir.
-#   3. Remounts / read-write at the VFS layer.
-#   4. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
-#   5. Invokes pacman with all arguments forwarded.
-#   6. The 99-post-upgrade hook restores ro via btrfs property set ro=true.
+#   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
+#      the VFS ro restriction (circular deadlock prevention).
+#   2. Remounts / read-write at the VFS layer.
+#   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
+#   4. Runs pacman (NOT exec — we need control back after pacman exits).
+#   5. Locks root again via lock_root() AFTER pacman and ALL its hooks finish.
+#
+# Why NOT use exec:
+#   pacman hooks are sorted alphabetically. Hooks from packages like gtk4,
+#   dconf, glib write to /usr/share/* AFTER our zzz-post-upgrade.hook would
+#   run (if the hook existed alone). By doing the lock here — after pacman
+#   returns — we guarantee ALL hooks completed on a writable root.
 #
 # On the live ISO:
-#   Simply forwards to pacman (root is already writable, no snapshots needed).
+#   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
 readonly PROGRAM_NAME="our-pac"
@@ -487,41 +498,42 @@ is_immutable_root() {
     btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
 }
 
-# Unlock the root subvolume's Btrfs ro property WITHOUT being blocked by the
-# VFS ro mount restriction on /.
-#
-# The circular deadlock: btrfs property set / ro false writes Btrfs metadata,
-# but the VFS ro mount blocks ALL writes including metadata → EROFS → immediate exit.
-#
-# Fix: mount the Btrfs top-level (subvolid=5) to a temp dir. From there, we can
-# set ro=false on the @ subvolume path directly. The top-level mount is rw because
-# the underlying block device is rw (Btrfs property only makes the subvolume ro,
-# not the device). After setting the property, remount / rw at the VFS layer.
+# Unlock root via top-level Btrfs mount (avoids circular deadlock).
+# btrfs property set / ro false fails when VFS mount is ro — metadata
+# writes are blocked. Mounting subvolid=5 to a temp dir bypasses this.
 unlock_root() {
-    local root_dev
+    local root_dev tmp
     root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
-
-    local tmp
     tmp=$(mktemp -d)
 
     if ! mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
-        rmdir "$tmp"
-        _err "Could not mount Btrfs top-level from ${root_dev}"
-        exit 1
+        rmdir "$tmp"; _err "Could not mount Btrfs top-level from ${root_dev}"; exit 1
     fi
-
     if ! btrfs property set "${tmp}/@" ro false 2>/dev/null; then
-        umount "$tmp"
-        rmdir "$tmp"
-        _err "Could not clear Btrfs ro property on @"
-        exit 1
+        umount "$tmp"; rmdir "$tmp"; _err "Could not clear Btrfs ro on @"; exit 1
     fi
-
-    umount "$tmp"
-    rmdir "$tmp"
-
+    umount "$tmp"; rmdir "$tmp"
     mount -o remount,rw /
     _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
+}
+
+# Lock root after pacman + all its hooks have finished.
+# Same top-level mount approach to avoid issues with busy mounts.
+lock_root() {
+    local root_dev tmp
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    tmp=$(mktemp -d)
+
+    if mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        btrfs property set "${tmp}/@" ro true 2>/dev/null && \
+            _msg "Root locked (Btrfs ro=true)"
+        umount "$tmp"; rmdir "$tmp"
+    else
+        rmdir "$tmp"
+        _msg "Could not mount top-level — root may remain writable"
+    fi
+    mount -o remount,ro / 2>/dev/null || \
+        _msg "Root busy — Btrfs property protects immutability regardless"
 }
 
 if is_immutable_root; then
@@ -538,7 +550,11 @@ if is_immutable_root; then
     fi
 
     _msg "Running pacman $*"
-    exec /usr/bin/pacman "$@"
+    /usr/bin/pacman "$@"
+    pacman_exit=$?
+
+    lock_root
+    exit "$pacman_exit"
 else
     _msg "Running pacman $* (writable root — live ISO or unlocked)"
     exec /usr/bin/pacman "$@"
