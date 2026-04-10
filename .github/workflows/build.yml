@@ -126,10 +126,13 @@ jobs:
 
       - name: Build ISO
         run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
           bash src/scripts/build-iso.sh \
             --clean \
             --workdir /tmp/ouroborOS-build \
-            --output out/
+            --output out/ \
+            --version="${VERSION}"
 
       - name: Generate SHA256 checksum
         run: |
@@ -154,6 +157,44 @@ jobs:
           fi
           echo "ISO size OK."
 
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="${PREV_TAG}..${TAG}"
+          else
+            RANGE="${TAG}"
+          fi
+          feats=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep "^feat" | sed 's/^/- /' || true)
+          fixes=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep "^fix"  | sed 's/^/- /' || true)
+          docs=$(git  log "$RANGE" --pretty=format:"%s" --no-merges | grep "^docs" | sed 's/^/- /' || true)
+          rest=$(git  log "$RANGE" --pretty=format:"%s" --no-merges | grep -vE "^(feat|fix|docs|test|chore|build)" | sed 's/^/- /' || true)
+          {
+            echo "NOTES<<EOF"
+            echo "## ouroborOS ${TAG}"
+            echo ""
+            if [[ -n "$feats" ]]; then echo "### New features"; echo "$feats"; echo ""; fi
+            if [[ -n "$fixes" ]]; then echo "### Bug fixes";    echo "$fixes"; echo ""; fi
+            if [[ -n "$docs"  ]]; then echo "### Documentation"; echo "$docs"; echo ""; fi
+            if [[ -n "$rest"  ]]; then echo "### Other changes"; echo "$rest"; echo ""; fi
+            echo "### Installation"
+            echo ""
+            echo "1. Download the ISO below and verify the checksum:"
+            echo '   ```bash'
+            echo "   sha256sum -c ouroborOS-SHA256SUMS.txt"
+            echo '   ```'
+            echo "2. Flash to USB:"
+            echo '   ```bash'
+            echo "   sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso"
+            echo '   ```'
+            echo "3. Boot from USB (UEFI required) and follow the installer."
+            echo ""
+            echo "See the [User Guide](https://github.com/Arkh-Ur/ouroborOS/blob/main/docs/user-guide.md) for the full walkthrough."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Push main and tag to public repo
         env:
           PUBLIC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
@@ -176,34 +217,7 @@ jobs:
             --repo Arkh-Ur/ouroborOS \
             --title "ouroborOS ${TAG}" \
             --target main \
-            --notes "$(cat <<'NOTES'
-          ## ouroborOS ${{ github.ref_name }}
-
-          ### Installation
-
-          1. Download the ISO below and verify the checksum:
-             \`\`\`bash
-             sha256sum -c ouroborOS-SHA256SUMS.txt
-             \`\`\`
-          2. Flash to USB:
-             \`\`\`bash
-             sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso
-             \`\`\`
-          3. Boot from USB (UEFI required) and follow the installer.
-
-          See the [User Guide](https://github.com/Arkh-Ur/ouroborOS/blob/main/docs/user-guide.md) for the full walkthrough.
-
-          ### Known limitations
-
-          | Limitation | Notes |
-          |-----------|-------|
-          | UEFI only | By design |
-          | No GUI installer | TUI + YAML only |
-          | No AUR helper | Use `makepkg` manually |
-          | No Secure Boot | Deferred to v0.2 |
-          | English only | Multi-language deferred |
-          NOTES
-          )" \
+            --notes "${{ steps.notes.outputs.NOTES }}" \
             "$ISO" \
             "$CHECKSUM"
 

@@ -34,6 +34,7 @@ PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile"
 CLEAN_BUILD=false
 SIGN_ISO=false
 E2E_CONFIG=""
+VERSION=""
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -64,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         -p|--profile) PROFILE_DIR="$2"; shift 2 ;;
         -c|--clean)          CLEAN_BUILD=true; shift ;;
         -s|--sign)           SIGN_ISO=true; shift ;;
+        --version=*)         VERSION="${1#*=}"; shift ;;
         --e2e-config=*)      E2E_CONFIG="${1#*=}"; shift ;;
         --e2e-config)        E2E_CONFIG="$2"; shift 2 ;;
         -h|--help)           usage ;;
@@ -220,6 +222,19 @@ if [[ -d "$INSTALLER_SRC" ]]; then
 else
     log_warn "Installer source not found at $INSTALLER_SRC — skipping sync"
 fi
+
+# ── Version injection ─────────────────────────────────────────────────────────
+inject_version() {
+    [[ -z "$VERSION" ]] && return 0
+    local profiledef="${PROFILE_DIR}/profiledef.sh"
+    if [[ ! -f "$profiledef" ]]; then
+        log_error "profiledef.sh not found: $profiledef"
+        exit 1
+    fi
+    sed -i "s/^iso_version=.*/iso_version=\"${VERSION}\"/" "$profiledef"
+    log_ok "ISO version set to: ${VERSION}"
+}
+inject_version
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 log_section "Building ISO"
