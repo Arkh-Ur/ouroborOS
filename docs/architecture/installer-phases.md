@@ -20,7 +20,11 @@ flowchart TD
 
     LOCALE["LOCALE\nlanguage · keymap · timezone"]
 
-    PARTITION["PARTITION\ndisk selection · layout plan\nLUKS option · confirmation"]
+    USER["USER\nusername · password\nhomed storage type"]
+
+    DESKTOP["DESKTOP\ndesktop profile selection\ndisplay manager choice"]
+
+    PARTITION["PARTITION\ndisk selection · layout plan\nLUKS option · confirmation\n⚠️ POINT OF NO RETURN"]
 
     FORMAT["FORMAT\nsgdisk GPT · mkfs.btrfs\nBtrfs subvolumes · mount\n📌 checkpoint: FORMATTED"]
 
@@ -39,9 +43,13 @@ flowchart TD
     PREFLIGHT -- pass --> LOCALE
     PREFLIGHT -- fail --> ERR_FATAL
 
-    LOCALE -- next --> PARTITION
+    LOCALE -- next --> USER
+    USER -- next --> DESKTOP
+    USER -- back --> LOCALE
+    DESKTOP -- next --> PARTITION
+    DESKTOP -- back --> USER
     PARTITION -- next --> FORMAT
-    PARTITION -- back --> LOCALE
+    PARTITION -- back --> DESKTOP
     PARTITION -- fail --> ERR_REC
 
     FORMAT -- next --> INSTALL
@@ -66,6 +74,8 @@ flowchart TD
     style FINISH fill:#2d6a4f,color:#fff
     style ERR_FATAL fill:#d62828,color:#fff
     style ERR_REC fill:#f4a261,color:#000
+    style USER fill:#1b4332,color:#fff
+    style DESKTOP fill:#1b4332,color:#fff
     style FORMAT fill:#023e8a,color:#fff
     style INSTALL fill:#023e8a,color:#fff
     style CONFIGURE fill:#023e8a,color:#fff
@@ -78,13 +88,15 @@ flowchart TD
 
 ```python
 class State(Enum):
-    INIT = auto()              # Load config, detect resume
+    INIT = auto()              # Load config, detect resume; optional remote URL prompt
     PREFLIGHT = auto()         # Validate environment
     LOCALE = auto()            # Set regional settings
-    PARTITION = auto()         # Define disk layout
+    USER = auto()              # Username, password, homed storage type (pre-wipe)
+    DESKTOP = auto()           # Desktop profile + display manager (pre-wipe)
+    PARTITION = auto()         # Define disk layout — POINT OF NO RETURN
     FORMAT = auto()            # Write partitions + filesystems
-    INSTALL = auto()           # pacstrap base packages
-    CONFIGURE = auto()         # Bootloader, network, users
+    INSTALL = auto()           # pacstrap base + desktop profile packages
+    CONFIGURE = auto()         # Bootloader, network, users, homed, DM
     SNAPSHOT = auto()          # Baseline snapshot
     FINISH = auto()            # Cleanup + post-install action
     ERROR_RECOVERABLE = auto() # Retry possible
@@ -96,6 +108,8 @@ class State(Enum):
 ## Checkpoint System
 
 Checkpoints are saved to `/tmp/ouroborOS-checkpoints/` (on the live ISO) after each destructive state:
+
+> **Note:** USER and DESKTOP states have no checkpoint — they are pre-wipe interactive states with no destructive effect. If the installer is interrupted before PARTITION, simply restart from the beginning.
 
 | Checkpoint File | State |
 |----------------|-------|
@@ -142,6 +156,32 @@ The full `InstallerConfig` is serialized to `config.json` alongside each checkpo
 - Language / locale (e.g., `en_US.UTF-8`)
 - Keyboard layout (e.g., `us`, `es`, `de`)
 - Timezone (e.g., `America/New_York`)
+
+**Rollback:** N/A (no disk changes).
+
+---
+
+### USER
+**Purpose:** Collect user account information before any destructive operation.
+
+**User inputs:**
+- Username (POSIX-compliant)
+- Password (plaintext — auto-hashed to SHA-512 before storage)
+- Home storage type: `classic` (default) | `subvolume` | `directory` | `luks`
+
+**Rollback:** N/A (no disk changes).
+
+---
+
+### DESKTOP
+**Purpose:** Select desktop environment and display manager before any destructive operation.
+
+**User inputs:**
+- Desktop profile: `minimal` | `hyprland` | `niri` | `gnome` | `kde`
+- Display manager: auto-detected from profile, or explicitly overridden
+
+**Actions:**
+- Store profile selection in config for INSTALL phase (package sets) and CONFIGURE phase (DM enable)
 
 **Rollback:** N/A (no disk changes).
 

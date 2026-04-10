@@ -59,6 +59,18 @@ user:
     - video
     - input
   shell: "/bin/bash"             # Login shell
+  homed_storage: "classic"       # "classic" | "subvolume" | "directory" | "luks"
+                                 # classic: /etc/passwd + useradd (default, QEMU-safe)
+                                 # subvolume/luks: systemd-homed with per-user encryption
+                                 # Omit to use "classic" (retrocompatible default)
+
+# ─── DESKTOP ───────────────────────────────────────────────────────────────────
+desktop:
+  profile: "minimal"             # "minimal" | "hyprland" | "niri" | "gnome" | "kde"
+                                 # minimal: base TTY only (no desktop packages)
+  dm: "none"                     # Display manager: "none" | "gdm" | "sddm" | "plm"
+                                 # Defaults: gnome→gdm, kde→sddm, hyprland/niri/minimal→none
+                                 # Omit entire section to install minimal profile
 
 # ─── EXTRA PACKAGES ────────────────────────────────────────────────────────────
 extra_packages:                  # Additional packages beyond the base set
@@ -121,6 +133,9 @@ Validation checks:
 - `network.hostname` is a valid RFC 1123 hostname
 - `user.username` is a valid POSIX username
 - `user` section includes either `password_hash` or `password`
+- `user.homed_storage` (if provided) is one of: `classic`, `subvolume`, `directory`, `luks`
+- `desktop.profile` (if provided) is one of: `minimal`, `hyprland`, `niri`, `gnome`, `kde`
+- `desktop.dm` (if provided) is one of: `none`, `gdm`, `sddm`, `plm`
 - `post_install_action` is one of: `reboot`, `shutdown`, `none`
 
 ---
