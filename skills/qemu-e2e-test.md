@@ -145,35 +145,48 @@ grep "Critical /etc files written" /tmp/ouroboros-serial-install.log && echo "�
 ### 3.1 Boot installed system (no ISO)
 
 ```bash
-# Kill any leftover QEMU on port 2222
-fuser -k 2222/tcp 2>/dev/null || true
-sleep 1
+# Kill any leftover QEMU
+pkill -f qemu 2>/dev/null || true
+sleep 2
 
 rm -f /tmp/ouroboros-serial-boot.log
 
+# virtio-vga-gl + egl-headless: exposes /dev/dri in guest so Hyprland/Wayland
+# compositors can use virgl GPU acceleration instead of crashing with SIGSEGV.
+# Requires virglrenderer on host: pacman -S virglrenderer
+# The user must be in the render group OR launch without setsid wrapper (group
+# membership is only effective after re-login; use a bare setsid call here).
 setsid qemu-system-x86_64 \
   -enable-kvm \
   -cpu host \
   -smp 2 \
-  -m 2048 \
+  -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
   -drive file=/home/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device e1000,netdev=net0 \
   -rtc base=utc,clock=host \
   -serial file:/tmp/ouroboros-serial-boot.log \
-  -vga virtio \
-  -display none \
+  -device virtio-vga-gl \
+  -display egl-headless,gl=on \
   -vnc :1 \
-  >/dev/null 2>&1 &
+  2>/tmp/qemu-boot-err.log &
 
-sleep 2
-QEMU_PID=$(pgrep -f "qemu.*ouroboros-test" | head -1)
+sleep 4
+QEMU_PID=$(pgrep qemu | head -1)
+echo "QEMU PID: $QEMU_PID"
+
+# Verify QEMU bound port 2222 (hostfwd active)
+ss -tln | grep -q 2222 && echo "✓ port 2222 bound" || echo "✗ QEMU failed — check /tmp/qemu-boot-err.log"
 
 # Wait for login prompt (up to 90s)
-timeout 90 bash -c 'until grep -q "ouroboros login:" /tmp/ouroboros-serial-boot.log 2>/dev/null; do sleep 2; done'
+timeout 90 bash -c 'until grep -q "login:" /tmp/ouroboros-serial-boot.log 2>/dev/null; do sleep 2; done'
 echo "System booted"
 ```
+
+> **virgl prerequisite:** `pacman -S virglrenderer` on host. If port 2222 doesn't bind,
+> check `/tmp/qemu-boot-err.log`. Fallback (no GPU acceleration): replace
+> `-device virtio-vga-gl -display egl-headless,gl=on` with `-vga virtio -display none`.
 
 ### 3.2 Verify boot is clean
 
