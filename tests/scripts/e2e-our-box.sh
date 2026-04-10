@@ -175,7 +175,7 @@ launch_qemu() {
         -drive "if=pflash,format=raw,readonly=on,file=${OVMF_PATH}"
         -drive "file=${disk_path},format=qcow2,if=virtio,cache=writeback"
         -netdev "user,id=net0,hostfwd=tcp::${OBOX_TEST_SSH_PORT}-:22"
-        -device e1000,netdev=net0
+        -device "e1000,netdev=net0"
         -rtc base=utc,clock=host
         -serial "file:${serial_log}"
         -vga virtio
