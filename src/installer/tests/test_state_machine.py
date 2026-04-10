@@ -632,12 +632,12 @@ class TestHandleInit:
         mock_tui = MagicMock()
         mock_tui.show_remote_config_prompt.return_value = "https://example.com/config.yaml"
         mock_config = MagicMock()
-        
+
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
              patch("installer.state_machine.TUI", return_value=mock_tui), \
              patch("installer.state_machine.load_config_from_url", return_value=mock_config) as mock_load:
             installer._handle_init()
-        
+
         assert installer.tui is None  # switched to unattended
         assert installer.config is mock_config
         mock_tui.show_remote_config_prompt.assert_called_once()
@@ -648,11 +648,11 @@ class TestHandleInit:
         installer = Installer()
         mock_tui = MagicMock()
         mock_tui.show_remote_config_prompt.return_value = None
-        
+
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
              patch("installer.state_machine.TUI", return_value=mock_tui):
             installer._handle_init()
-        
+
         assert installer.tui is mock_tui  # still interactive
         mock_tui.show_remote_config_prompt.assert_called_once()
 
@@ -662,12 +662,12 @@ class TestHandleInit:
         mock_tui = MagicMock()
         mock_tui.show_remote_config_prompt.return_value = "https://example.com/bad.yaml"
         mock_error = Exception("Network error")
-        
+
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
              patch("installer.state_machine.TUI", return_value=mock_tui), \
              patch("installer.state_machine.load_config_from_url", side_effect=mock_error):
             installer._handle_init()
-        
+
         assert installer.tui is mock_tui  # still interactive despite error
         mock_tui.show_error.assert_called_once()
         expected_error_msg = f"Failed to load remote config:\n{mock_error}\n\nContinuing in interactive mode."

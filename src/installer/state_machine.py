@@ -728,10 +728,10 @@ class Installer:
         )
 
         result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
-        
+
         # Clear plaintext password after configure — no longer needed
         self.config.user.password_plaintext = ""
-        
+
         if result.returncode != 0:
             raise InstallerError(
                 f"System configuration failed (exit {result.returncode}). "

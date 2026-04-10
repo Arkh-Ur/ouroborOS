@@ -142,7 +142,8 @@ launch_qemu() {
         wait "$QEMU_PID" 2>/dev/null || true
     fi
 
-    local qemu_args=(
+    local qemu_args
+    qemu_args=(
         -enable-kvm
         -cpu host
         -smp 2
@@ -196,25 +197,12 @@ assert_contains() {
     TESTS_RUN=$((TESTS_RUN + 1))
 }
 
-assert_not_contains() {
-    local description="$1"
-    local output="$2"
-    local pattern="$3"
-    if echo "$output" | grep -qE "$pattern"; then
-        log_fail "${description}"
-        log_info "  Unexpected pattern found: ${pattern}"
-    else
-        log_ok "${description}"
-    fi
-    TESTS_RUN=$((TESTS_RUN + 1))
-}
-
 # Generate a config YAML for a specific desktop profile
 # Creates a temporary file and echoes its path
 generate_profile_config() {
     local profile="$1"
     local config_file
-    config_file="$(mktemp /tmp/dp-config-${profile}.XXXXXX.yaml)"
+    config_file="$(mktemp "/tmp/dp-config-${profile}.XXXXXX.yaml")"
 
     cat > "$config_file" <<YAML
 disk:
@@ -705,6 +693,7 @@ verify_profile_kde() {
 }
 
 # ── Teardown ───────────────────────────────────────────────────────────────────
+# shellcheck disable=SC2329  # invoked via 'trap teardown EXIT'
 teardown() {
     log_section "Teardown"
 

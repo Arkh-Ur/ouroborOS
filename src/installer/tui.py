@@ -1192,7 +1192,7 @@ class TUI:
 
     def show_remote_config_prompt(self) -> str | None:
         """Ask user if they want to use a remote configuration file.
-        
+
         Returns:
             URL string if user provides one, None if declined.
         """
@@ -1203,7 +1203,7 @@ class TUI:
     def _rich_remote_config_prompt(self) -> str | None:
         assert self._console is not None
         self._stop_progress()
-        
+
         self._console.print(
             Panel(
                 "\nNo local configuration file found.\n\n"
@@ -1214,7 +1214,7 @@ class TUI:
                 padding=(1, 2),
             )
         )
-        
+
         choice = Confirm.ask(
             "  Use a remote configuration file?",
             default=False,
@@ -1222,7 +1222,7 @@ class TUI:
         )
         if not choice:
             return None
-        
+
         url = Prompt.ask(
             "  Enter config URL",
             console=self._console,
@@ -1241,7 +1241,7 @@ class TUI:
         )
         if rc != 0:
             return None
-        
+
         # URL input
         rc, url = _whiptail(
             "--title", f"{self._title} - Remote Configuration",

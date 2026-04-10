@@ -166,7 +166,8 @@ launch_qemu() {
         serial_log="$OBOX_TEST_SERIAL"
     fi
 
-    local qemu_args=(
+    local qemu_args
+    qemu_args=(
         -enable-kvm
         -cpu host
         -smp 2
@@ -192,6 +193,7 @@ launch_qemu() {
 }
 
 # Teardown — kill QEMU and optionally clean artifacts
+# shellcheck disable=SC2329  # invoked via 'trap teardown EXIT'
 teardown() {
     log_section "Teardown"
     if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then

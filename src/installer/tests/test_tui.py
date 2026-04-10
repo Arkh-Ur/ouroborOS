@@ -818,10 +818,10 @@ class TestRemoteConfigPrompt:
         with _patch_rich() as mocks:
             tui = TUI(title="Test Installer")
             tui._console = mocks["Console"].return_value
-            
+
             # Mock Confirm.ask to return False (user declines)
             mocks["Confirm"].ask.return_value = False
-            
+
             result = tui.show_remote_config_prompt()
             assert result is None
             mocks["Confirm"].ask.assert_called_once_with(
@@ -835,14 +835,14 @@ class TestRemoteConfigPrompt:
         with _patch_rich() as mocks:
             tui = TUI(title="Test Installer")
             tui._console = mocks["Console"].return_value
-            
+
             # Mock sequence: Confirm.ask=True, Prompt.ask=URL
             mocks["Confirm"].ask.return_value = True
             mocks["Prompt"].ask.return_value = "https://example.com/config.yaml"
-            
+
             result = tui.show_remote_config_prompt()
             assert result == "https://example.com/config.yaml"
-            
+
             mocks["Confirm"].ask.assert_called_once()
             mocks["Prompt"].ask.assert_called_once_with(
                 "  Enter config URL",
@@ -854,11 +854,11 @@ class TestRemoteConfigPrompt:
         with _patch_rich() as mocks:
             tui = TUI(title="Test Installer")
             tui._console = mocks["Console"].return_value
-            
+
             # Mock sequence: Confirm.ask=True, Prompt.ask=empty string
             mocks["Confirm"].ask.return_value = True
             mocks["Prompt"].ask.return_value = "   "  # Whitespace only
-            
+
             result = tui.show_remote_config_prompt()
             assert result is None
 
@@ -866,12 +866,12 @@ class TestRemoteConfigPrompt:
         """Whiptail backend returns None on cancel (non-zero return)."""
         with patch("installer.tui.HAS_RICH", False), \
              patch("installer.tui._whiptail") as mock_whiptail:
-            
+
             tui = TUI(title="Test Installer")
-            
+
             # Mock first whiptail call to return non-zero (cancel)
             mock_whiptail.return_value = (1, "")
-            
+
             result = tui.show_remote_config_prompt()
             assert result is None
             assert mock_whiptail.call_count == 1
@@ -880,21 +880,21 @@ class TestRemoteConfigPrompt:
         """Whiptail backend returns URL on successful input."""
         with patch("installer.tui.HAS_RICH", False), \
              patch("installer.tui._whiptail") as mock_whiptail:
-            
+
             tui = TUI(title="Test Installer")
-            
+
             # Mock first whiptail call: yes/no returns 0 (yes)
             mock_whiptail.return_value = (0, "")
-            
+
             # Create side effect for the two calls
             def side_effect(*args):
                 if "--yesno" in args:
                     return (0, "")  # Yes
                 else:  # inputbox
                     return (0, "https://example.com/config.yaml")
-            
+
             mock_whiptail.side_effect = side_effect
-            
+
             result = tui.show_remote_config_prompt()
             assert result == "https://example.com/config.yaml"
             assert mock_whiptail.call_count == 2
@@ -903,20 +903,20 @@ class TestRemoteConfigPrompt:
         """Whiptail backend returns None when URL is empty/whitespace."""
         with patch("installer.tui.HAS_RICH", False), \
              patch("installer.tui._whiptail") as mock_whiptail:
-            
+
             tui = TUI(title="Test Installer")
-            
+
             # Mock first whiptail call: yes/no returns 0 (yes)
             mock_whiptail.return_value = (0, "")
-            
+
             # Mock second call: inputbox returns whitespace
             def side_effect(*args):
                 if "--yesno" in args:
                     return (0, "")
                 else:  # inputbox
                     return (0, "   ")  # Whitespace only
-            
+
             mock_whiptail.side_effect = side_effect
-            
+
             result = tui.show_remote_config_prompt()
             assert result is None

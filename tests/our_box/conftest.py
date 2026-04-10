@@ -10,11 +10,10 @@ from __future__ import annotations
 import os
 import stat
 import textwrap
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Mock binary generators

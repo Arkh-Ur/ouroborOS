@@ -10,8 +10,8 @@ import logging
 import re
 import subprocess
 import tempfile
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -300,40 +300,40 @@ def load_config(path: Path) -> InstallerConfig:
 
 def load_config_from_url(url: str) -> InstallerConfig:
     """Download a YAML config from a URL and load it.
-    
+
     Args:
         url: HTTP(S) URL to a YAML config file.
-        
+
     Returns:
         A fully-populated InstallerConfig instance.
-        
+
     Raises:
         ConfigValidationError: If the downloaded config fails validation.
         urllib.error.URLError: If the download fails.
     """
     log = logging.getLogger(__name__)
     log.info("Downloading remote config from: %s", url)
-    
+
     req = urllib.request.Request(url, headers={"User-Agent": "ouroborOS-installer"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         if resp.status != 200:
             raise ConfigValidationError(f"Failed to download config: HTTP {resp.status}")
         raw = resp.read().decode("utf-8")
-    
+
     data = yaml.safe_load(raw)
     if not isinstance(data, dict):
         raise ConfigValidationError("Remote config must be a YAML mapping at the top level.")
-    
+
     validate_config(data)
-    
+
     # Save to temp file for reference
     tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", prefix="ouroborOS-remote-", 
+        mode="w", suffix=".yaml", prefix="ouroborOS-remote-",
         dir="/tmp", delete=False, encoding="utf-8"
     )
     tmp.write(raw)
     tmp.close()
-    
+
     return load_config(Path(tmp.name))
 
 
