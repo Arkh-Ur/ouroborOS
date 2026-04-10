@@ -31,8 +31,13 @@ user:
 # Desktop profile — a starting-point package set. Optional; defaults to
 # "minimal" (no extra packages, TTY-only base) if omitted.
 # Options: minimal | hyprland | niri | gnome | kde
+#
+# dm: display manager (Wayland-native). "auto" picks the canonical DM for
+# the profile (gnome→gdm, hyprland→sddm, niri→sddm, kde→plm, rest→none).
+# Override with gdm, sddm, plm, or none (TTY login).
 desktop:
   profile: minimal
+  dm: auto
 
 extra_packages:
   - openssh

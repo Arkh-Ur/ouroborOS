@@ -412,49 +412,45 @@ class TUI:
         ("minimal",  "Nothing extra — TTY-only base (you install the DE yourself)"),
         ("hyprland", "Hyprland + waybar + foot + wofi (Wayland tiling)"),
         ("niri",     "Niri + foot + fuzzel (scrollable-tiling Wayland)"),
-        ("gnome",    "GNOME desktop + gdm (auto-login)"),
-        ("kde",      "KDE Plasma + sddm (auto-login)"),
+        ("gnome",    "GNOME desktop (gdm by default)"),
+        ("kde",      "KDE Plasma (sddm by default)"),
     ]
 
     def show_desktop_selection(self) -> str:
         """Prompt for a desktop profile. Returns the profile name."""
         if self._backend == "rich":
-            return self._rich_desktop_selection()
-        return self._whiptail_desktop_selection()
-
-    def _rich_desktop_selection(self) -> str:
-        assert self._console is not None
-        table = Table(show_header=True, header_style="bold cyan", box=None)
-        table.add_column("Profile", style="bold")
-        table.add_column("Description")
-        for name, desc in self._DESKTOP_PROFILES:
-            table.add_row(name, desc)
-        self._console.print(
-            Panel(table, title="[bold]Desktop Profile[/bold]", border_style="cyan")
-        )
-        choices = [name for name, _ in self._DESKTOP_PROFILES]
-        return Prompt.ask(
-            "Choose desktop profile",
-            choices=choices,
-            default="minimal",
-            console=self._console,
-        )
-
-    def _whiptail_desktop_selection(self) -> str:
-        items: list[str] = []
-        for name, desc in self._DESKTOP_PROFILES:
-            items += [name, desc, "OFF" if name != "minimal" else "ON"]
-        rc, out = _whiptail(
-            *self._args(
-                "--radiolist",
-                "Select desktop profile:",
-                "20", "78", "5",
-                *items,
+            return self._rich_select(
+                "Desktop Profile",
+                "Select a desktop profile for the installed system:",
+                self._DESKTOP_PROFILES,
+                default="minimal",
             )
+        return self._select_from_list(
+            "Desktop Profile",
+            "Select a desktop profile for the installed system:",
+            self._DESKTOP_PROFILES,
+            default="minimal",
         )
-        if rc != 0 or not out:
-            return "minimal"
-        return out.strip()
+
+    # ------------------------------------------------------------------
+    # Display manager selection
+    # ------------------------------------------------------------------
+
+    _DM_OPTIONS: list[tuple[str, str]] = [
+        ("auto", "Recommended for this profile (default)"),
+        ("gdm",  "GNOME Display Manager — Wayland-native"),
+        ("sddm", "Simple Desktop Display Manager — Wayland support"),
+        ("plm",  "Plasma Login Manager — KDE native, fork of SDDM"),
+        ("none", "TTY login — launch your session manually"),
+    ]
+
+    def show_dm_selection(self, profile: str = "") -> str:
+        """Prompt for a display manager. Returns 'auto', 'gdm', 'sddm', or 'none'."""
+        label = f"Display Manager (profile: {profile})" if profile else "Display Manager"
+        prompt = "Select a display manager:"
+        if self._backend == "rich":
+            return self._rich_select(label, prompt, self._DM_OPTIONS, default="auto")
+        return self._select_from_list(label, prompt, self._DM_OPTIONS, default="auto")
 
     # ------------------------------------------------------------------
     # Disk selection
@@ -699,7 +695,7 @@ class TUI:
                         "  [bold red]Password must be at least 4 characters.[/]"
                     )
                     continue
-                return {"username": username, "password_hash": _hash_password(password)}
+                return {"username": username, "password_hash": _hash_password(password), "password": password}
             self._console.print(
                 f"  [bold red]Passwords do not match. "
                 f"Attempt {attempt + 1}/3.[/]"
@@ -727,6 +723,7 @@ class TUI:
                 return {
                     "username": username,
                     "password_hash": _hash_password(password),
+                    "password": password,
                 }
             self.show_error(
                 f"Passwords do not match. Attempt {attempt + 1}/3.",
@@ -1188,3 +1185,72 @@ class TUI:
         if rc != 0:
             raise TUIError(f"User cancelled password entry: {title}")
         return value
+
+    # ------------------------------------------------------------------
+    # Remote config prompt
+    # ------------------------------------------------------------------
+
+    def show_remote_config_prompt(self) -> str | None:
+        """Ask user if they want to use a remote configuration file.
+        
+        Returns:
+            URL string if user provides one, None if declined.
+        """
+        if self._backend == "rich":
+            return self._rich_remote_config_prompt()
+        return self._whiptail_remote_config_prompt()
+
+    def _rich_remote_config_prompt(self) -> str | None:
+        assert self._console is not None
+        self._stop_progress()
+        
+        self._console.print(
+            Panel(
+                "\nNo local configuration file found.\n\n"
+                "You can provide a URL to a YAML configuration file\n"
+                "(e.g. a GitHub raw URL) for unattended installation.\n",
+                title="[bold cyan]Remote Configuration[/]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+        
+        choice = Confirm.ask(
+            "  Use a remote configuration file?",
+            default=False,
+            console=self._console,
+        )
+        if not choice:
+            return None
+        
+        url = Prompt.ask(
+            "  Enter config URL",
+            console=self._console,
+        )
+        return url.strip() or None
+
+    def _whiptail_remote_config_prompt(self) -> str | None:
+        # Yes/No dialog first
+        rc, _ = _whiptail(
+            "--title", f"{self._title} - Remote Configuration",
+            "--yesno",
+            "No local configuration file found.\n\n"
+            "Do you want to use a remote configuration file\n"
+            "for unattended installation?",
+            str(self._HEIGHT), str(self._WIDTH),
+        )
+        if rc != 0:
+            return None
+        
+        # URL input
+        rc, url = _whiptail(
+            "--title", f"{self._title} - Remote Configuration",
+            "--inputbox",
+            "Enter the URL to the YAML configuration file\n"
+            "(e.g. https://raw.githubusercontent.com/.../config.yaml):",
+            str(self._HEIGHT), str(self._WIDTH),
+            "",
+        )
+        if rc != 0:
+            return None
+        return url.strip() or None

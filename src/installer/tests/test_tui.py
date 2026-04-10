@@ -804,3 +804,119 @@ class TestRichUserCreationShortPassword:
             ]
             result = rich_tui.show_user_creation()
         assert result["username"] == "alice"
+
+
+# ---------------------------------------------------------------------------
+# Remote config prompt tests
+# ---------------------------------------------------------------------------
+
+class TestRemoteConfigPrompt:
+    """Tests for show_remote_config_prompt method."""
+
+    def test_rich_returns_none_when_declined(self) -> None:
+        """Rich backend returns None when user says no."""
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test Installer")
+            tui._console = mocks["Console"].return_value
+            
+            # Mock Confirm.ask to return False (user declines)
+            mocks["Confirm"].ask.return_value = False
+            
+            result = tui.show_remote_config_prompt()
+            assert result is None
+            mocks["Confirm"].ask.assert_called_once_with(
+                "  Use a remote configuration file?",
+                default=False,
+                console=tui._console,
+            )
+
+    def test_rich_returns_url_when_accepted(self) -> None:
+        """Rich backend returns URL when user provides one."""
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test Installer")
+            tui._console = mocks["Console"].return_value
+            
+            # Mock sequence: Confirm.ask=True, Prompt.ask=URL
+            mocks["Confirm"].ask.return_value = True
+            mocks["Prompt"].ask.return_value = "https://example.com/config.yaml"
+            
+            result = tui.show_remote_config_prompt()
+            assert result == "https://example.com/config.yaml"
+            
+            mocks["Confirm"].ask.assert_called_once()
+            mocks["Prompt"].ask.assert_called_once_with(
+                "  Enter config URL",
+                console=tui._console,
+            )
+
+    def test_rich_empty_url_returns_none(self) -> None:
+        """Rich backend returns None when user enters empty URL."""
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test Installer")
+            tui._console = mocks["Console"].return_value
+            
+            # Mock sequence: Confirm.ask=True, Prompt.ask=empty string
+            mocks["Confirm"].ask.return_value = True
+            mocks["Prompt"].ask.return_value = "   "  # Whitespace only
+            
+            result = tui.show_remote_config_prompt()
+            assert result is None
+
+    def test_whiptail_returns_none_on_cancel(self) -> None:
+        """Whiptail backend returns None on cancel (non-zero return)."""
+        with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui._whiptail") as mock_whiptail:
+            
+            tui = TUI(title="Test Installer")
+            
+            # Mock first whiptail call to return non-zero (cancel)
+            mock_whiptail.return_value = (1, "")
+            
+            result = tui.show_remote_config_prompt()
+            assert result is None
+            assert mock_whiptail.call_count == 1
+
+    def test_whiptail_returns_url_on_success(self) -> None:
+        """Whiptail backend returns URL on successful input."""
+        with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui._whiptail") as mock_whiptail:
+            
+            tui = TUI(title="Test Installer")
+            
+            # Mock first whiptail call: yes/no returns 0 (yes)
+            mock_whiptail.return_value = (0, "")
+            
+            # Create side effect for the two calls
+            def side_effect(*args):
+                if "--yesno" in args:
+                    return (0, "")  # Yes
+                else:  # inputbox
+                    return (0, "https://example.com/config.yaml")
+            
+            mock_whiptail.side_effect = side_effect
+            
+            result = tui.show_remote_config_prompt()
+            assert result == "https://example.com/config.yaml"
+            assert mock_whiptail.call_count == 2
+
+    def test_whiptail_empty_url_returns_none(self) -> None:
+        """Whiptail backend returns None when URL is empty/whitespace."""
+        with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui._whiptail") as mock_whiptail:
+            
+            tui = TUI(title="Test Installer")
+            
+            # Mock first whiptail call: yes/no returns 0 (yes)
+            mock_whiptail.return_value = (0, "")
+            
+            # Mock second call: inputbox returns whitespace
+            def side_effect(*args):
+                if "--yesno" in args:
+                    return (0, "")
+                else:  # inputbox
+                    return (0, "   ")  # Whitespace only
+            
+            mock_whiptail.side_effect = side_effect
+            
+            result = tui.show_remote_config_prompt()
+            assert result is None

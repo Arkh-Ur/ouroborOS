@@ -47,18 +47,78 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Display managers per profile
+# Display manager options (Wayland-native only)
 # ---------------------------------------------------------------------------
 #
-# Profiles not listed here leave login on tty — the user launches their
-# session manually (e.g. `Hyprland`, `niri-session`). This is intentional
-# for minimalist profiles; GNOME and KDE get their canonical DMs because
-# running them without one is pointlessly painful.
+# Four options are offered — all Wayland-native:
+#   gdm   — GNOME Display Manager.  Full Wayland compositor.
+#   sddm  — Simple Desktop Display Manager.  Wayland support via Qt.
+#   plm   — Plasma Login Manager.  Fork of SDDM, native KDE integration.
+#   none  — TTY login.  User launches their session manually.
+#
+# The "auto" value (default) resolves to the canonical DM for each profile,
+# falling back to "none" for profiles that don't ship one.
 
-PROFILE_DM: dict[str, str] = {
+VALID_DMS: frozenset[str] = frozenset({"gdm", "sddm", "plm", "none"})
+
+# Canonical DM for each profile (used when dm="auto")
+_PROFILE_DEFAULT_DM: dict[str, str] = {
     "gnome": "gdm",
-    "kde": "sddm",
+    "kde": "plm",
+    "hyprland": "sddm",
+    "niri": "sddm",
 }
+
+# Pacman package for each DM (installed by pacstrap when needed)
+_DM_PACKAGE: dict[str, str] = {
+    "gdm": "gdm",
+    "sddm": "sddm",
+    "plm": "plasma-login-manager",
+}
+
+# systemd service unit for each DM (used by configure.sh)
+_DM_SERVICE: dict[str, str] = {
+    "gdm": "gdm",
+    "sddm": "sddm",
+    "plm": "plasmalogin",
+}
+
+
+def dm_package(dm: str) -> str:
+    """Return the pacman package name for a display manager."""
+    return _DM_PACKAGE[dm]
+
+
+def dm_service(dm: str) -> str:
+    """Return the systemd service name (without .service) for a display manager."""
+    return _DM_SERVICE[dm]
+
+
+def resolve_dm(profile: str, dm_choice: str = "auto") -> str:
+    """Resolve the display manager for a profile + user choice.
+
+    Args:
+        profile: Desktop profile name.
+        dm_choice: 'gdm', 'sddm', 'plasmalogin', 'none', or 'auto'.
+
+    Returns:
+        The resolved DM name.
+    """
+    if dm_choice == "auto":
+        return _PROFILE_DEFAULT_DM.get(profile, "none")
+    if dm_choice not in VALID_DMS:
+        raise ValueError(
+            f"Unknown display manager: {dm_choice!r}. "
+            f"Valid options: {sorted(VALID_DMS)} + 'auto'"
+        )
+    return dm_choice
+
+
+# ---------------------------------------------------------------------------
+# Legacy mapping (kept for backward compat — maps profile → default DM)
+# ---------------------------------------------------------------------------
+
+PROFILE_DM: dict[str, str] = dict(_PROFILE_DEFAULT_DM)
 
 # ---------------------------------------------------------------------------
 # Validation helpers
