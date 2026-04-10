@@ -853,7 +853,8 @@ main() {
             network-online.target.wants \
             sysinit.target.wants \
             sockets.target.wants \
-            getty.target.wants; do
+            getty.target.wants \
+            graphical.target.wants; do
             if [[ -d "${src}/${dir}" ]]; then
                 mkdir -p "${dst}/${dir}"
                 cp -a "${src}/${dir}/." "${dst}/${dir}/"
