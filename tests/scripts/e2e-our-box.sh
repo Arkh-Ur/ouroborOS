@@ -167,6 +167,7 @@ launch_qemu() {
     fi
 
     local qemu_args
+    # shellcheck disable=SC2054  # qemu args use commas inside values (-drive if=...,format=...)
     qemu_args=(
         -enable-kvm
         -cpu host
