@@ -161,24 +161,25 @@ jobs:
         id: notes
         run: |
           TAG="${{ github.ref_name }}"
-          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
-          if [[ -n "$PREV_TAG" ]]; then
-            RANGE="${PREV_TAG}..${TAG}"
-          else
-            RANGE="${TAG}"
+          VERSION="${TAG#v}"
+
+          # Extract section for this version from CHANGELOG.md
+          # Section starts at "## [X.Y.Z]" and ends at the next "## [" or EOF
+          NOTES=$(awk \
+            "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
+            CHANGELOG.md)
+
+          if [[ -z "$NOTES" ]]; then
+            echo "::warning::No CHANGELOG entry found for ${VERSION} — using empty notes"
+            NOTES="See [CHANGELOG.md](https://github.com/Arkh-Ur/ouroborOS/blob/main/CHANGELOG.md) for details."
           fi
-          feats=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep "^feat" | sed 's/^/- /' || true)
-          fixes=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep "^fix"  | sed 's/^/- /' || true)
-          docs=$(git  log "$RANGE" --pretty=format:"%s" --no-merges | grep "^docs" | sed 's/^/- /' || true)
-          rest=$(git  log "$RANGE" --pretty=format:"%s" --no-merges | grep -vE "^(feat|fix|docs|test|chore|build)" | sed 's/^/- /' || true)
+
           {
             echo "NOTES<<EOF"
-            echo "## ouroborOS ${TAG}"
+            echo "$NOTES"
             echo ""
-            if [[ -n "$feats" ]]; then echo "### New features"; echo "$feats"; echo ""; fi
-            if [[ -n "$fixes" ]]; then echo "### Bug fixes";    echo "$fixes"; echo ""; fi
-            if [[ -n "$docs"  ]]; then echo "### Documentation"; echo "$docs"; echo ""; fi
-            if [[ -n "$rest"  ]]; then echo "### Other changes"; echo "$rest"; echo ""; fi
+            echo "---"
+            echo ""
             echo "### Installation"
             echo ""
             echo "1. Download the ISO below and verify the checksum:"
@@ -191,7 +192,7 @@ jobs:
             echo '   ```'
             echo "3. Boot from USB (UEFI required) and follow the installer."
             echo ""
-            echo "See the [User Guide](https://github.com/Arkh-Ur/ouroborOS/blob/main/docs/user-guide.md) for the full walkthrough."
+            echo "Full changelog: [CHANGELOG.md](https://github.com/Arkh-Ur/ouroborOS/blob/main/CHANGELOG.md)"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
