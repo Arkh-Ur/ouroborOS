@@ -865,6 +865,7 @@ class TestRemoteConfigPrompt:
     def test_whiptail_returns_none_on_cancel(self) -> None:
         """Whiptail backend returns None on cancel (non-zero return)."""
         with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui.shutil.which", return_value="/usr/bin/whiptail"), \
              patch("installer.tui._whiptail") as mock_whiptail:
 
             tui = TUI(title="Test Installer")
@@ -879,6 +880,7 @@ class TestRemoteConfigPrompt:
     def test_whiptail_returns_url_on_success(self) -> None:
         """Whiptail backend returns URL on successful input."""
         with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui.shutil.which", return_value="/usr/bin/whiptail"), \
              patch("installer.tui._whiptail") as mock_whiptail:
 
             tui = TUI(title="Test Installer")
@@ -902,6 +904,7 @@ class TestRemoteConfigPrompt:
     def test_whiptail_empty_url_returns_none(self) -> None:
         """Whiptail backend returns None when URL is empty/whitespace."""
         with patch("installer.tui.HAS_RICH", False), \
+             patch("installer.tui.shutil.which", return_value="/usr/bin/whiptail"), \
              patch("installer.tui._whiptail") as mock_whiptail:
 
             tui = TUI(title="Test Installer")
