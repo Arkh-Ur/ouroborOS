@@ -46,9 +46,9 @@ ouroborOS/
 │   │   ├── setup-dev-env.sh     ← Set up the dev environment
 │   │   └── flash-usb.sh         ← Write ISO to USB drive
 │   ├── installer/               ← Python installer
-│   │   ├── config.py            ← InstallerConfig + YAML loader + DesktopConfig
-│   │   ├── desktop_profiles.py  ← Desktop profile package sets (minimal/hyprland/niri/gnome/kde)
-│   │   ├── state_machine.py     ← FSM with checkpoints (USER + DESKTOP states added)
+│   │   ├── config.py            ← InstallerConfig + YAML loader + DesktopConfig + remote URL loader
+│   │   ├── desktop_profiles.py  ← Desktop profile package sets (5 profiles) + DM selection (gdm/sddm/plm/none)
+│   │   ├── state_machine.py     ← FSM with checkpoints (11 states: USER + DESKTOP before PARTITION)
 │   │   ├── tui.py               ← Rich TUI (primary) + whiptail fallback
 │   │   ├── main.py              ← CLI entrypoint
 │   │   ├── ops/                 ← Bash operations
@@ -216,9 +216,11 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 **Current phase:** Phase 2 (post-v0.1.0) — see [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md)
 - `our-pac` renamed from `ouroboros-upgrade`, `our-box` (nspawn wrapper) added
-- Desktop profile selection (minimal/hyprland/niri/gnome/kde)
+- Desktop profile selection (minimal/hyprland/niri/gnome/kde) with decoupled DM selection (gdm/sddm/plm/none)
 - FSM reordered: USER + DESKTOP states before PARTITION (no destructive ops before human input)
-- systemd-homed default-on for per-user home encryption
+- systemd-homed default-on for per-user home encryption (non-interactive via JSON identity)
+- Remote config URL prompt in INIT state (download unattended config from GitHub raw URLs)
+- Reflector mirror selection optimized: `--sort score` (server-side) instead of `--fastest`
 
 ### Dual-Repo Architecture
 
@@ -266,3 +268,37 @@ When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds th
 - Do not add packages to the ISO without justification (bloat)
 - Do not use PreTransaction pacman hooks for remounting (pacman checks writability before hooks)
 - Do not write files only to `@etc` if systemd needs them at early boot (mirror to `@` too)
+- Do not hardcode mirror URLs in pacman.conf — parametrize or use reflector
+- Do not use `--fastest` with reflector — use `--sort score` (server-side, avoids long local benchmarks)
+- Do not leave plaintext passwords on disk after use — always clean up immediately
+
+## E2E Testing
+
+Full lifecycle test: build ISO → unattended install in QEMU → verify installed system.
+
+### Key Constraints
+- Always use `setsid` to launch QEMU (survives tool timeouts)
+- Always `fuser -k 2222/tcp` before launching (kill zombie QEMU)
+- Always use `-device e1000` (virtio-net hangs under sustained pacstrap load)
+- Always use `-display none -vga virtio` (never `-nographic`, disables VGA for VNC)
+- Build workdir and QEMU disk on `/home/` — `/tmp/` is tmpfs (~4 GB), build needs 6-8 GB
+- Use `ps aux | grep qemu` to find real PID (`$!` is wrong with setsid)
+- Serial log at `/tmp/ouroboros-serial-install.log`
+
+### Known Issues
+- `homectl create --identity=JSON` fails in QEMU with generic error (under investigation)
+- SSH on installed system only listens on AF_UNIX socket by default (networkd DHCP in SLIRP needs investigation)
+- homed-migration rollback works correctly when create fails — user stays as classic `/etc/passwd` user
+
+### Installer States (11 total)
+```
+INIT → PREFLIGHT → LOCALE → USER → DESKTOP → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
+```
+
+### Password Plaintext Lifecycle
+- `UserConfig.password_plaintext` is transient — filled during `load_config` or TUI
+- Passed to `configure.sh` as `USER_PASSWORD` env var
+- Written to `/etc/ouroboros/homed-migration.conf` (chmod 600) for first-boot homed migration
+- Cleared in `state_machine.py` immediately after `configure.sh` finishes
+- homed-migrate.sh removes `HOMED_PASSWORD` from conf file after successful migration
+- Never persisted in checkpoints
