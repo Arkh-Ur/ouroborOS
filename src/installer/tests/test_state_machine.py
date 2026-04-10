@@ -191,6 +191,8 @@ class TestInstallerRun:
             (State.INIT, "_handle_init"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
+            (State.USER, "_handle_user"),
+            (State.DESKTOP, "_handle_desktop"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -296,6 +298,8 @@ class TestInstallerRun:
             (State.INIT, "_handle_init"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
+            (State.USER, "_handle_user"),
+            (State.DESKTOP, "_handle_desktop"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -840,10 +844,12 @@ class TestHandleConfigure:
             "username": "testuser",
             "password_hash": "$6$xxx",
         }
+        mock_tui.show_shell_selection.return_value = "bash"
         installer.tui = mock_tui
         installer._handle_user()
         assert installer.config.user.username == "testuser"
         assert installer.config.user.password_hash == "$6$xxx"
+        assert installer.config.user.shell == "/bin/bash"
 
     def test_handle_desktop_sets_profile(self) -> None:
         """Phase 2: _handle_desktop stores the selected profile and DM."""

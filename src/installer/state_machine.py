@@ -30,6 +30,8 @@ from installer.desktop_profiles import (
     dm_service,
     packages_for,
     resolve_dm,
+    shell_package,
+    shell_path,
 )
 from installer.tui import TUI
 
@@ -374,7 +376,7 @@ class Installer:
         self._update_progress(State.LOCALE, 100)
 
     def _handle_user(self) -> None:
-        """USER — collect username and password BEFORE touching the disk.
+        """USER — collect username, password, and shell BEFORE touching the disk.
 
         This state used to live inside CONFIGURE (after pacstrap). It was
         moved forward so a cancelled prompt cannot waste a disk wipe.
@@ -386,7 +388,21 @@ class Installer:
             self.config.user.password_hash = user_cfg["password_hash"]
             if "password" in user_cfg:
                 self.config.user.password_plaintext = user_cfg["password"]
-        log.info("User configured: %s", self.config.user.username)
+
+            shell_name = self.tui.show_shell_selection()
+            self.config.user.shell = shell_path(shell_name)
+
+            # If the chosen shell is not part of 'base', schedule it for install
+            pkg = shell_package(shell_name)
+            if pkg and pkg not in self.config.extra_packages:
+                self.config.extra_packages.append(pkg)
+                log.info("Shell package queued: %s", pkg)
+
+        log.info(
+            "User configured: %s (shell: %s)",
+            self.config.user.username,
+            self.config.user.shell,
+        )
         self._update_progress(State.USER, 100)
 
     def _handle_desktop(self) -> None:

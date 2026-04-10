@@ -49,6 +49,10 @@ less
 nano
 vim
 
+# Shells (selectable at install time — bash is already in 'base')
+zsh
+fish
+
 # System tools
 htop
 rsync

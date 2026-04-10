@@ -184,6 +184,13 @@ def validate_config(data: dict) -> None:
             f"user.homed_storage must be one of "
             f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
         )
+    _VALID_SHELLS = {"/bin/bash", "/bin/zsh", "/usr/bin/fish"}
+    shell = user.get("shell", "/bin/bash")
+    if shell not in _VALID_SHELLS:
+        raise ConfigValidationError(
+            f"user.shell must be one of "
+            f"'/bin/bash'|'/bin/zsh'|'/usr/bin/fish', got: {shell!r}"
+        )
 
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})

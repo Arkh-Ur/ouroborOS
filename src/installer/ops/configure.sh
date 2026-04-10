@@ -364,6 +364,13 @@ EOF
 configure_users() {
     log_info "Creating user account: ${USERNAME}"
 
+    # Ensure the chosen shell is registered in /etc/shells inside the target.
+    # Some shells (e.g. fish) may not add themselves during pacstrap.
+    if ! grep -qx "$USER_SHELL" "${TARGET}/etc/shells" 2>/dev/null; then
+        echo "$USER_SHELL" >> "${TARGET}/etc/shells"
+        log_info "Registered shell in /etc/shells: ${USER_SHELL}"
+    fi
+
     # Create user
     in_chroot useradd \
         --create-home \

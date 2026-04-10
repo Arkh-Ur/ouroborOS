@@ -453,6 +453,32 @@ class TUI:
         return self._select_from_list(label, prompt, self._DM_OPTIONS, default="auto")
 
     # ------------------------------------------------------------------
+    # Shell selection
+    # ------------------------------------------------------------------
+
+    _SHELL_OPTIONS: list[tuple[str, str]] = [
+        ("bash", "Bash   — POSIX-compatible, universal default (recommended)"),
+        ("zsh",  "Zsh    — Bash-compatible with advanced completion and prompts"),
+        ("fish", "Fish   — Modern and user-friendly (non-POSIX, breaks legacy scripts)"),
+    ]
+
+    def show_shell_selection(self) -> str:
+        """Prompt for a login shell. Returns the shell name ('bash', 'zsh', 'fish')."""
+        if self._backend == "rich":
+            return self._rich_select(
+                "Login Shell",
+                "Select the login shell for your user account:",
+                self._SHELL_OPTIONS,
+                default="bash",
+            )
+        return self._select_from_list(
+            "Login Shell",
+            "Select the login shell for your user account:",
+            self._SHELL_OPTIONS,
+            default="bash",
+        )
+
+    # ------------------------------------------------------------------
     # Disk selection
     # ------------------------------------------------------------------
 
