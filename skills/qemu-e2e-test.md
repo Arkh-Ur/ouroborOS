@@ -271,11 +271,25 @@ $SSH 'test -f /boot/EFI/systemd/systemd-bootx64.efi' && echo "✓ EFI binary pre
 $SSH 'cat /etc/systemd/resolved.conf' | grep "DNSOverTLS" && echo "✓ resolved.conf OK" || echo "✗ resolved.conf missing"
 ```
 
-### 3.5 Teardown
+### 3.5 Launch Hyprland (optional — requires virgl boot from 3.1)
 
 ```bash
-kill $QEMU_PID 2>/dev/null || pkill -f "qemu.*ouroboros-test" || true
-rm -f /home/ouroboros-test.qcow2 /tmp/ouroboros-serial-*.log
+# Launch Hyprland via SSH — compositor runs in guest, visible on VNC :1 (localhost:5901)
+$SSH 'WLR_RENDERER=gles2 Hyprland > /tmp/hyprland.log 2>&1 &'
+sleep 3
+$SSH 'cat /tmp/hyprland.log | head -20'
+
+# Open kitty from Hyprland (bind super+return in hyprland.conf, or run directly):
+$SSH 'WAYLAND_DISPLAY=wayland-1 kitty &'
+```
+
+> Connect to `localhost:5901` with a VNC client to see the graphical session.
+> virgl must be active (verify with `ls /dev/dri/` in guest).
+
+### 3.6 Teardown
+
+```bash
+pkill qemu 2>/dev/null || true
 echo "Teardown complete"
 ```
 
