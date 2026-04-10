@@ -14,12 +14,11 @@ set -euo pipefail
 #   HOSTNAME              — e.g. ouroboros
 #   USERNAME              — primary user account name
 #   USER_PASSWORD_HASH    — SHA-512 crypt hash
+#   USER_PASSWORD         — Plaintext password for systemd-homed migration
 #   USER_GROUPS           — comma-separated groups (e.g. wheel,audio,video)
 #   USER_SHELL            — e.g. /bin/bash
 #   ENABLE_IWD            — "1" to enable iwd, "0" to skip
 #   ENABLE_LUKS           — "1" if LUKS was used (add rd.luks.uuid to boot entry)
-#
-set -euo pipefail
 
 # --- Validation -------------------------------------------------------------
 
@@ -34,6 +33,7 @@ set -euo pipefail
 : "${USER_SHELL:='/bin/bash'}"
 : "${ENABLE_IWD:='1'}"
 : "${ENABLE_LUKS:='0'}"
+: "${HOMED_STORAGE:='subvolume'}"
 : "${ROOT_DEVICE:=''}"
 
 TARGET="$INSTALL_TARGET"
@@ -406,7 +406,7 @@ EOF
     # pacman hooks: only PostTransaction hooks here.
     # PreTransaction remount is NOT done via hook — pacman checks filesystem
     # writability BEFORE running any hook, making PreTransaction remount useless.
-    # Instead, ouroboros-upgrade (wrapper) handles remount + snapshot before
+    # Instead, our-pac (wrapper) handles unlock + remount + snapshot before
     # invoking the real pacman binary.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
 
@@ -423,7 +423,14 @@ When = PostTransaction
 Exec = /usr/bin/bootctl update --graceful
 EOF
 
-    cat > "${TARGET}/etc/pacman.d/hooks/99-post-upgrade.hook" << 'EOF'
+    # Hook named zzz- to guarantee it runs LAST.
+    # CRITICAL: pacman hooks are sorted alphabetically and numbers sort BEFORE letters
+    # in ASCII ('9'=57 < 'd'=100 < 'z'=122). A hook named 99-* always runs before
+    # dconf-update, fontconfig, glib-compile-schemas, gtk-update-icon-cache, and
+    # update-desktop-database — all of which write to /usr/share/* on the root @
+    # subvolume. If we lock root before those hooks, they fail with EROFS.
+    # zzz- ensures we always run after every other hook.
+    cat > "${TARGET}/etc/pacman.d/hooks/zzz-post-upgrade.hook" << 'EOF'
 [Trigger]
 Operation = Upgrade
 Operation = Install
@@ -432,62 +439,194 @@ Type = Package
 Target = *
 
 [Action]
-Description = Remount root read-only after package changes...
+Description = Restore root immutability after package changes...
 When = PostTransaction
-Exec = /usr/local/bin/ouroboros-post-upgrade
+Exec = /usr/local/bin/our-post-upgrade
 EOF
 
     # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
-    # ouroboros-upgrade — the ONLY safe way to install/upgrade packages on ouroborOS.
-    # pacman checks filesystem writability before PreTransaction hooks run, so a hook
-    # cannot remount rw in time. This wrapper:
-    #   1. Remounts / rw so pacman can write
-    #   2. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
-    #   3. Invokes real pacman with all arguments forwarded
-    #   4. The 99-post-upgrade hook remounts / ro after the transaction
+    # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
     #
-    # Usage: sudo ouroboros-upgrade -Syu
-    #        sudo ouroboros-upgrade -S <pkg>
-    #        sudo ouroboros-upgrade -R <pkg>
-    cat > "${TARGET}/usr/local/bin/ouroboros-upgrade" << 'SCRIPT'
+    # pacman checks filesystem writability before PreTransaction hooks run, so a hook
+    # cannot unlock root in time. This wrapper:
+    #   1. Unlocks root via btrfs property set ro=false (Btrfs-level immutability)
+    #   2. Remounts / rw at the VFS layer so pacman can write
+    #   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline)
+    #   4. Invokes real pacman with all arguments forwarded
+    #   5. The 99-post-upgrade hook restores ro via btrfs property set ro=true
+    #
+    # NOTE: mount-option ro alone is NOT sufficient for Btrfs immutability — when
+    # @var/@etc/@home are mounted rw from the same device, the superblock is rw,
+    # overriding the ro flag on @. btrfs property set ro=true is the real enforcement.
+    #
+    # Usage: sudo our-pac -Syu
+    #        sudo our-pac -S <pkg>
+    #        sudo our-pac -R <pkg>
+    cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
 #!/usr/bin/env bash
+# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+#
+# On the installed system:
+#   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
+#      the VFS ro restriction (circular deadlock prevention).
+#   2. Remounts / read-write at the VFS layer.
+#   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
+#   4. Runs pacman (NOT exec — we need control back after pacman exits).
+#   5. Locks root again via lock_root() AFTER pacman and ALL its hooks finish.
+#
+# Why NOT use exec:
+#   pacman hooks are sorted alphabetically. Hooks from packages like gtk4,
+#   dconf, glib write to /usr/share/* AFTER our zzz-post-upgrade.hook would
+#   run (if the hook existed alone). By doing the lock here — after pacman
+#   returns — we guarantee ALL hooks completed on a writable root.
+#
+# On the live ISO:
+#   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
+
+readonly PROGRAM_NAME="our-pac"
+_msg()    { echo "[${PROGRAM_NAME}] $*"; }
+_err()    { _msg "ERROR: $*" >&2; }
 
 if [[ $EUID -ne 0 ]]; then
-    exec sudo /usr/local/bin/ouroboros-upgrade "$@"
+    exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
 fi
 
-source /usr/local/lib/ouroboros/snapshot.sh
+is_immutable_root() {
+    btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
+}
 
-echo "[ouroboros] Preparing package operation..."
+# Unlock root via top-level Btrfs mount (avoids circular deadlock).
+# btrfs property set / ro false fails when VFS mount is ro — metadata
+# writes are blocked. Mounting subvolid=5 to a temp dir bypasses this.
+unlock_root() {
+    local root_dev tmp
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    tmp=$(mktemp -d)
 
-# Step 1: Remount root rw — must happen BEFORE pacman checks disk space
-mount -o remount,rw /
-echo "[ouroboros] Root remounted read-write"
+    if ! mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        rmdir "$tmp"; _err "Could not mount Btrfs top-level from ${root_dev}"; exit 1
+    fi
+    if ! btrfs property set "${tmp}/@" ro false 2>/dev/null; then
+        umount "$tmp"; rmdir "$tmp"; _err "Could not clear Btrfs ro on @"; exit 1
+    fi
+    umount "$tmp"; rmdir "$tmp"
+    mount -o remount,rw /
+    _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
+}
 
-# Step 2: Create pre-upgrade Btrfs snapshot (timestamped, with boot entry)
-pre_upgrade_snapshot
+# Lock root after pacman + all its hooks have finished.
+# Same top-level mount approach to avoid issues with busy mounts.
+lock_root() {
+    local root_dev tmp
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    tmp=$(mktemp -d)
 
-# Step 3: Run real pacman — 99-post-upgrade hook will remount ro after
-echo "[ouroboros] Running pacman $*"
-exec /usr/bin/pacman "$@"
+    if mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        btrfs property set "${tmp}/@" ro true 2>/dev/null && \
+            _msg "Root locked (Btrfs ro=true)"
+        umount "$tmp"; rmdir "$tmp"
+    else
+        rmdir "$tmp"
+        _msg "Could not mount top-level — root may remain writable"
+    fi
+    mount -o remount,ro / 2>/dev/null || \
+        _msg "Root busy — Btrfs property protects immutability regardless"
+}
+
+if is_immutable_root; then
+    _msg "Preparing package operation on immutable root..."
+
+    snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
+    if [[ -r "$snapshot_lib" ]]; then
+        source "$snapshot_lib"
+        unlock_root
+        pre_upgrade_snapshot
+    else
+        _msg "Snapshot library not found — unlocking root (direct)"
+        unlock_root
+    fi
+
+    _msg "Running pacman $*"
+    /usr/bin/pacman "$@"
+    pacman_exit=$?
+
+    lock_root
+    exit "$pacman_exit"
+else
+    _msg "Running pacman $* (writable root — live ISO or unlocked)"
+    exec /usr/bin/pacman "$@"
+fi
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/our-pac"
+    log_ok "our-pac installed."
 
-    cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
+    # our-box — full-featured systemd-nspawn container wrapper for ouroborOS.
+    # Copy from the live ISO (which ships the complete version with snapshots,
+    # storage management, image management, monitoring, diagnostics, and stats).
+    # Falls back to a minimal inline version if the ISO copy is missing.
+    local OUR_BOX_SRC="/usr/local/bin/our-box"
+    if [[ -f "${OUR_BOX_SRC}" && -r "${OUR_BOX_SRC}" ]]; then
+        cp "${OUR_BOX_SRC}" "${TARGET}/usr/local/bin/our-box"
+        chmod 0755 "${TARGET}/usr/local/bin/our-box"
+        log_ok "our-box installed (copied full version from live ISO)."
+    else
+        log_warn "our-box not found on live ISO at ${OUR_BOX_SRC} — installing minimal stub"
+        cat > "${TARGET}/usr/local/bin/our-box" << 'STUB'
+#!/usr/bin/env bash
+# our-box — minimal stub (full version was not available on the ISO at install time)
+set -euo pipefail
+die() { echo "our-box: $*" >&2; exit 1; }
+echo "our-box: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
+exit 1
+STUB
+        chmod 0755 "${TARGET}/usr/local/bin/our-box"
+    fi
+
+    # our-box-autostart — oneshot service that starts containers listed in
+    # /etc/our-box/autostart.conf at boot.  The wrapper script reads the conf
+    # and calls `our-box start <name>` for each entry.
+    local AUTOSTART_SRC="/usr/local/bin/our-box-autostart"
+    if [[ -f "${AUTOSTART_SRC}" && -r "${AUTOSTART_SRC}" ]]; then
+        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-box-autostart"
+        chmod 0755 "${TARGET}/usr/local/bin/our-box-autostart"
+    fi
+
+    # Install the systemd unit file for autostart
+    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-box-autostart.service"
+    if [[ -f "${AUTOSTART_UNIT_SRC}" && -r "${AUTOSTART_UNIT_SRC}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-box-autostart.service"
+        log_ok "our-box-autostart.service installed."
+    fi
+
+    cat > "${TARGET}/usr/local/bin/our-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
-# Remount root read-only. If busy (active SSH session or open files), skip
-# gracefully — the fstab mount with ro option restores immutability on next boot.
-if mount -o remount,ro / 2>/dev/null; then
-    echo "[ouroboros] Root remounted read-only"
+# our-post-upgrade — restore root immutability after a package transaction.
+#
+# Called by the 99-post-upgrade pacman hook (PostTransaction).
+#
+# Strategy (belt-and-suspenders):
+#   1. btrfs property set ro=true: enforces immutability at the Btrfs subvolume
+#      level. This is the primary mechanism — it works even when other subvolumes
+#      from the same device are mounted rw (the mount-option ro alone is
+#      overridden by Btrfs superblock sharing).
+#   2. mount -o remount,ro: secondary VFS-layer enforcement. May fail if there
+#      are active SSH sessions or open file handles — that is expected and safe
+#      because btrfs property ro=true already protects the subvolume.
+if btrfs property set / ro true 2>/dev/null; then
+    echo "[our-post-upgrade] Root subvolume set read-only (Btrfs property)"
 else
-    echo "[ouroboros] Root busy — will be remounted ro on next boot (fstab)"
+    echo "[our-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
 fi
+# Best-effort VFS-layer remount (non-fatal)
+mount -o remount,ro / 2>/dev/null && echo "[our-post-upgrade] Root remounted ro (VFS)" || \
+    echo "[our-post-upgrade] Root busy — Btrfs property protects immutability regardless"
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-post-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/our-post-upgrade"
 
     # Install snapshot library to installed system
     mkdir -p "${TARGET}/usr/local/lib/ouroboros"
@@ -516,6 +655,62 @@ EOF
     log_ok "os-release written."
 }
 
+# --- Step 11: systemd-homed migration setup ---------------------------------
+
+configure_homed() {
+    log_info "Configuring systemd-homed (storage: ${HOMED_STORAGE})"
+
+    case "$HOMED_STORAGE" in
+        subvolume|directory|luks) ;;
+        classic)
+            log_info "homed_storage=classic — skipping migration setup."
+            return 0
+            ;;
+        *)
+            log_error "Unknown homed_storage: ${HOMED_STORAGE}"
+            return 1
+            ;;
+    esac
+
+    in_chroot systemctl enable systemd-homed.service
+
+    local homed_migrate_src=""
+    homed_migrate_src="/usr/local/lib/ouroboros/homed-migrate.sh"
+    if [[ -f "$homed_migrate_src" && -r "$homed_migrate_src" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp "$homed_migrate_src" "${TARGET}/usr/local/lib/ouroboros/homed-migrate.sh"
+        chmod 0755 "${TARGET}/usr/local/lib/ouroboros/homed-migrate.sh"
+        log_ok "homed-migrate.sh installed."
+    else
+        log_warn "homed-migrate.sh not found on live ISO — migration will not work."
+    fi
+
+    mkdir -p "${TARGET}/etc/systemd/system"
+    local service_src="/etc/systemd/system/ouroboros-homed-migration.service"
+    if [[ -f "$service_src" && -r "$service_src" ]]; then
+        cp "$service_src" "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service"
+        log_ok "ouroboros-homed-migration.service installed."
+    else
+        log_warn "Migration service unit not found on live ISO."
+    fi
+
+    mkdir -p "${TARGET}/etc/ouroboros"
+    cat > "${TARGET}/etc/ouroboros/homed-migration.conf" << EOF
+HOMED_USERNAME=${USERNAME}
+HOMED_STORAGE=${HOMED_STORAGE}
+HOMED_PASSWORD=${USER_PASSWORD}
+EOF
+    chmod 600 "${TARGET}/etc/ouroboros/homed-migration.conf"
+
+    # The migration service runs only when this file exists; the script
+    # removes it after success to prevent re-execution on subsequent boots.
+    touch "${TARGET}/etc/ouroboros/homed-migration-pending"
+
+    in_chroot systemctl enable ouroboros-homed-migration.service
+
+    log_ok "systemd-homed migration configured (runs on first boot)."
+}
+
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -531,6 +726,7 @@ main() {
     configure_users
     configure_immutable_root
     configure_os_release
+    configure_homed
 
     # --- Fixes that need to land on BOTH @etc (overlay) and @ (root subvolume) ---
     # systemd loads unit files from @ BEFORE @etc mounts over /etc.
@@ -540,6 +736,33 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
+
+    # Display manager — enabled only for desktop profiles that ship one
+    # (gnome → gdm, kde → sddm). Minimalist profiles (minimal/hyprland/niri)
+    # leave DESKTOP_DM empty and log in from tty.
+    if [[ -n "${DESKTOP_DM:-}" ]]; then
+        in_chroot systemctl enable "${DESKTOP_DM}.service"
+        log_ok "Display manager enabled: ${DESKTOP_DM}."
+    else
+        log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
+    fi
+
+    # our-box autostart — copy default config and enable service if containers are listed.
+    # The autostart.conf shipped in the ISO is empty (comments only); users add container
+    # names post-install.  During unattended installs the config can be pre-populated.
+    local AUTOSTART_CONF_SRC="/etc/our-box/autostart.conf"
+    mkdir -p "${TARGET}/etc/our-box"
+    if [[ -f "${AUTOSTART_CONF_SRC}" && -r "${AUTOSTART_CONF_SRC}" ]]; then
+        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-box/autostart.conf"
+    fi
+
+    # Enable the service only if autostart.conf has at least one real entry
+    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-box/autostart.conf" 2>/dev/null; then
+        in_chroot systemctl enable our-box-autostart.service
+        log_ok "our-box-autostart.service enabled (containers found in autostart.conf)."
+    else
+        log_info "our-box-autostart.service not enabled (no containers in autostart.conf)."
+    fi
 
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
@@ -630,7 +853,8 @@ main() {
             network-online.target.wants \
             sysinit.target.wants \
             sockets.target.wants \
-            getty.target.wants; do
+            getty.target.wants \
+            graphical.target.wants; do
             if [[ -d "${src}/${dir}" ]]; then
                 mkdir -p "${dst}/${dir}"
                 cp -a "${src}/${dir}/." "${dst}/${dir}/"
@@ -663,6 +887,25 @@ main() {
             mkdir -p "${mnt}/etc/systemd"
             cp "${TARGET}/etc/systemd/zram-generator.conf" "${mnt}/etc/systemd/zram-generator.conf"
             log_ok "zram-generator.conf mirrored to @ subvolume."
+        fi
+
+        # Mirror homed migration service + config: systemd-homed starts before
+        # @etc is mounted. Without this, the migration unit is invisible at
+        # first boot and the user is never migrated.
+        if [[ -f "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service" ]]; then
+            mkdir -p "${mnt}/etc/systemd/system"
+            cp "${TARGET}/etc/systemd/system/ouroboros-homed-migration.service" \
+                "${mnt}/etc/systemd/system/ouroboros-homed-migration.service"
+        fi
+        if [[ -f "${TARGET}/etc/ouroboros/homed-migration.conf" ]]; then
+            mkdir -p "${mnt}/etc/ouroboros"
+            cp "${TARGET}/etc/ouroboros/homed-migration.conf" \
+                "${mnt}/etc/ouroboros/homed-migration.conf"
+        fi
+        if [[ -f "${TARGET}/etc/ouroboros/homed-migration-pending" ]]; then
+            mkdir -p "${mnt}/etc/ouroboros"
+            cp "${TARGET}/etc/ouroboros/homed-migration-pending" \
+                "${mnt}/etc/ouroboros/homed-migration-pending"
         fi
     }
     write_to_root_subvolume _write_systemd_enables_to_root || true

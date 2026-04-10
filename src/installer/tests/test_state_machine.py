@@ -71,8 +71,8 @@ class TestCheckpointSystem:
 class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
-            "INIT", "PREFLIGHT", "LOCALE", "PARTITION",
-            "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
+            "INIT", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
         }
         actual = {s.name for s in State}
@@ -244,6 +244,7 @@ class TestInstallerRun:
         installer = self._make_fully_mocked_installer()
         mock_tui = MagicMock()
         mock_tui.show_error.return_value = True  # User always chooses Retry
+        mock_tui.show_dm_selection.return_value = "auto"
         installer.tui = mock_tui
         call_count = 0
 
@@ -625,6 +626,53 @@ class TestHandleInit:
         assert installer.tui is mock_tui
         mock_tui.show_welcome.assert_called_once()
 
+    def test_remote_config_downloads_and_loads(self, tmp_path: Path) -> None:
+        """INIT: remote URL prompt → download → unattended mode."""
+        installer = Installer()
+        mock_tui = MagicMock()
+        mock_tui.show_remote_config_prompt.return_value = "https://example.com/config.yaml"
+        mock_config = MagicMock()
+
+        with patch("installer.state_machine.find_unattended_config", return_value=None), \
+             patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.load_config_from_url", return_value=mock_config) as mock_load:
+            installer._handle_init()
+
+        assert installer.tui is None  # switched to unattended
+        assert installer.config is mock_config
+        mock_tui.show_remote_config_prompt.assert_called_once()
+        mock_load.assert_called_once_with("https://example.com/config.yaml")
+
+    def test_remote_config_declined_continues_interactive(self) -> None:
+        """INIT: user declines remote config → interactive mode."""
+        installer = Installer()
+        mock_tui = MagicMock()
+        mock_tui.show_remote_config_prompt.return_value = None
+
+        with patch("installer.state_machine.find_unattended_config", return_value=None), \
+             patch("installer.state_machine.TUI", return_value=mock_tui):
+            installer._handle_init()
+
+        assert installer.tui is mock_tui  # still interactive
+        mock_tui.show_remote_config_prompt.assert_called_once()
+
+    def test_remote_config_download_fails_falls_through(self) -> None:
+        """INIT: download fails → fall back to interactive mode."""
+        installer = Installer()
+        mock_tui = MagicMock()
+        mock_tui.show_remote_config_prompt.return_value = "https://example.com/bad.yaml"
+        mock_error = Exception("Network error")
+
+        with patch("installer.state_machine.find_unattended_config", return_value=None), \
+             patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.load_config_from_url", side_effect=mock_error):
+            installer._handle_init()
+
+        assert installer.tui is mock_tui  # still interactive despite error
+        mock_tui.show_error.assert_called_once()
+        expected_error_msg = f"Failed to load remote config:\n{mock_error}\n\nContinuing in interactive mode."
+        mock_tui.show_error.assert_called_once_with(expected_error_msg, recoverable=True)
+
 
 # ---------------------------------------------------------------------------
 # Installer._handle_locale
@@ -762,22 +810,60 @@ class TestHandleConfigure:
             with pytest.raises(InstallerError, match="configuration failed"):
                 installer._handle_configure()
 
-    def test_tui_mode_prompts_user_creation(self, tmp_path: Path) -> None:
+    def test_configure_no_longer_prompts_user(self, tmp_path: Path) -> None:
+        """Phase 2: _handle_configure must NOT call show_user_creation.
+
+        User prompt was moved to _handle_user, which runs before PARTITION,
+        so the disk wipe can't happen on a cancelled user prompt.
+        """
         installer = Installer()
         installer._update_progress = MagicMock()
         installer.config.disk.device = "/dev/vda"
+        installer.config.user.username = "prefilled"
+        installer.config.user.password_hash = "$6$xxx"
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "testuser",
-            "password_hash": "$6$xxx",
-        }
         installer.tui = mock_tui
         ok = MagicMock()
         ok.returncode = 0
         with patch("subprocess.run", return_value=ok), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
+        mock_tui.show_user_creation.assert_not_called()
+        assert installer.config.user.username == "prefilled"
+
+    def test_handle_user_prompts_before_disk_touch(self) -> None:
+        """Phase 2: _handle_user collects credentials pre-wipe."""
+        installer = Installer()
+        installer._update_progress = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "testuser",
+            "password_hash": "$6$xxx",
+        }
+        installer.tui = mock_tui
+        installer._handle_user()
         assert installer.config.user.username == "testuser"
+        assert installer.config.user.password_hash == "$6$xxx"
+
+    def test_handle_desktop_sets_profile(self) -> None:
+        """Phase 2: _handle_desktop stores the selected profile and DM."""
+        installer = Installer()
+        installer._update_progress = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_desktop_selection.return_value = "hyprland"
+        mock_tui.show_dm_selection.return_value = "auto"
+        installer.tui = mock_tui
+        installer._handle_desktop()
+        assert installer.config.desktop.profile == "hyprland"
+        assert installer.config.desktop.dm == "auto"
+
+    def test_user_state_runs_before_partition(self) -> None:
+        """Phase 2: USER and DESKTOP must come before PARTITION in _STATE_ORDER."""
+        from installer.state_machine import _STATE_ORDER, State
+        order = _STATE_ORDER
+        assert order.index(State.USER) < order.index(State.PARTITION)
+        assert order.index(State.DESKTOP) < order.index(State.PARTITION)
+        assert order.index(State.USER) < order.index(State.FORMAT)
 
 
 # ---------------------------------------------------------------------------

@@ -6,12 +6,18 @@ It is populated from either TUI interaction or an unattended YAML config file.
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
+import tempfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+from installer.desktop_profiles import VALID_DMS, VALID_PROFILES
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -34,11 +40,23 @@ class UserConfig:
 
     username: str = ""
     password_hash: str = ""          # SHA-512 crypt hash — never plaintext
+    password_plaintext: str = ""     # Transient — cleared after configure.sh; only for homed migration
     groups: list[str] = field(
         default_factory=lambda: ["wheel", "audio", "video", "input"]
     )
     shell: str = "/bin/bash"
     create_home: bool = True
+    # systemd-homed storage backend: "subvolume" (Btrfs, default) | "luks"
+    # | "directory" | "classic" (legacy /etc/passwd, opt-out).
+    homed_storage: str = "subvolume"
+
+
+@dataclass
+class DesktopConfig:
+    """Desktop environment profile — package set only, no curation."""
+
+    profile: str = "minimal"  # minimal | hyprland | niri | gnome | kde
+    dm: str = "auto"          # auto | gdm | sddm | none
 
 
 @dataclass
@@ -73,6 +91,7 @@ class InstallerConfig:
     locale: LocaleConfig = field(default_factory=LocaleConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     user: UserConfig = field(default_factory=UserConfig)
+    desktop: DesktopConfig = field(default_factory=DesktopConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -159,6 +178,28 @@ def validate_config(data: dict) -> None:
         raise ConfigValidationError(
             "user section must include 'password_hash' (SHA-512 crypt) or 'password'"
         )
+    homed_storage = user.get("homed_storage", "subvolume")
+    if homed_storage not in ("subvolume", "luks", "directory", "classic"):
+        raise ConfigValidationError(
+            f"user.homed_storage must be one of "
+            f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
+        )
+
+    # desktop section (optional — defaults to 'minimal')
+    desktop = data.get("desktop", {})
+    if desktop:
+        profile = desktop.get("profile", "minimal")
+        if profile not in VALID_PROFILES:
+            raise ConfigValidationError(
+                f"desktop.profile must be one of {sorted(VALID_PROFILES)}, "
+                f"got: {profile!r}"
+            )
+        dm = desktop.get("dm", "auto")
+        if dm not in VALID_DMS and dm != "auto":
+            raise ConfigValidationError(
+                f"desktop.dm must be one of {sorted(VALID_DMS)} or 'auto', "
+                f"got: {dm!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -222,16 +263,24 @@ def load_config(path: Path) -> InstallerConfig:
     if "password_hash" in usr:
         cfg.user.password_hash = str(usr["password_hash"])
     elif "password" in usr:
+        plaintext = str(usr["password"])
         result = subprocess.run(
             ["openssl", "passwd", "-6", "-stdin"],
-            input=str(usr["password"]),
+            input=plaintext,
             capture_output=True,
             text=True,
             check=True,
         )
         cfg.user.password_hash = result.stdout.strip()
+        cfg.user.password_plaintext = plaintext
     cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
     cfg.user.shell = str(usr.get("shell", "/bin/bash"))
+    cfg.user.homed_storage = str(usr.get("homed_storage", "subvolume"))
+
+    # Desktop profile (optional)
+    desk = data.get("desktop", {}) or {}
+    cfg.desktop.profile = str(desk.get("profile", "minimal"))
+    cfg.desktop.dm = str(desk.get("dm", "auto"))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
@@ -247,6 +296,45 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.post_install_action = action
 
     return cfg
+
+
+def load_config_from_url(url: str) -> InstallerConfig:
+    """Download a YAML config from a URL and load it.
+
+    Args:
+        url: HTTP(S) URL to a YAML config file.
+
+    Returns:
+        A fully-populated InstallerConfig instance.
+
+    Raises:
+        ConfigValidationError: If the downloaded config fails validation.
+        urllib.error.URLError: If the download fails.
+    """
+    log = logging.getLogger(__name__)
+    log.info("Downloading remote config from: %s", url)
+
+    req = urllib.request.Request(url, headers={"User-Agent": "ouroborOS-installer"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        if resp.status != 200:
+            raise ConfigValidationError(f"Failed to download config: HTTP {resp.status}")
+        raw = resp.read().decode("utf-8")
+
+    data = yaml.safe_load(raw)
+    if not isinstance(data, dict):
+        raise ConfigValidationError("Remote config must be a YAML mapping at the top level.")
+
+    validate_config(data)
+
+    # Save to temp file for reference
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", prefix="ouroborOS-remote-",
+        dir="/tmp", delete=False, encoding="utf-8"
+    )
+    tmp.write(raw)
+    tmp.close()
+
+    return load_config(Path(tmp.name))
 
 
 def find_unattended_config() -> Path | None:

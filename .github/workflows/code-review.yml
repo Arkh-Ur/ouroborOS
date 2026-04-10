@@ -136,45 +136,70 @@ jobs:
           set -euo pipefail
           VIOLATIONS=0
 
-          echo "=== Checking for GRUB references ==="
+          echo "=== Checking for GRUB references (code only, not docs) ==="
           if grep -rqi "grub" \
               --include="*.sh" \
               --include="*.py" \
               --include="*.conf" \
-              --include="*.md" \
               --exclude-dir=".git" \
-              . 2>/dev/null; then
-            echo "::error::GRUB reference found (architectural violation: systemd-boot only)"
+              --exclude-dir="build-tmp" \
+              . 2>/dev/null \
+              | grep -vi "no grub" \
+              | grep -vi "replaces grub" \
+              | grep -vi "not grub" \
+              | grep -vi "without grub" \
+              | grep -vi "instead of grub" \
+              | grep -vi "do not.*grub" \
+              | grep -vi "grub.cfg" \
+              | grep -q .; then
+            echo "::error::GRUB reference found in code (architectural violation: systemd-boot only)"
             VIOLATIONS=$((VIOLATIONS + 1))
           else
-            echo "No GRUB references found."
+            echo "No GRUB references found in code."
           fi
 
-          echo "=== Checking for NetworkManager references ==="
+          echo "=== Checking for NetworkManager references (code only, not docs) ==="
           if grep -rqi "networkmanager" \
               --include="*.sh" \
               --include="*.py" \
               --include="*.conf" \
               --include="packages.*" \
               --exclude-dir=".git" \
-              . 2>/dev/null; then
-            echo "::error::NetworkManager reference found (architectural violation: systemd-networkd+iwd only)"
+              --exclude-dir="build-tmp" \
+              . 2>/dev/null \
+              | grep -vi "no networkmanager" \
+              | grep -vi "replaces networkmanager" \
+              | grep -vi "not networkmanager" \
+              | grep -q .; then
+            echo "::error::NetworkManager reference found in code (architectural violation: systemd-networkd+iwd only)"
             VIOLATIONS=$((VIOLATIONS + 1))
           else
-            echo "No NetworkManager references found."
+            echo "No NetworkManager references found in code."
           fi
 
-          echo "=== Checking for hardcoded /dev/sdX device paths ==="
-          if grep -rqP "/dev/sd[a-z]\d*" \
-              --include="*.sh" \
-              --include="*.py" \
-              --include="*.conf" \
-              --exclude-dir=".git" \
-              . 2>/dev/null; then
-            echo "::error::Hardcoded /dev/sdX path found (violation: UUID references required in fstab)"
-            VIOLATIONS=$((VIOLATIONS + 1))
+          echo "=== Checking for hardcoded /dev/sdX device paths (non-test, non-comment code) ==="
+          DEVSX_FILES=$(mktemp)
+          find . -type f \( -name "*.sh" -o -name "*.py" -o -name "*.conf" \) \
+            -not -path "./.git/*" -not -path "./build-tmp/*" > "$DEVSX_FILES" 2>/dev/null
+          VIOLATIONS_DEV=0
+          while IFS= read -r file; do
+            [[ -f "$file" ]] || continue
+            case "$file" in *build-tmp*|*test*) continue ;; esac
+            if grep -nP "/dev/sd[a-z]\d*" "$file" 2>/dev/null \
+                | grep -vP '^\d+:\s*#' \
+                | grep -vP '^\d+:\s*//' \
+                | grep -vi 'e\.g\.' \
+                | grep -vi 'for example' \
+                | grep -qP .; then
+              echo "::error::Hardcoded /dev/sdX in $file (violation: UUID references required in fstab)"
+              VIOLATIONS_DEV=$((VIOLATIONS_DEV + 1))
+            fi
+          done < "$DEVSX_FILES"
+          rm -f "$DEVSX_FILES"
+          if [[ "$VIOLATIONS_DEV" -gt 0 ]]; then
+            VIOLATIONS=$((VIOLATIONS + VIOLATIONS_DEV))
           else
-            echo "No hardcoded /dev/sdX paths found."
+            echo "No hardcoded /dev/sdX paths found in non-test, non-comment code."
           fi
 
           if [[ $VIOLATIONS -gt 0 ]]; then

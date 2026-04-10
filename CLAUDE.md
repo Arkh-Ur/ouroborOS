@@ -33,6 +33,8 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 
 ## Repository Structure
 
+**Dual-repo architecture:** `Arkh-Ur/ouroborOS-dev` (private, dev) pushes releases to `Arkh-Ur/ouroborOS` (public).
+
 ```
 ouroborOS/
 ├── CLAUDE.md                    ← You are here
@@ -44,15 +46,16 @@ ouroborOS/
 │   │   ├── setup-dev-env.sh     ← Set up the dev environment
 │   │   └── flash-usb.sh         ← Write ISO to USB drive
 │   ├── installer/               ← Python installer
-│   │   ├── config.py            ← InstallerConfig + YAML loader
-│   │   ├── state_machine.py     ← FSM with checkpoints
+│   │   ├── config.py            ← InstallerConfig + YAML loader + DesktopConfig + remote URL loader
+│   │   ├── desktop_profiles.py  ← Desktop profile package sets (5 profiles) + DM selection (gdm/sddm/plm/none)
+│   │   ├── state_machine.py     ← FSM with checkpoints (11 states: USER + DESKTOP before PARTITION)
 │   │   ├── tui.py               ← Rich TUI (primary) + whiptail fallback
 │   │   ├── main.py              ← CLI entrypoint
 │   │   ├── ops/                 ← Bash operations
-│   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab
+│   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab, LUKS
 │   │   │   ├── snapshot.sh      ← Btrfs snapshot management
-│   │   │   └── configure.sh     ← Chroot post-install config
-│   │   └── tests/               ← pytest test suite
+│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed)
+│   │   └── tests/               ← pytest test suite (93% coverage)
 │   └── ouroborOS-profile/       ← archiso profile
 │       ├── profiledef.sh
 │       ├── packages.x86_64
@@ -62,18 +65,18 @@ ouroborOS/
 ├── templates/                   ← Default install config templates
 │   └── install-config.yaml      ← Interactive/unattended install config
 ├── docs/                        ← Documentation only (no scripts)
+│   ├── PHASE_2_PLAN.md          ← Post-v0.1.0 development plan
 │   ├── architecture/            ← System design decisions
-│   ├── build/                   ← ISO build process
 │   ├── installer/               ← Installer architecture
 │   ├── messages/                ← Project log and decisions
-│   ├── build-and-flash.md       ← How to build ISO and flash USB
-│   ├── build-and-test-automation.md ← Build process and test automation guide
-│   └── user-guide.md            ← End-user installation guide
+│   ├── developer-guide.md       ← Build, test, contribute
+│   ├── user-guide.md            ← End-user installation guide
+│   └── build-and-flash.md       ← How to build ISO and flash USB
 ├── tests/                       ← CI test scripts
 ├── agents/                      ← Multi-agent role definitions
 ├── skills/                      ← Claude Code expert skill definitions
 └── .github/
-    └── workflows/               ← CI workflows (lint, test, code-review, opencode)
+    └── workflows/               ← CI workflows (build, lint, test, opencode)
 ```
 
 ---
@@ -97,17 +100,20 @@ ouroborOS/
 |-------|-----------|
 | Base OS | ArchLinux |
 | Kernel | linux-zen |
-| Package manager | pacman |
+| Package manager | pacman (via `our-pac` wrapper for root modifications) |
 | Bootloader | systemd-boot |
 | Filesystem | Btrfs (immutable subvolumes) |
 | Network | systemd-networkd + iwd |
-| DNS | systemd-resolved |
-| Home dirs | systemd-homed (optional) |
+| DNS | systemd-resolved (DoT enabled) |
+| Swap | zram-generator (no swap partition) |
+| Home dirs | systemd-homed (default from Phase 2) |
+| Containers | systemd-nspawn (via `our-box` wrapper) |
 | Installer logic | Python 3 |
 | Installer TUI | Rich (primary) + whiptail (fallback) |
 | System ops | Bash |
 | ISO build | archiso (mkarchiso) |
 | Testing | pytest + QEMU |
+| CI/CD | GitHub Actions (build on tags, publish to public repo) |
 
 ---
 
@@ -206,9 +212,24 @@ pytest src/installer/tests/ -v
 
 See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
-**Current phase:** Phase 3 complete — Installer TUI and State Machine
+**Phases 1-5 complete.** Release v0.1.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.1.0
 
-**Next:** Phase 4 (systemd Integration)
+**Current phase:** Phase 2 (post-v0.1.0) — see [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md)
+- `our-pac` renamed from `ouroboros-upgrade`, `our-box` (nspawn wrapper) added
+- Desktop profile selection (minimal/hyprland/niri/gnome/kde) with decoupled DM selection (gdm/sddm/plm/none)
+- FSM reordered: USER + DESKTOP states before PARTITION (no destructive ops before human input)
+- systemd-homed default-on for per-user home encryption (non-interactive via JSON identity)
+- Remote config URL prompt in INIT state (download unattended config from GitHub raw URLs)
+- Reflector mirror selection optimized: `--sort score` (server-side) instead of `--fastest`
+
+### Dual-Repo Architecture
+
+| Repository | Visibility | Purpose |
+|------------|-----------|---------|
+| `Arkh-Ur/ouroborOS-dev` | Private | Development, CI runs on tags |
+| `Arkh-Ur/ouroborOS` | Public | Releases only, receives code + ISO from dev repo |
+
+When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds the ISO in an Arch container and publishes the release to `ouroborOS` via `gh release create --repo`.
 
 ---
 
@@ -216,22 +237,24 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 | File | Description |
 |------|-------------|
+| `docs/PHASE_2_PLAN.md` | Post-v0.1.0 development plan (our-pac, desktop profiles, our-box) |
 | `docs/architecture/overview.md` | System architecture, layer diagram, component table |
 | `docs/architecture/immutability-strategy.md` | Btrfs layout, fstab, snapshot flow |
 | `docs/architecture/installer-phases.md` | All installer states, actions, rollback |
 | `docs/installer/state-machine.md` | FSM spec and Python skeleton |
 | `docs/installer/configuration-format.md` | YAML schema for unattended install |
-| `docs/build-and-flash.md` | How to build the ISO and write to USB |
 | `docs/user-guide.md` | End-user installation and usage guide |
+| `docs/developer-guide.md` | Build, test, contribute |
 | `src/scripts/build-iso.sh` | ISO build script (mkarchiso wrapper) |
 | `src/scripts/flash-usb.sh` | Safe dd wrapper for USB flashing |
 | `src/installer/state_machine.py` | FSM implementation with checkpoints |
-| `src/installer/config.py` | InstallerConfig dataclass + YAML validation |
+| `src/installer/config.py` | InstallerConfig + DesktopConfig dataclasses + YAML validation |
+| `src/installer/desktop_profiles.py` | Desktop profile package sets (5 profiles) |
 | `templates/install-config.yaml` | Default unattended install config template |
-| `docs/build-and-test-automation.md` | Build process and test automation guide |
 | `docs/architecture/systemd-integration.md` | systemd integration design |
 | `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
 | `IMPLEMENTATION_PLAN.md` | Phased roadmap with milestones |
+| `.github/workflows/build.yml` | ISO build + release pipeline (dual-repo) |
 
 ---
 
@@ -240,6 +263,42 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 - Do not install or configure GRUB under any circumstances
 - Do not add NetworkManager to any package list
 - Do not use `/dev/sdX` paths in any configuration (always UUID)
-- Do not mount root read-write in production (only during updates, via hook)
+- Do not mount root read-write in production (only during updates, via `our-pac`)
 - Do not commit directly to `master`
 - Do not add packages to the ISO without justification (bloat)
+- Do not use PreTransaction pacman hooks for remounting (pacman checks writability before hooks)
+- Do not write files only to `@etc` if systemd needs them at early boot (mirror to `@` too)
+- Do not hardcode mirror URLs in pacman.conf — parametrize or use reflector
+- Do not use `--fastest` with reflector — use `--sort score` (server-side, avoids long local benchmarks)
+- Do not leave plaintext passwords on disk after use — always clean up immediately
+
+## E2E Testing
+
+Full lifecycle test: build ISO → unattended install in QEMU → verify installed system.
+
+### Key Constraints
+- Always use `setsid` to launch QEMU (survives tool timeouts)
+- Always `fuser -k 2222/tcp` before launching (kill zombie QEMU)
+- Always use `-device e1000` (virtio-net hangs under sustained pacstrap load)
+- Always use `-display none -vga virtio` (never `-nographic`, disables VGA for VNC)
+- Build workdir and QEMU disk on `/home/` — `/tmp/` is tmpfs (~4 GB), build needs 6-8 GB
+- Use `ps aux | grep qemu` to find real PID (`$!` is wrong with setsid)
+- Serial log at `/tmp/ouroboros-serial-install.log`
+
+### Known Issues
+- `homectl create --identity=JSON` fails in QEMU with generic error (under investigation)
+- SSH on installed system only listens on AF_UNIX socket by default (networkd DHCP in SLIRP needs investigation)
+- homed-migration rollback works correctly when create fails — user stays as classic `/etc/passwd` user
+
+### Installer States (11 total)
+```
+INIT → PREFLIGHT → LOCALE → USER → DESKTOP → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
+```
+
+### Password Plaintext Lifecycle
+- `UserConfig.password_plaintext` is transient — filled during `load_config` or TUI
+- Passed to `configure.sh` as `USER_PASSWORD` env var
+- Written to `/etc/ouroboros/homed-migration.conf` (chmod 600) for first-boot homed migration
+- Cleared in `state_machine.py` immediately after `configure.sh` finishes
+- homed-migrate.sh removes `HOMED_PASSWORD` from conf file after successful migration
+- Never persisted in checkpoints

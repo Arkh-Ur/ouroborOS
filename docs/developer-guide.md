@@ -197,7 +197,7 @@ Examples:
 feat(installer): add disk encryption (LUKS2) support
 fix(snapshot): correct timestamp parsing in prune_snapshots
 ci(build): add ISO build workflow on push to dev
-docs(user-guide): document ouroboros-upgrade workflow
+docs(user-guide): document our-pac workflow
 ```
 
 ---
@@ -230,7 +230,7 @@ docs(user-guide): document ouroboros-upgrade workflow
 
 ## Key design constraints
 
-1. **Root is read-only.** Any operation that writes to `/` in the installed system must use `ouroboros-upgrade`.
+1. **Root is read-only.** Any operation that writes to `/` in the installed system must use `our-pac`.
 2. **UEFI only.** Do not add GRUB or BIOS boot support.
 3. **No NetworkManager.** Use `systemd-networkd` + `iwd`.
 4. **Python for logic, Bash for system ops.** The installer FSM is Python; disk/snapshot/configure operations are Bash.

@@ -1,0 +1,46 @@
+# ouroborOS E2E test config — minimal profile, classic user storage
+#
+# Used by: sudo bash src/scripts/build-iso.sh --e2e-config=tests/qemu/minimal-e2e.yaml
+# This file is NOT baked into production ISOs. It is injected only when --e2e-config is passed.
+#
+# Rationale for homed_storage: classic
+#   homectl create --identity=JSON fails in QEMU (under investigation).
+#   Use classic storage to test the full install+boot+SSH flow independently.
+#   Create tests/qemu/homed-e2e.yaml for dedicated homed testing once the root cause is fixed.
+
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+  enable_iwd: false
+  enable_resolved: true
+
+user:
+  username: hbuddenberg
+  password: "7907"
+  groups:
+    - wheel
+    - audio
+    - video
+    - input
+  shell: /bin/bash
+  homed_storage: classic
+
+desktop:
+  profile: minimal
+  dm: none
+
+extra_packages:
+  - openssh
+
+post_install_action: shutdown

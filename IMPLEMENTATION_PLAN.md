@@ -1,8 +1,10 @@
 # ouroborOS — Implementation Plan
 
-**Version:** 0.1 roadmap
-**Date:** 2026-03-26
+**Version:** 0.1 roadmap (complete) → Phase 2 complete
+**Date:** 2026-04-08
 **Branch:** dev
+
+> **v0.1.0 released 2026-04-07.** All 5 phases complete. Phase 2 (post-v0.1.0) complete. See [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md) for details.
 
 ---
 
@@ -16,13 +18,13 @@ The plan is divided into **5 phases**. Each phase has defined milestones, delive
 
 ## Summary Table
 
-| Phase | Name | Key Deliverable | Gate |
-|-------|------|----------------|------|
-| 1 | Build Environment | Bootable live ISO | ISO boots in QEMU |
-| 2 | Immutable Filesystem | Btrfs layout + installer disk ops | Manual install succeeds |
-| 3 | Installer TUI | Interactive installer | Full install via TUI |
-| 4 | systemd Integration | Complete systemd config | Installed system boots cleanly |
-| 5 | Testing & Release | Tested, documented v0.1 | All tests pass, ISO published |
+| Phase | Name | Key Deliverable | Status |
+|-------|------|----------------|--------|
+| 1 | Build Environment | Bootable live ISO | ✅ Complete |
+| 2 | Immutable Filesystem | Btrfs layout + installer disk ops | ✅ Complete |
+| 3 | Installer TUI | Interactive installer | ✅ Complete |
+| 4 | systemd Integration | Complete systemd config | ✅ Complete |
+| 5 | Testing & Release | Tested, documented v0.1 | ✅ Complete — v0.1.0 released |
 
 ---
 
@@ -304,10 +306,10 @@ flowchart LR
     P3 -->|"Full install via TUI"| P4
     P4 -->|"Installed system boots cleanly"| P5
 
-    style P1 fill:#457b9d,color:#fff
-    style P2 fill:#457b9d,color:#fff
-    style P3 fill:#457b9d,color:#fff
-    style P4 fill:#457b9d,color:#fff
+    style P1 fill:#2d6a4f,color:#fff
+    style P2 fill:#2d6a4f,color:#fff
+    style P3 fill:#2d6a4f,color:#fff
+    style P4 fill:#2d6a4f,color:#fff
     style P5 fill:#2d6a4f,color:#fff
 ```
 
@@ -390,4 +392,5 @@ The following are explicitly deferred to future versions:
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-04-07 | 0.1-released | All phases complete, v0.1.0 published. Phase 2 (post-v0.1.0) in progress. |
 | 2026-03-26 | 0.1-draft | Initial plan created in session 1 |

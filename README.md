@@ -93,14 +93,14 @@ A ready-to-edit config template is at [`templates/install-config.yaml`](template
 
 ## Upgrading packages
 
-The root filesystem is read-only. Use `ouroboros-upgrade` instead of `pacman` directly — it creates a pre-upgrade snapshot and remounts the root read-write before calling pacman:
+The root filesystem is read-only. Use `our-pac` instead of `pacman` directly — it creates a pre-upgrade snapshot and remounts the root read-write before calling pacman:
 
 ```bash
 # Install or update packages (snapshot created automatically before changes)
-sudo ouroboros-upgrade -S neovim tmux
+sudo our-pac -S neovim tmux
 
 # Full system upgrade
-sudo ouroboros-upgrade -Syu
+sudo our-pac -Syu
 
 # Roll back: reboot and select the pre-upgrade snapshot from the boot menu
 ```
