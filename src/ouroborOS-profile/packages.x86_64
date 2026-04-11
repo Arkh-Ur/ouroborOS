@@ -65,3 +65,6 @@ shellcheck
 
 # Container bootstrapping (our-container: Debian/Ubuntu containers)
 debootstrap
+
+# Secure Boot key management (ouroboros-secureboot)
+sbctl

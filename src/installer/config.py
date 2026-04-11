@@ -87,6 +87,16 @@ class LocaleConfig:
 
 
 @dataclass
+class SecurityConfig:
+    """Secure Boot configuration."""
+
+    secure_boot: bool = False
+    # Include Microsoft OEM keys when enrolling (sbctl enroll-keys -m).
+    # Required for dual-boot systems or hardware with pre-signed Option ROMs.
+    sbctl_include_ms_keys: bool = False
+
+
+@dataclass
 class InstallerConfig:
     """Complete installation configuration.
 
@@ -99,6 +109,7 @@ class InstallerConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     user: UserConfig = field(default_factory=UserConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -211,6 +222,15 @@ def validate_config(data: dict) -> None:
             f"'/bin/bash'|'/bin/zsh'|'/usr/bin/fish', got: {shell!r}"
         )
 
+    # security section (optional — defaults to secure_boot: false)
+    security = data.get("security", {}) or {}
+    if security:
+        secure_boot = security.get("secure_boot", False)
+        if not isinstance(secure_boot, bool):
+            raise ConfigValidationError(
+                "security.secure_boot must be a boolean (true/false)"
+            )
+
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})
     if desktop:
@@ -310,6 +330,11 @@ def load_config(path: Path) -> InstallerConfig:
     desk = data.get("desktop", {}) or {}
     cfg.desktop.profile = str(desk.get("profile", "minimal"))
     cfg.desktop.dm = str(desk.get("dm", "auto"))
+
+    # Security (optional)
+    sec = data.get("security", {}) or {}
+    cfg.security.secure_boot = bool(sec.get("secure_boot", False))
+    cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
