@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
 
 import pytest
 
-from installer.config import InstallerConfig
 from installer.state_machine import Installer, InstallerError
 
 
@@ -194,7 +192,7 @@ class TestHandleInstallRetry:
                 return _failure()
             return _success()
 
-        with patch.object(inst, "_generate_mirrorlist", side_effect=count_mirror) as mock_mirror, \
+        with patch.object(inst, "_generate_mirrorlist", side_effect=count_mirror), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \

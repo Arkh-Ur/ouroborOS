@@ -506,7 +506,6 @@ class TestFindUnattendedConfig:
         fake_config = tmp_path / "ouroborOS-config.yaml"
         fake_config.write_text("key: value", encoding="utf-8")
 
-        from installer import config as config_mod
         from pathlib import Path as OrigPath
 
         # Patch the known paths inside find_unattended_config to redirect to tmp_path
@@ -576,9 +575,7 @@ class TestFindUnattendedConfig:
 class TestLoadConfigFromUrl:
     def test_downloads_and_parses_valid_config(self, tmp_path: Path) -> None:
         """load_config_from_url must download YAML and return InstallerConfig."""
-        import io
         import textwrap
-        import urllib.error
 
         valid_yaml = textwrap.dedent(VALID_CONFIG).encode("utf-8")
 
@@ -592,7 +589,7 @@ class TestLoadConfigFromUrl:
                 pass
 
         with patch("installer.config.urllib.request.urlopen", return_value=FakeResponse()), \
-             patch("installer.config.urllib.request.Request") as mock_req:
+             patch("installer.config.urllib.request.Request"):
             cfg = load_config_from_url("https://example.com/config.yaml")
 
         assert isinstance(cfg, InstallerConfig)

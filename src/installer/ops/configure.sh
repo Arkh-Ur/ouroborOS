@@ -38,7 +38,7 @@ set -euo pipefail
 : "${WIFI_SSID:=''}"
 : "${WIFI_PASSPHRASE:=''}"
 : "${BLUETOOTH_ENABLE:='0'}"
-: "${FIDO2_PAM:='0'}""
+: "${FIDO2_PAM:='0'}"
 
 TARGET="$INSTALL_TARGET"
 
