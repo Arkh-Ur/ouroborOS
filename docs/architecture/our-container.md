@@ -1,6 +1,6 @@
-# our-box — Architecture
+# our-container — Architecture
 
-`our-box` is a single-file Bash wrapper around `systemd-nspawn` and `machinectl` that provides Btrfs-aware container management on ouroborOS. It is the primary tool for running development environments, services, and multi-distro workloads inside the host system.
+`our-container` is a single-file Bash wrapper around `systemd-nspawn` and `machinectl` that provides Btrfs-aware container management on ouroborOS. It is the primary tool for running development environments, services, and multi-distro workloads inside the host system.
 
 ---
 
@@ -13,7 +13,7 @@
 │                        ouroborOS Host                          │
 │                                                                 │
 │  ┌──────────┐     ┌──────────────┐     ┌────────────────────┐  │
-│  │  User     │────>│   our-box    │────>│  systemd-nspawn    │  │
+│  │  User     │────>│   our-container    │────>│  systemd-nspawn    │  │
 │  │  (sudo)   │     │  (wrapper)   │     │  (container engine)│  │
 │  └──────────┘     └──────┬───────┘     └────────┬───────────┘  │
 │                          │                      │               │
@@ -37,7 +37,7 @@
 ### Data Flow: Container Lifecycle
 
 ```
-  our-box create mydev arch
+  our-container create mydev arch
          │
          ▼
   ┌──────────────┐     ┌───────────────┐     ┌────────────────┐
@@ -53,7 +53,7 @@
                                                │  via nspawn  │
                                                └──────────────┘
 
-  our-box start mydev
+  our-container start mydev
          │
          ▼
   ┌──────────────┐     ┌───────────────┐     ┌────────────────┐
@@ -62,7 +62,7 @@
   │   running)   │     │               │     │   1s interval) │
   └──────────────┘     └───────────────┘     └────────────────┘
 
-  our-box enter mydev
+  our-container enter mydev
          │
          ▼
   ┌──────────────┐     ┌──────────────┐     ┌───────────────┐
@@ -75,7 +75,7 @@
 ### Data Flow: Snapshot & Restore
 
 ```
-  our-box snapshot create mydev v1.0
+  our-container snapshot create mydev v1.0
          │
          ▼
   ┌──────────────┐     ┌──────────────┐     ┌────────────────────┐
@@ -84,7 +84,7 @@
   │              │     │  snapshot -r │     │  mydev/v1.0/      │
   └──────────────┘     └──────────────┘     └────────────────────┘
 
-  our-box snapshot restore mydev v1.0
+  our-container snapshot restore mydev v1.0
          │
          ▼
   ┌──────────────────┐     ┌──────────────┐     ┌───────────────┐
@@ -108,8 +108,8 @@
 ### File Location
 
 ```
-src/ouroborOS-profile/airootfs/usr/local/bin/our-box   # Source (ships in ISO)
-/usr/local/bin/our-box                                   # Installed on target
+src/ouroborOS-profile/airootfs/usr/local/bin/our-container   # Source (ships in ISO)
+/usr/local/bin/our-container                                   # Installed on target
 ```
 
 1786 lines of Bash. Single file, no external dependencies beyond systemd and Btrfs tools.
@@ -117,13 +117,13 @@ src/ouroborOS-profile/airootfs/usr/local/bin/our-box   # Source (ships in ISO)
 ### Internal Structure
 
 ```
-our-box
+our-container
 │
 ├── Constants & Configuration                    [lines 1-26]
 │   ├── MACHINES_ROOT="/var/lib/machines"
 │   ├── SNAPSHOTS_ROOT="/var/lib/machines/.snapshots"
 │   ├── IMAGES_ROOT="/var/lib/machines/.images"
-│   └── PROGRAM_NAME="our-box"
+│   └── PROGRAM_NAME="our-container"
 │
 ├── Logging Helpers                              [lines 28-38]
 │   ├── _log(level, ...)       → stderr with timestamp
@@ -212,7 +212,7 @@ our-box
 │           │                                      │
 │  ┌────────▼────────────┐                        │
 │  │ machinectl          │  CLI frontend          │
-│  │ (list/start/stop/   │  our-box delegates     │
+│  │ (list/start/stop/   │  our-container delegates     │
 │  │  shell/terminate)   │  lifecycle to this     │
 │  └─────────────────────┘                        │
 │                                                  │
@@ -229,9 +229,9 @@ our-box
 └─────────────────────────────────────────────────┘
 ```
 
-### How our-box Uses Each Component
+### How our-container Uses Each Component
 
-| systemd Tool | our-box Usage |
+| systemd Tool | our-container Usage |
 |---|---|
 | **machinectl list** | `cmd_list`, `cmd_monitor`, `cmd_stats` — enumerate containers and state |
 | **machinectl start** | `cmd_start` — boot container as systemd machine |
@@ -255,7 +255,7 @@ PrivateUsers=no
 Bind=/host/path:/container/path
 ```
 
-Files are read by `systemd-nspawn` on container start. Changes to `.nspawn` files require a container restart to take effect — `our-box` warns the user about this.
+Files are read by `systemd-nspawn` on container start. Changes to `.nspawn` files require a container restart to take effect — `our-container` warns the user about this.
 
 ---
 
@@ -279,11 +279,11 @@ Files are read by `systemd-nspawn` on container start. Changes to `.nspawn` file
 │       └── baseline/
 └── .images/                                # IMAGES_ROOT (hidden)
     ├── arch/                               #   Cached Arch base image (ro)
-    │   └── .our-box-image                  #     Metadata marker
+    │   └── .our-container-image                  #     Metadata marker
     ├── debian/
-    │   └── .our-box-image
+    │   └── .our-container-image
     └── ubuntu/
-        └── .our-box-image
+        └── .our-container-image
 ```
 
 ### Btrfs Subvolume Strategy
@@ -313,7 +313,7 @@ Files are read by `systemd-nspawn` on container start. Changes to `.nspawn` file
 - Containers are Btrfs subvolumes → **instant, copy-on-write snapshots**.
 - Snapshots are created read-only (`-r` flag) → **immutable by default**.
 - Base images are set read-only via `btrfs property set -ts ro true`.
-- On non-Btrfs filesystems, our-box falls back to plain directories (snapshots unavailable).
+- On non-Btrfs filesystems, our-container falls back to plain directories (snapshots unavailable).
 
 ### Snapshot Restore Safety
 
@@ -344,7 +344,7 @@ Safety snapshots (`pre-restore-*`) are **never** automatically pruned.
 ### Privilege Escalation
 
 ```
-  our-box create mydev
+  our-container create mydev
          │
          ▼
   ┌──────────────────────┐
@@ -353,7 +353,7 @@ Safety snapshots (`pre-restore-*`) are **never** automatically pruned.
   │ if $EUID != 0:       │
   │   exec sudo          │
   │   /usr/local/bin/    │
-  │   our-box "$@"       │
+  │   our-container "$@"       │
   └──────────────────────┘
 ```
 
@@ -373,7 +373,7 @@ Every command that modifies state calls `require_root()`. The function re-execs 
 
 ### Container Isolation
 
-`our-box` delegates isolation to `systemd-nspawn`, which provides:
+`our-container` delegates isolation to `systemd-nspawn`, which provides:
 
 | Isolation Feature | systemd-nspawn Default |
 |-------------------|----------------------|
@@ -404,11 +404,11 @@ Every destructive operation checks container state first:
 
 ```
   src/ouroborOS-profile/airootfs/
-  └── usr/local/bin/our-box          ← Full 1786-line script
+  └── usr/local/bin/our-container          ← Full 1786-line script
          │
          │  archiso build (mkarchiso)
          ▼
-  out/ouroborOS-*.iso               ← Ships at /usr/local/bin/our-box in live env
+  out/ouroborOS-*.iso               ← Ships at /usr/local/bin/our-container in live env
 ```
 
 The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesystem. During `mkarchiso`, the entire `airootfs/` tree is copied into the ISO. No separate installation step is needed.
@@ -417,26 +417,26 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
 
 ```
   Live ISO
-  /usr/local/bin/our-box (full version)
+  /usr/local/bin/our-container (full version)
          │
          │  configure.sh: _install_our_tools()
          ▼
   ┌────────────────────────────────────────┐
-  │  if [[ -f /usr/local/bin/our-box ]];   │
-  │    cp → $TARGET/usr/local/bin/our-box   │
+  │  if [[ -f /usr/local/bin/our-container ]];   │
+  │    cp → $TARGET/usr/local/bin/our-container   │
   │    chmod 0755                           │
   │  else                                   │
   │    Install minimal stub                 │
-  │    (echoes error, points to our-pac)    │
+  │    (echoes error, points to our-pacman)    │
   │  fi                                     │
   └────────────────────────────────────────┘
          │
          ▼
   Installed System
-  /usr/local/bin/our-box (full version)
+  /usr/local/bin/our-container (full version)
 ```
 
-**Key detail:** The installer copies the script from the **live ISO's** `/usr/local/bin/our-box` (which is the full version from the archiso profile). If the ISO copy is missing, a minimal stub is installed that tells the user to reinstall via `our-pac`.
+**Key detail:** The installer copies the script from the **live ISO's** `/usr/local/bin/our-container` (which is the full version from the archiso profile). If the ISO copy is missing, a minimal stub is installed that tells the user to reinstall via `our-pacman`.
 
 ### Runtime Dependencies
 
@@ -446,7 +446,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
 | `machinectl` | Lifecycle + state queries | `systemd` (base) |
 | `btrfs` progs | Snapshots, subvolumes, qgroup | `btrfs-progs` (base) |
 | `pacstrap` | Arch container bootstrap | `arch-install-scripts` |
-| `debootstrap` | Debian/Ubuntu bootstrap | User installs via `our-pac` |
+| `debootstrap` | Debian/Ubuntu bootstrap | User installs via `our-pacman` |
 | `journalctl` | Container log viewing | `systemd` (base) |
 | `findmnt` | Btrfs detection | `util-linux` (base) |
 
@@ -463,7 +463,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
            ╱________╲     Full container lifecycle
           ╱          ╲
          ╱ Integration╲   Integration Tests
-        ╱  (pytest +   ╲   Real our-box script + mock
+        ╱  (pytest +   ╲   Real our-container script + mock
        ╱   subprocess)  ╲  tools (machinectl, btrfs)
       ╱________________╲
      ╱                  ╲
@@ -474,7 +474,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
 
 ### Unit Tests
 
-**Location:** `tests/our_box/test_our_box.py`, `tests/our_box/conftest.py`
+**Location:** `tests/our_container/test_our_container.py`, `tests/our_container/conftest.py`
 
 - Mock all external tools (`machinectl`, `btrfs`, `pacstrap`, `debootstrap`) via PATH override
 - Test individual commands in isolation: create, list, snapshot, storage, image, etc.
@@ -493,17 +493,17 @@ def mock_env(tmp_path):
 
 ### Integration Tests
 
-**Location:** `src/installer/tests/test_our_box_integration.py`, `src/installer/tests/conftest.py`
+**Location:** `src/installer/tests/test_our_container_integration.py`, `src/installer/tests/conftest.py`
 
-- Uses the **real** `our-box` script (subprocess execution)
+- Uses the **real** `our-container` script (subprocess execution)
 - Mocks only external tools that need kernel access (`machinectl`, `btrfs`)
 - Tests full command flows: create → start → enter → stop → remove
 - Validates .nspawn file generation, snapshot directory structure, cleanup behavior
-- Conftest provides `our_box_run()` helper for subprocess execution with env overrides
+- Conftest provides `our_container_run()` helper for subprocess execution with env overrides
 
 ### E2E Tests
 
-**Location:** `tests/scripts/e2e-our-box.sh` (1382 lines, 15 phases)
+**Location:** `tests/scripts/e2e-our-container.sh` (1382 lines, 15 phases)
 
 Full end-to-end lifecycle inside a QEMU virtual machine with an installed ouroborOS:
 
@@ -513,7 +513,7 @@ Full end-to-end lifecycle inside a QEMU virtual machine with an installed ourobo
 | 1 | Build ISO |
 | 2 | Unattended install in QEMU |
 | 3 | Boot installed system |
-| 4 | Verify our-box installation on target |
+| 4 | Verify our-container installation on target |
 | 5 | Container lifecycle (create/list/start/stop/remove) |
 | 6 | Error handling (invalid names, missing containers, etc.) |
 | 7 | Snapshot management (create/list/restore/verify data persistence) |
@@ -543,8 +543,8 @@ All communication happens via **SSH** (`sshpass` + `ssh`) into the QEMU VM. Seri
 | Limitation | Impact | Workaround |
 |-----------|--------|-----------|
 | **Btrfs required for snapshots** | `snapshot create/list/restore` fail on non-Btrfs | Containers still work as plain directories without snapshots |
-| **debootstrap optional** | Debian/Ubuntu containers unavailable if not installed | `sudo our-pac -S debootstrap` |
-| **arch-install-scripts optional** | Arch containers unavailable if not installed | `sudo our-pac -S arch-install-scripts` |
+| **debootstrap optional** | Debian/Ubuntu containers unavailable if not installed | `sudo our-pacman -S debootstrap` |
+| **arch-install-scripts optional** | Arch containers unavailable if not installed | `sudo our-pacman -S arch-install-scripts` |
 | **No container networking isolation** | Containers share host network by default | Configure via `.nspawn` files manually |
 | **No resource limits** | No CPU/memory/disk limits on containers | Not implemented; could use systemd resource controls |
 | **No container registry** | Images are local-only, no push/pull from remote | Manual file transfer or rebuild |
@@ -561,4 +561,4 @@ All communication happens via **SSH** (`sshpass` + `ssh`) into the QEMU VM. Seri
 - [Architecture Overview](./overview.md) — System design and layer diagram
 - [systemd Integration](./systemd-integration.md) — systemd ecosystem in ouroborOS
 - [Immutability Strategy](./immutability-strategy.md) — Btrfs layout and host snapshots
-- [our-box User Guide](../our-box.md) — Command reference and usage examples
+- [our-container User Guide](../our-container.md) — Command reference and usage examples

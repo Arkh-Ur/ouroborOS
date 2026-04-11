@@ -604,7 +604,7 @@ class Installer:
             "openssh",
             "which",
             # systemd-nspawn + machinectl ship with the `systemd` package
-            # (already in base), used by `our-box` for container workflows.
+            # (already in base), used by `our-container` for container workflows.
         ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
 
         # Add DM package if explicitly chosen and not already in profile packages

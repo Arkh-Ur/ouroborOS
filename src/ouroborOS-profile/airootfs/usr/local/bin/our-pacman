@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+# our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
 # On the installed system:
 #   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
@@ -19,7 +19,7 @@
 #   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
-readonly PROGRAM_NAME="our-pac"
+readonly PROGRAM_NAME="our-pacman"
 
 _msg()    { echo "[${PROGRAM_NAME}] $*"; }
 _err()    { _msg "ERROR: $*" >&2; }

@@ -121,7 +121,7 @@ TEST_SCRIPTS=(
     "$WORKSPACE/tests/scripts/run-pytest.sh"
     "$WORKSPACE/tests/scripts/lint-python.sh"
     "$WORKSPACE/tests/scripts/smoke-test.sh"
-    "$WORKSPACE/tests/scripts/e2e-our-box.sh"
+    "$WORKSPACE/tests/scripts/e2e-our-container.sh"
 )
 
 for ts in "${TEST_SCRIPTS[@]}"; do

@@ -413,7 +413,7 @@ EOF
     # pacman hooks: only PostTransaction hooks here.
     # PreTransaction remount is NOT done via hook — pacman checks filesystem
     # writability BEFORE running any hook, making PreTransaction remount useless.
-    # Instead, our-pac (wrapper) handles unlock + remount + snapshot before
+    # Instead, our-pacman (wrapper) handles unlock + remount + snapshot before
     # invoking the real pacman binary.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
 
@@ -454,7 +454,7 @@ EOF
     # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
-    # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+    # our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
     #
     # pacman checks filesystem writability before PreTransaction hooks run, so a hook
     # cannot unlock root in time. This wrapper:
@@ -468,12 +468,12 @@ EOF
     # @var/@etc/@home are mounted rw from the same device, the superblock is rw,
     # overriding the ro flag on @. btrfs property set ro=true is the real enforcement.
     #
-    # Usage: sudo our-pac -Syu
-    #        sudo our-pac -S <pkg>
-    #        sudo our-pac -R <pkg>
-    cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
+    # Usage: sudo our-pacman -Syu
+    #        sudo our-pacman -S <pkg>
+    #        sudo our-pacman -R <pkg>
+    cat > "${TARGET}/usr/local/bin/our-pacman" << 'SCRIPT'
 #!/usr/bin/env bash
-# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
+# our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
 # On the installed system:
 #   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
@@ -493,7 +493,7 @@ EOF
 #   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
-readonly PROGRAM_NAME="our-pac"
+readonly PROGRAM_NAME="our-pacman"
 _msg()    { echo "[${PROGRAM_NAME}] $*"; }
 _err()    { _msg "ERROR: $*" >&2; }
 
@@ -567,46 +567,46 @@ else
     exec /usr/bin/pacman "$@"
 fi
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/our-pac"
-    log_ok "our-pac installed."
+    chmod 0755 "${TARGET}/usr/local/bin/our-pacman"
+    log_ok "our-pacman installed."
 
-    # our-box — full-featured systemd-nspawn container wrapper for ouroborOS.
+    # our-container — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
     # storage management, image management, monitoring, diagnostics, and stats).
     # Falls back to a minimal inline version if the ISO copy is missing.
-    local OUR_BOX_SRC="/usr/local/bin/our-box"
-    if [[ -f "${OUR_BOX_SRC}" && -r "${OUR_BOX_SRC}" ]]; then
-        cp "${OUR_BOX_SRC}" "${TARGET}/usr/local/bin/our-box"
-        chmod 0755 "${TARGET}/usr/local/bin/our-box"
-        log_ok "our-box installed (copied full version from live ISO)."
+    local OUR_CONTAINER_SRC="/usr/local/bin/our-container"
+    if [[ -f "${OUR_CONTAINER_SRC}" && -r "${OUR_CONTAINER_SRC}" ]]; then
+        cp "${OUR_CONTAINER_SRC}" "${TARGET}/usr/local/bin/our-container"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container"
+        log_ok "our-container installed (copied full version from live ISO)."
     else
-        log_warn "our-box not found on live ISO at ${OUR_BOX_SRC} — installing minimal stub"
-        cat > "${TARGET}/usr/local/bin/our-box" << 'STUB'
+        log_warn "our-container not found on live ISO at ${OUR_CONTAINER_SRC} — installing minimal stub"
+        cat > "${TARGET}/usr/local/bin/our-container" << 'STUB'
 #!/usr/bin/env bash
-# our-box — minimal stub (full version was not available on the ISO at install time)
+# our-container — minimal stub (full version was not available on the ISO at install time)
 set -euo pipefail
-die() { echo "our-box: $*" >&2; exit 1; }
-echo "our-box: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
+die() { echo "our-container: $*" >&2; exit 1; }
+echo "our-container: full version not installed. Reinstall with: sudo our-pacman -S ouroboros-scripts" >&2
 exit 1
 STUB
-        chmod 0755 "${TARGET}/usr/local/bin/our-box"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container"
     fi
 
-    # our-box-autostart — oneshot service that starts containers listed in
-    # /etc/our-box/autostart.conf at boot.  The wrapper script reads the conf
-    # and calls `our-box start <name>` for each entry.
-    local AUTOSTART_SRC="/usr/local/bin/our-box-autostart"
+    # our-container-autostart — oneshot service that starts containers listed in
+    # /etc/our-container/autostart.conf at boot.  The wrapper script reads the conf
+    # and calls `our-container start <name>` for each entry.
+    local AUTOSTART_SRC="/usr/local/bin/our-container-autostart"
     if [[ -f "${AUTOSTART_SRC}" && -r "${AUTOSTART_SRC}" ]]; then
-        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-box-autostart"
-        chmod 0755 "${TARGET}/usr/local/bin/our-box-autostart"
+        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-container-autostart"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container-autostart"
     fi
 
     # Install the systemd unit file for autostart
-    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-box-autostart.service"
+    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-container-autostart.service"
     if [[ -f "${AUTOSTART_UNIT_SRC}" && -r "${AUTOSTART_UNIT_SRC}" ]]; then
         mkdir -p "${TARGET}/etc/systemd/system"
-        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-box-autostart.service"
-        log_ok "our-box-autostart.service installed."
+        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-container-autostart.service"
+        log_ok "our-container-autostart.service installed."
     fi
 
     cat > "${TARGET}/usr/local/bin/our-post-upgrade" << 'SCRIPT'
@@ -754,21 +754,21 @@ main() {
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
     fi
 
-    # our-box autostart — copy default config and enable service if containers are listed.
+    # our-container autostart — copy default config and enable service if containers are listed.
     # The autostart.conf shipped in the ISO is empty (comments only); users add container
     # names post-install.  During unattended installs the config can be pre-populated.
-    local AUTOSTART_CONF_SRC="/etc/our-box/autostart.conf"
-    mkdir -p "${TARGET}/etc/our-box"
+    local AUTOSTART_CONF_SRC="/etc/our-container/autostart.conf"
+    mkdir -p "${TARGET}/etc/our-container"
     if [[ -f "${AUTOSTART_CONF_SRC}" && -r "${AUTOSTART_CONF_SRC}" ]]; then
-        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-box/autostart.conf"
+        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-container/autostart.conf"
     fi
 
     # Enable the service only if autostart.conf has at least one real entry
-    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-box/autostart.conf" 2>/dev/null; then
-        in_chroot systemctl enable our-box-autostart.service
-        log_ok "our-box-autostart.service enabled (containers found in autostart.conf)."
+    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-container/autostart.conf" 2>/dev/null; then
+        in_chroot systemctl enable our-container-autostart.service
+        log_ok "our-container-autostart.service enabled (containers found in autostart.conf)."
     else
-        log_info "our-box-autostart.service not enabled (no containers in autostart.conf)."
+        log_info "our-container-autostart.service not enabled (no containers in autostart.conf)."
     fi
 
     # sshd_config: disable reverse DNS lookup.

@@ -13,12 +13,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - **Desktop profiles** — Five selectable profiles at install time: `minimal` (TTY only), `hyprland`, `niri`, `gnome`, `kde`. Each profile ships the right package set and display manager by default.
 - **Decoupled display manager selection** — DM can be overridden independently of the desktop profile (`none`, `gdm`, `sddm`, `plm`).
-- **`our-pac`** — Atomic package manager wrapper: takes a read-only snapshot of `@` before each `pacman -Syu`, then remounts `rw`, runs the upgrade, and remounts `ro`. Replaces the previous `ouroboros-upgrade` script.
-- **`our-box`** — Full `systemd-nspawn` container manager with 17 commands: lifecycle (`create`, `enter`, `start`, `stop`, `remove`), snapshots, storage management, image management, and monitoring/diagnostics.
+- **`our-pacman`** — Atomic package manager wrapper: takes a read-only snapshot of `@` before each `pacman -Syu`, then remounts `rw`, runs the upgrade, and remounts `ro`. Replaces the previous `ouroboros-upgrade` script.
+- **`our-container`** — Full `systemd-nspawn` container manager with 17 commands: lifecycle (`create`, `enter`, `start`, `stop`, `remove`), snapshots, storage management, image management, and monitoring/diagnostics.
 - **systemd-homed** — Per-user home encryption enabled by default (`subvolume` backend). First-boot migration service handles the transition non-interactively.
 - **FSM reorder** — `USER` and `DESKTOP` states now run before `PARTITION`. All user input is collected before any disk is touched. Installer can be cancelled at any point before the partition confirmation with zero disk impact.
 - **Remote config URL in INIT** — Unattended config can be fetched from a URL (e.g., a GitHub raw URL) at boot, in addition to the existing local file detection.
-- **`our-box` autostart** — Containers can be configured to start automatically at boot via a systemd service.
+- **`our-container` autostart** — Containers can be configured to start automatically at boot via a systemd service.
 - **E2E desktop profile tests** — Automated QEMU test suite validating all five profiles end-to-end.
 - **`hyprpolkitagent`** — Polkit agent for Hyprland profile (replaces `polkit-gnome`).
 
@@ -26,13 +26,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - **Mirror selection** — `reflector` now uses `--sort score` (server-side ranking) instead of `--fastest` (local benchmark). Eliminates multi-minute mirror benchmarking during install.
 - **Pacman hook order** — Post-upgrade hook renamed to `zzz-post-upgrade.hook` to ensure correct ASCII sort order after all pacman operations complete.
-- **`our-pac` hook** — Moved from pre-transaction (ineffective) to a wrapper approach (modelled after openSUSE MicroOS). The wrapper owns the full upgrade cycle.
+- **`our-pacman` hook** — Moved from pre-transaction (ineffective) to a wrapper approach (modelled after openSUSE MicroOS). The wrapper owns the full upgrade cycle.
 - **Btrfs root ro enforcement** — Changed from `btrfs property set / ro true` to `btrfs property set <subvol-path> ro true` via a subvolid=5 mount. Direct property set on a VFS ro mount (EROFS) is rejected by the kernel.
 - **`graphical.target.wants`** — Now mirrored to the `@` subvolume during install so the display manager actually starts at boot.
 
 ### Fixed
 
-- Circular deadlock in `our-pac` when remounting immutable root.
+- Circular deadlock in `our-pacman` when remounting immutable root.
 - `homed` PAM configuration on Arch (uses `/etc/pam.d/sshd` directly, not `system-auth`).
 - SSH `UseDNS=no` to avoid reverse DNS timeout on first connect.
 - `network-online.target` blocking boot in QEMU SLIRP (added `--any --timeout=30` to `networkd-wait-online`).
@@ -66,7 +66,7 @@ Initial release.
 - **systemd-networkd + iwd** — No NetworkManager. DNS via `systemd-resolved` with DNS-over-TLS (`opportunistic`), DNSSEC enabled, upstream: Cloudflare + Quad9.
 - **zram swap** — `zram-generator` configured for `ram/2` with `zstd` compression. No swap partition.
 - **SSH host keys** — Pre-generated during install so the installed system has SSH available immediately on first boot.
-- **`ouroboros-upgrade` wrapper** — Atomic upgrade script: snapshot → remount rw → pacman → remount ro (predecessor to `our-pac`).
+- **`ouroboros-upgrade` wrapper** — Atomic upgrade script: snapshot → remount rw → pacman → remount ro (predecessor to `our-pacman`).
 - **CI/CD pipeline** — GitHub Actions: lint (shellcheck + ruff), build ISO on tag, publish release to public repo `Arkh-Ur/ouroborOS`.
 - **93% pytest coverage** — Full test suite for installer state machine, config validation, TUI, and disk operations.
 - **Developer tooling** — `src/scripts/setup-dev-env.sh`, `src/scripts/build-iso.sh`, `src/scripts/flash-usb.sh`.

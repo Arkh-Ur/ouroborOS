@@ -5,67 +5,22 @@
 **Branch:** dev
 
 > **v0.2.0 released 2026-04-10.** Phase 2 complete. This document defines Phase 3.
+> Plan revisado y aprobado después de investigación exhaustiva del código fuente + Arch Wiki.
 
 ---
 
-## Recomendaciones del Arquitecto
+## Convención de nombres `our-*` / `ouroboros-*`
 
-Antes del plan técnico, estas son las decisiones de diseño más importantes para Phase 3.
-
-### R1 — Empezar por `our-snap` + `our-rollback`, no por Secure Boot
-
-Secure Boot es visible y "cool", pero **el valor diferencial de ouroborOS es la recuperabilidad**. Si un usuario puede romper el sistema y restaurarlo en 10 segundos con un comando, eso es lo que lo va a fidelizar. `our-snap` y `our-rollback` son el corazón del sistema inmutable — sin ellos, los snapshots que ya se crean no sirven para nada en la práctica.
-
-> **Orden recomendado:** 3.1 → 3.2 → 3.3 → resto. Secure Boot puede hacerse en paralelo al final.
-
-### R2 — El selector de shell es más importante de lo que parece
-
-Fish, Zsh y Bash tienen bases de usuarios muy distintas. Un desarrollador que usa fish en su máquina anterior y ve que ouroborOS solo le da bash probablemente busca otra distro. Es un detalle de UX con **alto impacto y costo muy bajo** — el campo `shell` ya existe en `UserConfig`, solo hay que exponerlo en la TUI y agregar los paquetes al ISO. Va en el estado `USER`, junto con username y password. Hacerlo bien incluye:
-- Fish como opción (y **no** como default — es un shell no-POSIX y rompe scripts heredados)
-- Bash como default explícito
-- Zsh como opción intermedia
-- `chsh` correcto en `configure.sh` para que el shell quede seteado en `/etc/passwd`
-
-### R3 — `our-wifi` antes del first-boot, no después
-
-Si el sistema instalado no tiene WiFi configurada, el usuario no puede actualizar ni instalar nada. Agregar el SSID/passphrase en el YAML del installer (que va a `/var/lib/iwd/SSID.psk`) es **una línea de configure.sh** — no debería bloquearse por el resto de la fase.
-
-### R4 — Secure Boot: sbctl puro, sin shim, sin MOK
-
-ouroborOS no usa shim. No hay dual-boot en el roadmap. La elección correcta es **sbctl nativo** con claves UEFI propias (PK/KEK/db). El tradeoff:
-- ✅ Más seguro (sin intermediario)
-- ✅ Más simple (un solo comando: `our-secureboot setup`)
-- ⚠️ Requiere que el usuario entre al firmware a "borrar las claves" para entrar en Setup Mode
-- ⚠️ Incompatible con sistemas que bootean Windows en la misma máquina
-
-Para usuarios que necesiten dual-boot con Windows, documentar claramente que Secure Boot no es compatible con esa configuración en Phase 3.
-
-### R5 — `homectl` en QEMU: resolver o descartar
-
-El bug de `homectl create` en QEMU lleva dos fases sin resolverse. En Phase 3 hay que tomar una decisión: o se investiga con journalctl granular y se cierra, o se acepta que `homed_storage: classic` es el default de facto y se documenta honestamente. No vale la pena bloquear el resto de la fase por esto.
-
-### R6 — No agregar AUR ni Flatpak todavía
-
-Con `our-box` ya existe una forma de aislar software. Agregar AUR o Flatpak en Phase 3 va en contra de la filosofía del proyecto (minimal, systemd-native, sin capas adicionales). Si hay demanda real, que sea Phase 4 con una propuesta arquitectónica clara.
+| Prefijo | Audiencia | Ejecutables |
+|---------|-----------|-------------|
+| `our-*` | Usuario final (interactivo) | `our-pacman`, `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-container` |
+| `ouroboros-*` | Sistema (servicios, automatización) | `ouroboros-secureboot`, `ouroboros-firstboot` |
 
 ---
 
-## Overview
+## Estado real al inicio de Phase 3
 
-Phase 3 foca en cuatro pilares:
-
-1. **System Management** — `our-snap` (ciclo de vida de snapshots) y `our-rollback` (recuperación de un comando)
-2. **Shell & User Experience** — Selector de shell (bash/zsh/fish) en el instalador
-3. **First-Boot** — `our-wifi`, `ouroborOS-firstboot`, WiFi pre-configurado desde YAML
-4. **Security Hardening** — Secure Boot via `sbctl` + `our-secureboot`, re-signing automático en updates
-
-El objetivo: ouroborOS como **daily driver seguro, recuperable, y usable desde el primer arranque**.
-
----
-
-## Estado del Proyecto al Inicio de Phase 3
-
-### Completado (Phases 1-2)
+### Completado (Phases 1-2 + inicio de Phase 3)
 
 | Feature | Status | Ubicación |
 |---------|--------|-----------|
@@ -75,583 +30,561 @@ El objetivo: ouroborOS como **daily driver seguro, recuperable, y usable desde e
 | Btrfs layout (5 subvols + `@snapshots/install`) | ✅ | `src/installer/ops/disk.sh` |
 | systemd-boot + microcode auto-detect | ✅ | `src/installer/ops/configure.sh` |
 | Desktop profiles (5 perfiles, 4 DMs) | ✅ | `src/installer/desktop_profiles.py` |
-| `our-pac` (atomic update wrapper) | ✅ | `airootfs/usr/local/bin/our-pac` |
-| `our-box` (17 comandos nspawn) | ✅ | `airootfs/usr/local/bin/our-box` |
+| `our-pacman` (atomic update wrapper) | ✅ | `airootfs/usr/local/bin/our-pacman` |
+| `our-container` (17 comandos nspawn) | ✅ | `airootfs/usr/local/bin/our-container` |
 | systemd-homed (subvolume default) | ✅ | `src/installer/ops/configure.sh` |
-| `UserConfig.shell` (campo existente) | ✅ | `src/installer/config.py:47` |
-| E2E QEMU: 11/11 estados, boot limpio | ✅ | `tests/scripts/e2e-desktop-profiles.sh` |
-| 93% pytest coverage | ✅ | `src/installer/tests/` |
+| Shell selector bash/zsh/fish | ✅ | `tui.py`, `desktop_profiles.py`, `configure.sh` |
+| E2E QEMU: 11/11 estados, boot limpio | ✅ | `tests/scripts/` |
+| 82 pytest tests | ✅ | `src/installer/tests/` |
 
-### Known Issues Heredados de Phase 2
+### Funciones internas de snapshot (YA implementadas en snapshot.sh)
+
+| Función | Propósito |
+|---------|-----------|
+| `pre_upgrade_snapshot()` | Llamada por `our-pacman` antes de cada update |
+| `generate_snapshot_boot_entry()` | Escribe `.conf` en `/boot/loader/entries/` |
+| `prune_snapshots()` | Limita snapshots a 5 / 30 días, nunca toca `install` |
+| `create_install_snapshot()` | Baseline post-install |
+| `list_snapshots()` | Lista subvolúmenes en `/.snapshots/` |
+
+> **Nota:** `our-snapshot` es un wrapper CLI de usuario sobre estas funciones internas.
+> El trabajo pesado ya existe — falta la UX de usuario.
+
+### Known Issues heredados de Phase 2
 
 | Issue | Workaround | Decisión Phase 3 |
 |-------|-----------|-----------------|
-| `homectl create --identity=JSON` falla en QEMU | Usar `homed_storage: classic` en E2E | Investigar con journalctl granular o documentar como limitación de QEMU |
-| SSH en QEMU SLIRP tarda 60-90s | Poll nc antes de intentar SSH | Mantener workaround, no bloquea |
+| `homectl create` falla en QEMU/Btrfs | `homed_storage: classic` en E2E | Investigar + documentar + fallback automático |
+| SSH en QEMU SLIRP tarda 60-90s | Poll nc antes de SSH | Mantener workaround |
 
 ---
 
-## Milestones de Phase 3
+## Milestone 3.0 — Limpieza de deuda Phase 2
 
-### 3.1 — `our-snap`: Gestión de Snapshots
+Phase 2 prometió: "A compatibility symlink `ouroboros-upgrade → our-pacman` ships for one
+release cycle, then gets removed in Phase 3."
 
-**Objetivo:** CLI completa para gestionar snapshots Btrfs — crear, listar, eliminar, restaurar, y podar — con boot entries sincronizados automáticamente.
+- [x] Eliminar `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-upgrade` (symlink)
 
-**Contexto técnico crítico:**
-- Para hacer `btrfs property set ro false` en un snapshot, hay que montar **subvolid=5** (root del pool Btrfs) en un tmpdir. No se puede hacer sobre el mount point VFS actual (EROFS).
-- systemd-boot no tiene soporte nativo de snapshots — las boot entries hay que generarlas manualmente en `/boot/loader/entries/`.
-- El snapshot `@snapshots/install` (golden baseline) nunca debe ser purgado por `prune`.
+---
+
+## Milestone 3.1 — `our-snapshot`: Gestión de Snapshots
+
+**Objetivo:** CLI de usuario para gestionar snapshots Btrfs. Las funciones ya existen en
+`snapshot.sh` — falta exponerlas con una interfaz clara.
 
 **Comandos:**
 
 ```
-our-snap list                         # Tabla: ID, nombre, fecha, tipo, tamaño
-our-snap create [--name LABEL]        # Snapshot read-only manual de @
-our-snap delete <name-or-id>          # Eliminar snapshot + boot entry + metadata
-our-snap restore <name-or-id>         # → delega a our-rollback promote
-our-snap prune [--keep N]             # Eliminar los más viejos (default: keep 5, nunca borra install)
-our-snap boot-entries sync            # Regenerar /boot/loader/entries/ por snapshot existente
-our-snap info <name-or-id>            # Metadata + diff de paquetes si existe
+our-snapshot list                       # Tabla: nombre, fecha, tipo, tamaño Btrfs
+our-snapshot create [--name LABEL]      # Snapshot read-only de @ + boot entry + JSON
+our-snapshot delete <name>              # Subvolume + boot entry + JSON
+our-snapshot restore <name>             # Delega a our-rollback promote
+our-snapshot prune [--keep N]           # Elimina más viejos (default 5), nunca toca install
+our-snapshot boot-entries sync          # Regenera /boot/loader/entries/ por snapshot existente
+our-snapshot info <name>                # Metadata JSON + btrfs subvolume show
 ```
 
-**Estructura de snapshot:**
+**Gotcha crítico de boot entries:**
+
+```ini
+# ✅ CORRECTO — sin / inicial en subvol
+options root=UUID=XXX rootflags=subvol=@snapshots/2026-04-10_manual ro loglevel=4
+
+# ❌ INCORRECTO — kernel ignora el subvol
+options root=UUID=XXX rootflags=subvol=/@snapshots/2026-04-10_manual ro loglevel=4
+```
+
+**Estructura:**
 
 ```
 /.snapshots/
-├── install/                          # Golden baseline — NUNCA se toca
-├── YYYY-MM-DD_pre-update/            # Creados por our-pac
-├── YYYY-MM-DD_manual/                # Creados con our-snap create
+├── install/                            # Golden baseline — NUNCA purgado
+├── 2026-04-10T143022/                  # Pre-update (creado por our-pacman)
+├── 2026-04-10_manual/                  # Manual (creado con our-snapshot create)
 └── .metadata/
-    └── YYYY-MM-DD_pre-update.json    # { timestamp, packages, description, type }
+    └── 2026-04-10T143022.json          # { timestamp, type, description, packages_count }
 ```
 
-**Boot entry por snapshot** (`/boot/loader/entries/ouroborOS-snapshot-YYYY-MM-DD.conf`):
+**Timer semanal:**
 
 ```ini
-title   ouroborOS (snapshot YYYY-MM-DD)
-linux   /vmlinuz-linux-zen
-initrd  /intel-ucode.img
-initrd  /initramfs-linux-zen.img
-options root=UUID=XXX rootflags=subvol=@snapshots/YYYY-MM-DD_pre-update,ro loglevel=4
-```
-
-**Poda automática (systemd timer semanal):**
-
-```ini
-# /etc/systemd/system/our-snap-prune.timer
+# our-snapshot-prune.timer
 [Timer]
 OnCalendar=weekly
 Persistent=true
 ```
 
-**Milestones:**
+**Btrfs scrub:** Arch provee `btrfs-scrub@.timer` — `ouroboros-firstboot` lo habilita.
 
-- [ ] 3.1.1 `our-snap list` — parsea subvolumenes bajo `/.snapshots/`, muestra tabla
-- [ ] 3.1.2 `our-snap create` — snapshot read-only + escribe `.metadata/NAME.json`
-- [ ] 3.1.3 `our-snap delete` — elimina subvolume + boot entry + JSON
-- [ ] 3.1.4 `our-snap prune` — ordena por fecha, elimina más viejos excepto `install`
-- [ ] 3.1.5 `our-snap boot-entries sync` — genera entradas en `/boot/loader/entries/` por snapshot
-- [ ] 3.1.6 `our-snap-prune.service` + `.timer` — unit systemd para poda semanal automática
-- [ ] 3.1.7 Tests: shellcheck 0 warnings + pytest unitarios mockeados
-- [ ] 3.1.8 Agregar `our-snap-prune.timer` al `ouroborOS-firstboot` (habilitar en primer arranque)
+**Milestones:**
+- [ ] 3.1.1 `our-snapshot list`
+- [ ] 3.1.2 `our-snapshot create` — snapshot + `.metadata/NAME.json` + boot entry
+- [ ] 3.1.3 `our-snapshot delete` — subvolume + boot entry + JSON
+- [ ] 3.1.4 `our-snapshot prune --keep N` — purga más viejos, nunca `install`
+- [ ] 3.1.5 `our-snapshot boot-entries sync`
+- [ ] 3.1.6 `our-snapshot info`
+- [ ] 3.1.7 `our-snapshot-prune.{service,timer}` — poda semanal
+- [ ] 3.1.8 shellcheck 0 warnings
 
 **Archivos:**
-
 | Archivo | Tipo |
 |---------|------|
-| `src/ouroborOS-profile/airootfs/usr/local/bin/our-snap` | Nuevo |
-| `src/ouroborOS-profile/airootfs/etc/systemd/system/our-snap-prune.{service,timer}` | Nuevo |
-| `tests/scripts/test-our-snap.sh` | Nuevo |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/our-snapshot` | Nuevo |
+| `src/ouroborOS-profile/airootfs/etc/systemd/system/our-snapshot-prune.{service,timer}` | Nuevo |
 
 ---
 
-### 3.2 — `our-rollback`: Rollback de Un Comando
-
-**Objetivo:** Volver al estado anterior con un solo comando. Sin conocer Btrfs internamente.
+## Milestone 3.2 — `our-rollback`: Rollback de Un Comando
 
 **Comandos:**
 
 ```
-our-rollback list                     # Alias de our-snap list
-our-rollback now [SNAPSHOT]           # One-shot reboot en el snapshot (bootctl set-oneshot)
-our-rollback promote <SNAPSHOT>       # Swap permanente de @ por el snapshot
-our-rollback status                   # ¿El root actual es @ o un snapshot?
+our-rollback list               # Alias de our-snapshot list
+our-rollback now [SNAPSHOT]     # bootctl set-oneshot + reboot (próximo boot solo)
+our-rollback promote <SNAPSHOT> # Swap permanente y atómico de @ por el snapshot
+our-rollback status             # ¿Root actual es @ o un snapshot?
 ```
 
-**Mecánica de `our-rollback promote`** (rollback permanente):
+**Mecánica de `promote`** (patrón validado en Phase 2 — subvolid=5):
 
 ```bash
 TMPDIR=$(mktemp -d)
 mount -o subvolid=5 /dev/disk/by-label/ouroborOS "$TMPDIR"
 
-# Copia writable del snapshot
-btrfs subvolume snapshot \
-    "${TMPDIR}/@snapshots/${SNAPSHOT}" \
-    "${TMPDIR}/@_new"
+btrfs subvolume snapshot "${TMPDIR}/@snapshots/${SNAPSHOT}" "${TMPDIR}/@_new"
+btrfs property set "${TMPDIR}/@_new" ro false
 
-# Swap atómico
 btrfs subvolume delete "${TMPDIR}/@"
-mv "${TMPDIR}/@_new" "${TMPDIR}/@"
+btrfs subvolume snapshot "${TMPDIR}/@_new" "${TMPDIR}/@"
+btrfs property set "${TMPDIR}/@" ro true
+btrfs subvolume delete "${TMPDIR}/@_new"
 
-our-snap boot-entries sync
+our-snapshot boot-entries sync
 umount "$TMPDIR" && rmdir "$TMPDIR"
-echo "Rollback listo. Reiniciá para aplicar."
 ```
 
-> ⚠️ `our-rollback now` usa `bootctl set-oneshot` — falla en QEMU sin OVMF_VARS rw. En hardware real funciona. Los E2E tests deben usar `promote`.
+> ⚠️ `our-rollback now` usa `bootctl set-oneshot`. En QEMU sin OVMF_VARS rw puede fallar.
+> Tests E2E deben usar `promote`.
+
+**`our-rollback status`:**
+
+```bash
+current=$(findmnt / -o OPTIONS -n | grep -oP 'subvol=\K[^,]+')
+[[ "$current" == "@" ]] && echo "Root: @ (normal)" || echo "Root: $current (snapshot)"
+```
 
 **Milestones:**
-
-- [ ] 3.2.1 `our-rollback list` — delega a `our-snap list`
-- [ ] 3.2.2 `our-rollback now` — `bootctl set-oneshot <entry>` + `systemctl reboot`
-- [ ] 3.2.3 `our-rollback promote` — swap atómico vía subvolid=5
-- [ ] 3.2.4 `our-rollback status` — detecta si root es `@` o un snapshot
-- [ ] 3.2.5 Tests shellcheck + unitarios
+- [ ] 3.2.1 `our-rollback list`
+- [ ] 3.2.2 `our-rollback now`
+- [ ] 3.2.3 `our-rollback promote`
+- [ ] 3.2.4 `our-rollback status`
+- [ ] 3.2.5 shellcheck 0 warnings
 
 **Archivos:**
-
 | Archivo | Tipo |
 |---------|------|
 | `src/ouroborOS-profile/airootfs/usr/local/bin/our-rollback` | Nuevo |
-| `tests/scripts/test-our-rollback.sh` | Nuevo |
 
 ---
 
-### 3.3 — Shell Selector: bash / zsh / fish
+## Milestone 3.3 — Shell Selector ✅ COMPLETADO
 
-**Objetivo:** El estado `USER` del instalador permite elegir el shell del usuario. El campo `UserConfig.shell` ya existe (`src/installer/config.py:47`) — solo hay que exponerlo en la TUI, agregarlo al YAML, instalar los paquetes necesarios, y hacer el `chsh` correcto en `configure.sh`.
-
-**Shells soportados:**
-
-| Shell | Paquete Arch | Path | Default |
-|-------|-------------|------|---------|
-| Bash | `bash` (ya en base) | `/bin/bash` | ✅ **Sí** |
-| Zsh | `zsh` | `/bin/zsh` | No |
-| Fish | `fish` | `/usr/bin/fish` | No |
-
-**Por qué Bash es el default:** Fish es un shell no-POSIX — scripts heredados no funcionan sin modificación. Bash es el estándar de facto en ArchLinux y garantiza compatibilidad. Zsh y Fish son opciones para usuarios que los conocen.
-
-**Cambios necesarios:**
-
-**1. `packages.x86_64`** — agregar `zsh` y `fish` para que estén disponibles en el ISO live y puedan ser instalados en el target:
-
-```
-zsh
-fish
-```
-
-> Nota: pacstrap ya incluye `bash` via `base`. `zsh` y `fish` se agregan a `extra_packages` en el installer si el usuario los elige, o directamente al pacstrap del perfil `base`.
-
-**2. `src/installer/desktop_profiles.py`** — constantes de shells:
-
-```python
-VALID_SHELLS: dict[str, str] = {
-    "bash": "/bin/bash",
-    "zsh":  "/bin/zsh",
-    "fish": "/usr/bin/fish",
-}
-
-SHELL_PACKAGES: dict[str, str] = {
-    "zsh":  "zsh",
-    "fish": "fish",
-    # bash ya está en base
-}
-```
-
-**3. `src/installer/tui.py`** — nueva función `show_shell_selection()`:
-
-```python
-def show_shell_selection(self) -> str:
-    """Show shell selection menu. Returns shell path."""
-    shells = [
-        ("/bin/bash",        "Bash   — POSIX-compatible, universal default"),
-        ("/bin/zsh",         "Zsh    — Bash-compatible with advanced completion"),
-        ("/usr/bin/fish",    "Fish   — Modern, user-friendly, non-POSIX"),
-    ]
-    # Rich: radiolist / whiptail: --radiolist
-    # Retorna el path del shell seleccionado. Default: /bin/bash
-```
-
-**4. `src/installer/state_machine.py`** — en `_handle_user()`, llamar `show_shell_selection()` y guardar en `config.user.shell`. Si el shell elegido tiene paquete asociado, agregarlo a `config.extra_packages`.
-
-**5. `src/installer/ops/configure.sh`** — al crear el usuario, usar el shell correcto:
-
-```bash
-# Actual (solo useradd):
-useradd -m -G "${USER_GROUPS}" -s "${USER_SHELL}" "${USERNAME}"
-
-# Verificar que el shell existe en el sistema instalado antes de asignarlo:
-if ! chroot /mnt grep -q "^${USER_SHELL}$" /etc/shells 2>/dev/null; then
-    log_warn "Shell ${USER_SHELL} no registrado en /etc/shells — agregando"
-    echo "${USER_SHELL}" >> /mnt/etc/shells
-fi
-```
-
-**6. `templates/install-config.yaml`** — documentar el campo:
-
-```yaml
-user:
-  username: "alice"
-  password: "changeme"
-  shell: "/bin/bash"    # /bin/bash (default) | /bin/zsh | /usr/bin/fish
-```
-
-**7. `docs/installer/configuration-format.md`** — actualizar validación:
-
-```
-- `user.shell` (si se provee): debe ser uno de `/bin/bash`, `/bin/zsh`, `/usr/bin/fish`
-```
-
-**Milestones:**
-
-- [ ] 3.3.1 Agregar `zsh` y `fish` a `packages.x86_64` del ISO
-- [ ] 3.3.2 `VALID_SHELLS` y `SHELL_PACKAGES` en `desktop_profiles.py`
-- [ ] 3.3.3 `show_shell_selection()` en `tui.py` (Rich + whiptail fallback)
-- [ ] 3.3.4 `_handle_user()` en `state_machine.py` — exponer shell selection, agregar paquete a `extra_packages` si es zsh/fish
-- [ ] 3.3.5 `configure.sh` — verificar `/etc/shells` antes de `useradd -s`
-- [ ] 3.3.6 Actualizar `config.py` — validar que `user.shell` sea uno de los válidos en `validate_config()`
-- [ ] 3.3.7 Actualizar `templates/install-config.yaml` y `docs/installer/configuration-format.md`
-- [ ] 3.3.8 Tests: `test_show_shell_selection()` en pytest + test de validación YAML con shell inválido
-
-**Archivos a modificar:**
-
-| Archivo | Cambio |
-|---------|--------|
-| `src/ouroborOS-profile/packages.x86_64` | Agregar `zsh`, `fish` |
-| `src/installer/desktop_profiles.py` | `VALID_SHELLS`, `SHELL_PACKAGES` |
-| `src/installer/tui.py` | `show_shell_selection()` |
-| `src/installer/state_machine.py` | `_handle_user()` expone shell + agrega paquete |
-| `src/installer/config.py` | Validar `user.shell` en `validate_config()` |
-| `src/installer/ops/configure.sh` | `useradd -s` + verificar `/etc/shells` |
-| `templates/install-config.yaml` | Documentar `shell:` |
-| `docs/installer/configuration-format.md` | Agregar validación de `user.shell` |
+bash / zsh / fish — ya en `dev`. No hay nada que hacer.
 
 ---
 
-### 3.4 — First-Boot Experience
+## Milestone 3.4 — First-Boot Experience
 
-#### 3.4.1 `our-wifi` — WiFi Setup Interactivo
-
-**Comandos:**
+### 3.4.1 `our-wifi` — WiFi Setup Interactivo
 
 ```
-our-wifi list                  # Scan + listar redes disponibles
-our-wifi connect <SSID>        # Interactivo: pide passphrase
-our-wifi connect <SSID> --password <PASS>   # No interactivo
-our-wifi status                # Estado de conexión actual (iwctl station show)
-our-wifi forget <SSID>         # Eliminar /var/lib/iwd/SSID.psk
-our-wifi show-password <SSID>  # Mostrar passphrase guardada
+our-wifi list                              # scan + lista redes (iwctl)
+our-wifi connect <SSID>                    # interactivo: pide passphrase
+our-wifi connect <SSID> --password <PASS>  # no interactivo
+our-wifi status                            # iwctl station wlan0 show
+our-wifi forget <SSID>                     # rm /var/lib/iwd/SSID.psk
+our-wifi show-password <SSID>             # mostrar passphrase guardada
 ```
 
-**Pre-configuración WiFi desde YAML del installer:**
+**Formato PSK de iwd** (Arch Wiki):
+
+```ini
+# /var/lib/iwd/SSID.psk  (chmod 600, directorio 700)
+[Security]
+Passphrase=mypassword
+```
+
+SSIDs con caracteres especiales → nombre hex: `=<hex_ssid>.psk`
+
+**Pre-configuración desde YAML:**
 
 ```yaml
 network:
   wifi:
     ssid: "MiRed"
-    passphrase: "mi-password"   # Escrito a /var/lib/iwd/ durante install, limpiado de InstallerConfig
+    passphrase: "mi-password"   # escrito a /var/lib/iwd/, no persistido en checkpoint
 ```
 
-`configure.sh` escribe `/var/lib/iwd/MiRed.psk` (chmod 600) y limpia `passphrase` de config en memoria.
+**Milestones:**
+- [ ] 3.4.1 `our-wifi` CLI completo
+- [ ] 3.4.2 `NetworkConfig.wifi_ssid` + `wifi_passphrase` en `config.py` (transient)
+- [ ] 3.4.3 `configure.sh` escribe PSK (chmod 600, dir 700) + limpia env
+- [ ] 3.4.4 Validación: si `wifi.ssid` → `wifi.passphrase` requerido
+- [ ] 3.4.5 `show_wifi_setup()` en `tui.py`
+- [ ] 3.4.6 `templates/install-config.yaml` — sección `network.wifi:`
+- [ ] 3.4.7 `docs/installer/configuration-format.md` — campos WiFi
 
-#### 3.4.2 `ouroborOS-firstboot` — Servicio Oneshot
+### 3.4.2 `ouroboros-firstboot` — Servicio Oneshot
 
 ```bash
 #!/usr/bin/env bash
-# Corre UNA sola vez. Guard: /var/lib/ouroborOS/firstboot.done
 set -euo pipefail
 
-# 1. Mirrors — reflector server-side (rápido, sin benchmark local)
+[[ -f /var/lib/ouroborOS/firstboot.done ]] && exit 0
+
+# 1. Mirrors optimizados (sin benchmark local)
 reflector --save /etc/pacman.d/mirrorlist --sort score --latest 20 --protocol https
 
-# 2. machine-id único si quedó el default del ISO
-[[ "$(cat /etc/machine-id)" == "b08dfa6083e7567a1921a715000001fb" ]] && \
+# 2. machine-id único si es el del ISO
+if systemd-machine-id-setup --print 2>/dev/null | grep -q "^b08dfa6083e7567a1921a715000001fb$"; then
     systemd-machine-id-setup --commit
+fi
 
-# 3. Activar timer de poda de snapshots
-systemctl enable --now our-snap-prune.timer 2>/dev/null || true
+# 3. Activar timers
+systemctl enable --now our-snapshot-prune.timer 2>/dev/null || true
+systemctl enable --now "btrfs-scrub@-.timer" 2>/dev/null || true
 
-# 4. Marcar completado
+# 4. Guard
 mkdir -p /var/lib/ouroborOS
 date -Iseconds > /var/lib/ouroborOS/firstboot.done
 ```
 
-**Milestones:**
+```ini
+[Unit]
+Description=ouroborOS First Boot Setup
+ConditionPathExists=!/var/lib/ouroborOS/firstboot.done
+After=network-online.target
+Wants=network-online.target
 
-- [ ] 3.4.1 `our-wifi` CLI completo (list/connect/status/forget/show-password)
-- [ ] 3.4.2 `network.wifi` en YAML schema — `ssid` + `passphrase`
-- [ ] 3.4.3 `configure.sh` escribe `/var/lib/iwd/SSID.psk` + limpia passphrase de config
-- [ ] 3.4.4 `ouroborOS-firstboot` script + `.service` con `ConditionPathExists=!/var/lib/ouroborOS/firstboot.done`
-- [ ] 3.4.5 Reflector en firstboot (mirrors optimizados post-install)
-- [ ] 3.4.6 Activar `our-snap-prune.timer` en firstboot
-- [ ] 3.4.7 `machine-id` reset si es el default del ISO
-- [ ] 3.4.8 Tests: shellcheck + test unitario con reflector mockeado
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ouroboros-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Milestones:**
+- [ ] 3.4.8 `ouroboros-firstboot` script + `.service`
+- [ ] 3.4.9 `configure.sh` instala y habilita el servicio
+- [ ] 3.4.10 Copiar service a `@` (patrón `_write_systemd_enables_to_root`)
+- [ ] 3.4.11 shellcheck 0 warnings
+
+**Archivos:**
+| Archivo | Tipo |
+|---------|------|
+| `src/ouroborOS-profile/airootfs/usr/local/bin/our-wifi` | Nuevo |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-firstboot` | Nuevo |
+| `src/ouroborOS-profile/airootfs/etc/systemd/system/ouroboros-firstboot.service` | Nuevo |
+| `src/installer/config.py` | `NetworkConfig.wifi_ssid`, `wifi_passphrase` |
+| `src/installer/tui.py` | `show_wifi_setup()` |
+| `src/installer/ops/configure.sh` | WiFi PSK + firstboot enable |
+| `templates/install-config.yaml` | `network.wifi:` |
 
 ---
 
-### 3.5 — Secure Boot: `sbctl` + `our-secureboot`
-
-**Objetivo:** Secure Boot UEFI nativo vía `sbctl`. Sin shim, sin MOK. Workflow de un comando.
+## Milestone 3.5 — Secure Boot: `ouroboros-secureboot`
 
 **Contexto técnico:**
-- `sbctl` genera PK/KEK/db propios y los enrolla en EFI variables
-- Firma el bootloader (`systemd-bootx64.efi`) y el kernel (`vmlinuz-linux-zen`)
-- El paquete `sbctl` incluye un pacman hook que re-firma automáticamente en cada update
-- **Requiere firmware en Setup Mode** (borrar claves Secure Boot en el UEFI)
-- Claves en `/var/lib/sbctl/keys/`
+- `sbctl` DB en `/var/lib/sbctl/` → en `@var` (writable) ✅
+- `sbctl enroll-keys` requiere firmware en **Setup Mode**
+- `sbctl enroll-keys -m` incluye claves Microsoft
+- El paquete incluye pacman hook PostTransaction para re-firma automática
+- Gotcha: `systemd-boot-update.service` actualiza bootloader en reboot, no en transacción
 
 **Comandos:**
 
 ```
-our-secureboot setup           # create-keys + enroll-keys + sign-all
-our-secureboot status          # sbctl status + archivos sin firmar
-our-secureboot sign-all        # Re-firmar todos los archivos trackeados
-our-secureboot rotate-keys     # Rotar claves (backup + nuevas + re-firma)
-our-secureboot verify          # Verificar estado del firmware
+ouroboros-secureboot setup          # create-keys + enroll-keys + sign-all
+ouroboros-secureboot status         # sbctl status + unsigned list
+ouroboros-secureboot sign-all       # re-firma todos los trackeados
+ouroboros-secureboot verify         # sbctl verify
+ouroboros-secureboot rotate-keys    # backup + create-keys + sign-all
 ```
 
-**Integración con `our-pac`** — post-update, si SB está habilitado:
+**Integración `our-pacman`:**
 
 ```bash
-if command -v sbctl &>/dev/null && sbctl status 2>/dev/null | grep -q "Secure Boot: enabled"; then
-    sbctl sign-all
+if command -v sbctl &>/dev/null && sbctl status 2>/dev/null | grep -q "Secure Boot.*enabled"; then
+    sbctl sign-all || log_warn "sbctl sign-all failed"
 fi
 ```
 
-**YAML:**
+**Schema YAML:**
 
 ```yaml
 security:
-  secure_boot: false              # true: habilitar Secure Boot via sbctl
-  sbctl_include_ms_keys: false    # true: incluir claves Microsoft (compatibilidad hardware)
+  secure_boot: false
+  sbctl_include_ms_keys: false
 ```
 
 **Milestones:**
-
 - [ ] 3.5.1 Agregar `sbctl` a `packages.x86_64`
-- [ ] 3.5.2 `our-secureboot` CLI completo
-- [ ] 3.5.3 `SecurityConfig` dataclass en `config.py`
-- [ ] 3.5.4 Integración `sbctl sign-all` en `our-pac` post-update
-- [ ] 3.5.5 Step opcional `SECURE_BOOT` en el FSM (post-CONFIGURE, pre-SNAPSHOT)
-- [ ] 3.5.6 `show_secure_boot()` en `tui.py` — pantalla con instrucciones de Setup Mode
+- [ ] 3.5.2 `ouroboros-secureboot` CLI completo
+- [ ] 3.5.3 `SecurityConfig` en `config.py` + validación
+- [ ] 3.5.4 `sbctl sign-all` en `our-pacman` post-update
+- [ ] 3.5.5 State `SECURE_BOOT` opcional en FSM
+- [ ] 3.5.6 `show_secure_boot_prompt()` en `tui.py`
 - [ ] 3.5.7 `docs/architecture/secure-boot.md`
-- [ ] 3.5.8 Tests: shellcheck + integración mockeada
+- [ ] 3.5.8 shellcheck 0 warnings
+
+**Archivos:**
+| Archivo | Tipo |
+|---------|------|
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-secureboot` | Nuevo |
+| `docs/architecture/secure-boot.md` | Nuevo |
+| `src/ouroborOS-profile/packages.x86_64` | + `sbctl` |
+| `src/installer/config.py` | `SecurityConfig` |
+| `src/installer/tui.py` | `show_secure_boot_prompt()` |
+| `src/installer/state_machine.py` | State `SECURE_BOOT` |
+| `src/installer/ops/configure.sh` | sbctl step opcional |
 
 ---
 
-### 3.6 — Hardening de `our-pac` (Updates Atómicos)
+## Milestone 3.6 — `our-pacman` Hardening
 
 **Flujo Phase 3:**
 
 ```
-our-pac -Syu
-  → verificar espacio ≥ 2GB en /.snapshots/
-  → snapshot pre-update con metadata JSON
-  → remount @ rw
+our-pacman -Syu
+  → verificar espacio ≥ 2GB en pool Btrfs
+  → snapshot pre-update + metadata JSON
+  → remount @ rw (subvolid=5)
   → pacman -Syu
   → remount @ ro
   → [si sbctl activo] sbctl sign-all
-  → our-snap boot-entries sync
-  → log estructurado a /var/log/our-pac/YYYY-MM-DD.json
-  → our-snap prune si snapshots > 10
+  → our-snapshot boot-entries sync
+  → log JSON → /var/log/our-pacman/YYYY-MM-DD.json
+  → our-snapshot prune si snapshots > 10
 ```
 
 **Milestones:**
-
-- [ ] 3.6.1 Verificación de espacio pre-update
+- [ ] 3.6.1 Verificación espacio pre-update
 - [ ] 3.6.2 Metadata JSON por snapshot
-- [ ] 3.6.3 Integración `sbctl sign-all`
-- [ ] 3.6.4 `our-snap boot-entries sync` post-update
-- [ ] 3.6.5 Logging estructurado en `/var/log/our-pac/`
-- [ ] 3.6.6 Poda automática si snapshots > 10
+- [ ] 3.6.3 Integración sbctl sign-all
+- [ ] 3.6.4 our-snapshot boot-entries sync automático
+- [ ] 3.6.5 Logging JSON en `/var/log/our-pacman/`
+- [ ] 3.6.6 Auto-prune si snapshots > 10
 
 ---
 
-### 3.7 — `our-box` Mejoras: GUI/GPU Passthrough
+## Milestone 3.7 — `our-container` Mejoras
 
-**Nuevos flags en `our-box enter`:**
+### Networking Isolation (diferido de Phase 2)
 
 ```bash
-our-box enter <name> --wayland   # Bind-mount Wayland socket + vars
-our-box enter <name> --gpu       # Bind-mount /dev/dri/
-our-box enter <name> --audio     # Bind-mount PipeWire socket
-our-box enter <name> --gui       # = --wayland + --gpu + --audio
+our-container enter <name> --isolated   # --network-veth (red privada)
+our-container create <name> --isolated  # pre-configura veth
 ```
 
-**Implementación nspawn:**
+### GUI/GPU Passthrough
 
 ```bash
+our-container enter <name> --wayland   # bind-mount Wayland socket
+our-container enter <name> --gpu       # bind-mount /dev/dri/
+our-container enter <name> --audio     # bind-mount PipeWire socket
+our-container enter <name> --gui       # = --wayland + --gpu + --audio
+```
+
+```bash
+# Flags systemd-nspawn
 --bind-ro=/run/user/${UID}/wayland-0
 --bind=/dev/dri
 --bind-ro=/run/user/${UID}/pipewire-0
 --setenv=WAYLAND_DISPLAY=wayland-0
---setenv=XDG_RUNTIME_DIR=/run/user/${UID}
 --property=DeviceAllow=char-drm rw
 ```
 
 **Milestones:**
-
-- [ ] 3.7.1 Flags `--wayland`, `--gpu`, `--audio`, `--gui` en `our-box enter`
-- [ ] 3.7.2 `our-box create --gui` pre-configura el contenedor con capabilities gráficas
-- [ ] 3.7.3 Documentación: sección "GUI containers" en `docs/our-box.md`
-- [ ] 3.7.4 Tests: shellcheck
+- [ ] 3.7.1 `--isolated` en enter y create
+- [ ] 3.7.2 `--wayland`, `--gpu`, `--audio`, `--gui` en enter
+- [ ] 3.7.3 Docs: "Network Isolation" y "GUI containers"
+- [ ] 3.7.4 shellcheck 0 warnings
 
 ---
 
-### 3.8 — Fix `homectl` en QEMU
+## Milestone 3.8 — `homectl`: Decisión Final
 
-**Plan:** Capturar `journalctl -u systemd-homed` durante el intento, identificar el error real, implementar fallback automático a `useradd` clásico sin romper la instalación.
+**Investigación 2024-2025:**
+- Falla en QEMU porque `@home` es subvolumen Btrfs — systemd issues #15121, #16829
+- Error: "File exists" al crear subvolume dentro de subvolume existente en `/home`
+- Comunidad Arch recomienda useradd clásico con Btrfs
 
-**Fallback en `state_machine.py`:**
+**Decisión:** Documentar como limitación conocida. Fallback automático a classic useradd.
 
-```python
-try:
-    _run_op("configure.sh", env={..., "USE_HOMED": "1"})
-except InstallerError:
-    log.warning("homectl failed, falling back to classic useradd")
-    _run_op("configure.sh", env={..., "USE_HOMED": "0"})
+**Milestones:**
+- [ ] 3.8.1 Capturar `journalctl -u systemd-homed` en E2E install log
+- [ ] 3.8.2 Fallback automático a classic useradd si homectl falla
+- [ ] 3.8.3 E2E test: verificar fallback
+- [ ] 3.8.4 `docs/architecture/systemd-homed.md` — decisión + razonamiento
+
+---
+
+## Milestone 3.9 — Cobertura de Tests
+
+Brecha actual: 82 tests cubro infraestructura. Cero tests para handlers individuales.
+
+**Milestones:**
+- [ ] 3.9.1 Tests `_handle_user()` y `_handle_desktop()`
+- [ ] 3.9.2 Tests env vars pasadas a configure.sh
+- [ ] 3.9.3 Tests validación WiFi (con y sin passphrase)
+- [ ] 3.9.4 Tests `SecurityConfig` en `validate_config()`
+- [ ] 3.9.5 Coverage ≥ 93%
+
+---
+
+## Milestone 3.10 — `our-bluetooth`: Bluetooth Interactivo
+
+```
+our-bluetooth list               # scan + lista dispositivos
+our-bluetooth pair <MAC>         # emparejar (pide PIN si necesita)
+our-bluetooth connect <MAC>      # conectar a dispositivo emparejado
+our-bluetooth disconnect <MAC>   # desconectar
+our-bluetooth forget <MAC>       # eliminar emparejamiento
+our-bluetooth status             # estado del adaptador
+our-bluetooth on / off           # habilitar / deshabilitar
+```
+
+Wrapper sobre `bluetoothctl`. `bluez` + `bluez-utils` como paquetes opcionales.
+
+```yaml
+network:
+  bluetooth:
+    enable: false    # true → habilita bluetooth.service post-install
 ```
 
 **Milestones:**
+- [ ] 3.10.1 `our-bluetooth` CLI completo
+- [ ] 3.10.2 `NetworkConfig.bluetooth_enable` en `config.py`
+- [ ] 3.10.3 `configure.sh` habilita `bluetooth.service` si `BLUETOOTH_ENABLE=1`
+- [ ] 3.10.4 shellcheck 0 warnings
 
-- [ ] 3.8.1 Loguear journalctl de homed al install log durante install
-- [ ] 3.8.2 Fallback automático a classic useradd si homectl falla
-- [ ] 3.8.3 E2E test: verificar fallback en QEMU
-
----
-
-### 3.9 — Multi-Language Installer (Stretch)
-
-- [ ] Extraer strings del TUI a diccionario central
-- [ ] `gettext` con `.po`/`.mo` para inglés y español
-- [ ] Campo `locale.language` en YAML
-- [ ] Pantalla de selección de idioma en estado INIT
-
-> Puede postergarse a Phase 4 si los anteriores consumen más tiempo.
+**Archivos:**
+| Archivo | Tipo |
+|---------|------|
+| `src/ouroborOS-profile/airootfs/usr/local/bin/our-bluetooth` | Nuevo |
 
 ---
 
-## Resumen de Milestones
+## Milestone 3.11 — Multi-Language (Stretch)
 
-| # | Feature | Prioridad | Complejidad | Depende de |
-|---|---------|-----------|-------------|------------|
-| 3.1 | `our-snap` | 🔴 Alta | Media | — |
-| 3.2 | `our-rollback` | 🔴 Alta | Media | 3.1 |
-| 3.3 | Shell selector (bash/zsh/fish) | 🔴 Alta | **Baja** | — |
-| 3.4 | First-boot (`our-wifi` + firstboot) | 🟡 Media | Baja | — |
-| 3.5 | Secure Boot (`sbctl` + `our-secureboot`) | 🟡 Media | Alta | — |
-| 3.6 | `our-pac` hardening | 🟡 Media | Baja | 3.1 |
-| 3.7 | `our-box` GUI/GPU | 🟢 Baja | Media | — |
-| 3.8 | Fix `homectl` QEMU | 🟡 Media | Alta (investigación) | — |
-| 3.9 | Multi-language | 🟢 Baja | Alta | — |
+Gettext, `.po`/`.mo`, campo `locale.language`, pantalla idioma en INIT.
+> Puede postergarse a Phase 4.
 
-**Orden de implementación recomendado:**
+---
+
+## Tabla Resumen
+
+| # | Feature | Ejecutable | Prioridad | Complejidad | Depende de |
+|---|---------|-----------|-----------|-------------|------------|
+| 3.0 | Eliminar `ouroboros-upgrade` symlink | — | 🔴 | Trivial | — |
+| 3.1 | Gestión de snapshots | `our-snapshot` | 🔴 | Baja-Media | — |
+| 3.2 | Rollback de un comando | `our-rollback` | 🔴 | Media | 3.1 |
+| 3.3 | Shell selector | (TUI) | ✅ DONE | — | — |
+| 3.4 | WiFi + first-boot | `our-wifi` + `ouroboros-firstboot` | 🟡 | Baja | — |
+| 3.5 | Secure Boot | `ouroboros-secureboot` | 🟡 | Alta | — |
+| 3.6 | Atomic updates hardening | `our-pacman` | 🟡 | Baja | 3.1 |
+| 3.7 | Container networking + GUI | `our-container` | 🟢 | Media | — |
+| 3.8 | homectl decisión + fallback | — | 🟡 | Media | — |
+| 3.9 | Cobertura de tests | — | 🟡 | Media | Todos |
+| 3.10 | Bluetooth | `our-bluetooth` | 🟡 | Baja | — |
+| 3.11 | Multi-language | — | 🟢 | Alta | — |
+
+**Orden de implementación:**
 
 ```
-3.3 (shell selector, bajo costo, alto impacto UX)
-  → 3.1 (our-snap, corazón del sistema)
-  → 3.2 (our-rollback, depende de 3.1)
-  → 3.4 (first-boot, independiente, baja complejidad)
-  → 3.6 (our-pac hardening, depende de 3.1)
-  → 3.5 (secure boot, independiente, alta complejidad)
-  → 3.7 + 3.8 (paralelo si hay tiempo)
-  → 3.9 (stretch)
+3.0 → 3.1 → 3.2 → 3.4 → 3.10 → 3.6 → 3.8 → 3.9 → 3.5 → 3.7 → 3.11
 ```
 
 ---
 
-## Nuevos Archivos
-
-```
-src/ouroborOS-profile/airootfs/usr/local/bin/
-├── our-snap               ← Nuevo (3.1)
-├── our-rollback           ← Nuevo (3.2)
-├── our-secureboot         ← Nuevo (3.5)
-├── our-wifi               ← Nuevo (3.4)
-└── ouroborOS-firstboot    ← Nuevo (3.4)
-
-src/ouroborOS-profile/airootfs/etc/systemd/system/
-├── our-snap-prune.service ← Nuevo (3.1)
-├── our-snap-prune.timer   ← Nuevo (3.1)
-└── ouroborOS-firstboot.service ← Nuevo (3.4)
-
-docs/architecture/
-└── secure-boot.md         ← Nuevo (3.5)
-
-tests/scripts/
-├── test-our-snap.sh       ← Nuevo (3.1)
-└── test-our-rollback.sh   ← Nuevo (3.2)
-```
-
-## Archivos Modificados
-
-```
-src/ouroborOS-profile/packages.x86_64     ← zsh, fish, sbctl (3.3, 3.5)
-src/installer/config.py                   ← validate shell, SecurityConfig, NetworkConfig.wifi
-src/installer/desktop_profiles.py         ← VALID_SHELLS, SHELL_PACKAGES
-src/installer/tui.py                      ← show_shell_selection(), show_secure_boot()
-src/installer/state_machine.py            ← _handle_user() shell, SECURE_BOOT state
-src/installer/ops/configure.sh            ← useradd -s, /etc/shells, wifi psk, sbctl
-templates/install-config.yaml            ← shell, security, network.wifi
-docs/installer/configuration-format.md   ← validación user.shell
-```
-
-## Schema YAML Phase 3
+## Schema YAML Phase 3 Completo
 
 ```yaml
 user:
-  username: "alice"
-  password: "changeme"
-  shell: "/bin/bash"              # NUEVO — /bin/bash | /bin/zsh | /usr/bin/fish
+  username: admin
+  password: changeme
+  shell: /bin/bash             # /bin/bash | /bin/zsh | /usr/bin/fish
+  homed_storage: classic       # subvolume | luks | directory | classic
+  groups: [wheel, audio, video, input]
 
 network:
-  hostname: "ouroboros"
+  hostname: ouroboros
   enable_networkd: true
   enable_iwd: true
   enable_resolved: true
-  wifi:                           # NUEVO — pre-configurar WiFi para primer boot
+  wifi:                        # NUEVO 3.4
     ssid: ""
-    passphrase: ""                # Escrita a /var/lib/iwd/, limpiada post-install
+    passphrase: ""             # no persistido en checkpoints
+  bluetooth:                   # NUEVO 3.10
+    enable: false
 
-security:                         # NUEVO
+security:                      # NUEVO 3.5
   secure_boot: false
   sbctl_include_ms_keys: false
 
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
 locale:
-  language: "en"                  # NUEVO (stretch) — en | es
-  locale: "en_US.UTF-8"
-  keymap: "us"
-  timezone: "America/New_York"
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+desktop:
+  profile: minimal
+  dm: auto
+
+extra_packages:
+  - openssh
+
+post_install_action: reboot
 ```
 
 ---
 
-## Criterios de Aceptación de Phase 3
+## Criterios de Aceptación Phase 3
 
-- [ ] Instalador muestra selector de shell (bash/zsh/fish) en estado USER
-- [ ] El usuario instalado tiene el shell correcto en `/etc/passwd` y en `/etc/shells`
-- [ ] `zsh` y `fish` están disponibles en el sistema instalado si fueron seleccionados
-- [ ] `our-snap list` muestra todos los snapshots incluyendo `install`
-- [ ] `our-snap create` crea un snapshot + boot entry + metadata JSON
-- [ ] `our-snap prune --keep 3` elimina los más viejos, nunca toca `install`
-- [ ] `our-rollback promote <snapshot>` reemplaza `@` correctamente — sistema bootea desde nuevo root
-- [ ] `our-wifi connect <SSID>` conecta exitosamente con passphrase
-- [ ] `ouroborOS-firstboot` corre una sola vez — actualiza mirrors, activa timer de poda
-- [ ] `our-secureboot setup` firma kernel + bootloader en firmware en Setup Mode
-- [ ] `our-pac -Syu` llama `sbctl sign-all` post-update si Secure Boot activo
-- [ ] E2E QEMU: install con `shell: /bin/zsh` → usuario tiene zsh al boot
-- [ ] Todos los scripts pasan shellcheck con 0 warnings
+- [ ] Symlink `ouroboros-upgrade` eliminado del ISO
+- [ ] `our-snapshot list` muestra snapshots incluyendo `install`
+- [ ] `our-snapshot create` → snapshot + boot entry (sin `/` en subvol) + JSON
+- [ ] `our-snapshot prune --keep 3` — nunca toca `install`
+- [ ] `our-rollback promote <snap>` — sistema bootea desde nuevo root
+- [ ] `our-wifi connect <SSID>` conecta exitosamente
+- [ ] YAML con `network.wifi.ssid` → PSK en `/var/lib/iwd/` post-install
+- [ ] `ouroboros-firstboot` corre una sola vez — mirrors + timers activados
+- [ ] `ouroboros-secureboot setup` firma kernel + bootloader en Setup Mode
+- [ ] `our-pacman -Syu` llama sbctl sign-all si Secure Boot activo
+- [ ] `our-container enter <name> --isolated` usa `--network-veth`
+- [ ] `our-container enter <name> --gui` bind-mount wayland + DRI
+- [ ] homectl falla → fallback a classic useradd sin crash
+- [ ] Todos los scripts: shellcheck 0 warnings
 - [ ] pytest coverage ≥ 93%
 
 ---
 
 ## Out of Scope (Phase 4+)
 
+- TPM2 + `systemd-cryptenroll`
 - ARM / aarch64
 - GUI installer
-- AUR helper (`our-aur`)
+- AUR helper
 - Flatpak / Snap
-- Dual-boot con Secure Boot
-- TPM2 + `systemd-cryptenroll` (LUKS sin passphrase)
+- Dual-boot + Secure Boot
 - Live USB persistence
-- Network namespaces / alternativas a nspawn
+- ZFS

@@ -52,15 +52,15 @@ services:
     <<: *test-base
     command: bash /workspace/tests/scripts/smoke-test.sh
 
-  # ── our-box E2E (QEMU required — cannot run in Docker) ──────────────────────
-  e2e-our-box:
+  # ── our-container E2E (QEMU required — cannot run in Docker) ──────────────────────
+  e2e-our-container:
     <<: *test-base
     tmpfs:
       - /tmp:exec,mode=1777
     privileged: true
     devices:
       - /dev/kvm:/dev/kvm
-    command: bash /workspace/tests/scripts/e2e-our-box.sh
+    command: bash /workspace/tests/scripts/e2e-our-container.sh
     profiles:
       - e2e
 

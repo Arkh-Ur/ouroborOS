@@ -1,7 +1,7 @@
-"""conftest.py — Shared fixtures for our-box tests.
+"""conftest.py — Shared fixtures for our-container tests.
 
 Provides mock binaries (machinectl, btrfs, pacstrap, debootstrap, systemd-nspawn)
-that simulate the real tools via a state directory.  This lets us test the our-box
+that simulate the real tools via a state directory.  This lets us test the our-container
 bash script end-to-end without requiring root, Btrfs, or systemd.
 """
 
@@ -32,7 +32,7 @@ def _write_machinectl(mock_dir: Path, state_dir: Path) -> Path:
     """Create a mock machinectl that uses files in *state_dir* for state."""
     script = f"""\
     #!/usr/bin/env bash
-    # mock machinectl for our-box tests
+    # mock machinectl for our-container tests
     STATE_DIR="{state_dir}"
     case "$1" in
         list)
@@ -222,15 +222,15 @@ def _write_date(mock_dir: Path) -> Path:
 def mock_env(
     tmp_path: Path,
 ) -> Generator[tuple[Path, Path, Path], None, None]:
-    """Set up a complete mock environment for testing our-box.
+    """Set up a complete mock environment for testing our-container.
 
     Returns:
-        Tuple of (our_box_script, mock_machines_root, state_dir).
+        Tuple of (our_container_script, mock_machines_root, state_dir).
 
     - Installs mock binaries into a temp PATH dir.
     - Creates a fake /var/lib/machines directory.
     - Creates a state directory for mock tool state tracking.
-    - Yields with PATH set so our-box picks up the mocks.
+    - Yields with PATH set so our-container picks up the mocks.
     """
     mock_bin = tmp_path / "mock_bin"
     mock_bin.mkdir()
@@ -252,15 +252,15 @@ def mock_env(
     _write_sudo(mock_bin)
     _write_date(mock_bin)
 
-    # Path to the real our-box script
+    # Path to the real our-container script
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_box_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
     # Prepend mock bin to PATH
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
 
-    yield our_box_script, machines_root, state_dir
+    yield our_container_script, machines_root, state_dir
 
     # Restore PATH
     os.environ["PATH"] = old_path
@@ -271,7 +271,7 @@ def mock_env_no_btrfs(tmp_path: Path) -> Generator[tuple[Path, Path, Path], None
     """Like mock_env but with a btrfs mock that always fails (simulates non-Btrfs).
 
     Returns:
-        Tuple of (our_box_script, mock_machines_root, state_dir).
+        Tuple of (our_container_script, mock_machines_root, state_dir).
     """
     mock_bin = tmp_path / "mock_bin"
     mock_bin.mkdir()
@@ -298,12 +298,12 @@ def mock_env_no_btrfs(tmp_path: Path) -> Generator[tuple[Path, Path, Path], None
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_box_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
 
-    yield our_box_script, machines_root, state_dir
+    yield our_container_script, machines_root, state_dir
 
     os.environ["PATH"] = old_path
 
@@ -313,7 +313,7 @@ def mock_env_fail_tools(tmp_path: Path) -> Generator[tuple[Path, Path, Path], No
     """Like mock_env but with machinectl that fails on start/stop (error simulation).
 
     Returns:
-        Tuple of (our_box_script, mock_machines_root, state_dir).
+        Tuple of (our_container_script, mock_machines_root, state_dir).
     """
     mock_bin = tmp_path / "mock_bin"
     mock_bin.mkdir()
@@ -362,12 +362,12 @@ def mock_env_fail_tools(tmp_path: Path) -> Generator[tuple[Path, Path, Path], No
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_box_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
 
-    yield our_box_script, machines_root, state_dir
+    yield our_container_script, machines_root, state_dir
 
     os.environ["PATH"] = old_path
 
@@ -377,7 +377,7 @@ def mock_env_fail_pacstrap(tmp_path: Path) -> Generator[tuple[Path, Path, Path],
     """Like mock_env but with pacstrap that fails (bootstrap failure simulation).
 
     Returns:
-        Tuple of (our_box_script, mock_machines_root, state_dir).
+        Tuple of (our_container_script, mock_machines_root, state_dir).
     """
     mock_bin = tmp_path / "mock_bin"
     mock_bin.mkdir()
@@ -404,11 +404,11 @@ def mock_env_fail_pacstrap(tmp_path: Path) -> Generator[tuple[Path, Path, Path],
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_box_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
 
-    yield our_box_script, machines_root, state_dir
+    yield our_container_script, machines_root, state_dir
 
     os.environ["PATH"] = old_path

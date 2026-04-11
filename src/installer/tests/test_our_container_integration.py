@@ -1,6 +1,6 @@
-"""Integration tests for our-box container wrapper.
+"""Integration tests for our-container container wrapper.
 
-Run selectively:  pytest -k our_box
+Run selectively:  pytest -k our_container
 Requires sudo + systemd-machined for real container tests.
 """
 
@@ -45,100 +45,100 @@ requires_machined = pytest.mark.skipif(
 
 class TestOurBoxScriptStructure:
 
-    def test_script_exists(self, our_box_script: Path) -> None:
-        assert our_box_script.exists()
-        assert our_box_script.is_file()
+    def test_script_exists(self, our_container_script: Path) -> None:
+        assert our_container_script.exists()
+        assert our_container_script.is_file()
 
-    def test_script_executable(self, our_box_script: Path) -> None:
-        assert os.access(our_box_script, os.X_OK)
+    def test_script_executable(self, our_container_script: Path) -> None:
+        assert os.access(our_container_script, os.X_OK)
 
-    def test_help_output(self, our_box_script: Path) -> None:
+    def test_help_output(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "--help"],
+            ["bash", str(our_container_script), "--help"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode == 0
-        assert "our-box" in result.stdout
+        assert "our-container" in result.stdout
         assert "systemd-nspawn" in result.stdout
         assert "create" in result.stdout
         assert "remove" in result.stdout
 
-    def test_help_alias(self, our_box_script: Path) -> None:
+    def test_help_alias(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "help"],
+            ["bash", str(our_container_script), "help"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode == 0
         assert "USAGE" in result.stdout
 
-    def test_unknown_command_returns_error(self, our_box_script: Path) -> None:
+    def test_unknown_command_returns_error(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "nonexistent-command"],
+            ["bash", str(our_container_script), "nonexistent-command"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
         assert "unknown command" in result.stderr.lower() or "unknown command" in result.stdout.lower()
 
-    def test_no_command_shows_help(self, our_box_script: Path) -> None:
+    def test_no_command_shows_help(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script)],
+            ["bash", str(our_container_script)],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode == 0
         assert "USAGE" in result.stdout
 
-    def test_has_set_euo_pipefail(self, our_box_script: Path) -> None:
-        content = our_box_script.read_text(encoding="utf-8")
+    def test_has_set_euo_pipefail(self, our_container_script: Path) -> None:
+        content = our_container_script.read_text(encoding="utf-8")
         assert "set -euo pipefail" in content
 
-    def test_machines_root_constant(self, our_box_script: Path) -> None:
-        content = our_box_script.read_text(encoding="utf-8")
+    def test_machines_root_constant(self, our_container_script: Path) -> None:
+        content = our_container_script.read_text(encoding="utf-8")
         assert 'MACHINES_ROOT="/var/lib/machines"' in content
 
 
 class TestCommandValidation:
 
-    def test_create_without_name_errors(self, our_box_script: Path) -> None:
+    def test_create_without_name_errors(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "create"],
+            ["bash", str(our_container_script), "create"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
         assert "usage" in result.stderr.lower() or "usage" in result.stdout.lower()
 
-    def test_enter_without_name_errors(self, our_box_script: Path) -> None:
+    def test_enter_without_name_errors(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "enter"],
+            ["bash", str(our_container_script), "enter"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
         assert "usage" in result.stderr.lower() or "usage" in result.stdout.lower()
 
-    def test_start_without_name_errors(self, our_box_script: Path) -> None:
+    def test_start_without_name_errors(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "start"],
+            ["bash", str(our_container_script), "start"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
 
-    def test_stop_without_name_errors(self, our_box_script: Path) -> None:
+    def test_stop_without_name_errors(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "stop"],
+            ["bash", str(our_container_script), "stop"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
 
-    def test_remove_without_name_errors(self, our_box_script: Path) -> None:
+    def test_remove_without_name_errors(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "remove"],
+            ["bash", str(our_container_script), "remove"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
 
     @requires_sudo
-    def test_unsupported_distro_fails(self, our_box_script: Path) -> None:
+    def test_unsupported_distro_fails(self, our_container_script: Path) -> None:
         result = subprocess.run(
-            ["bash", str(our_box_script), "create", "test-fedora", "fedora"],
+            ["bash", str(our_container_script), "create", "test-fedora", "fedora"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
@@ -149,13 +149,13 @@ class TestErrorHandling:
 
     @requires_sudo
     def test_remove_nonexistent_fails(self, fake_machines_root: Path) -> None:
-        result = _run_our_box(fake_machines_root, "remove", "no-such-container")
+        result = _run_our_container(fake_machines_root, "remove", "no-such-container")
         assert result.returncode != 0
         assert "not found" in result.stderr.lower() or "not found" in result.stdout.lower()
 
     @requires_sudo
     def test_enter_nonexistent_fails(self, fake_machines_root: Path) -> None:
-        result = _run_our_box(fake_machines_root, "enter", "ghost-container", timeout=5)
+        result = _run_our_container(fake_machines_root, "enter", "ghost-container", timeout=5)
         assert result.returncode != 0
 
     @requires_sudo
@@ -165,7 +165,7 @@ class TestErrorHandling:
         container_dir.mkdir()
         (container_dir / "etc").mkdir()
 
-        result = _run_our_box(fake_machines_root, "create", name, "arch")
+        result = _run_our_container(fake_machines_root, "create", name, "arch")
         assert result.returncode != 0
         assert "already exists" in result.stderr.lower() or "already exists" in result.stdout.lower()
 
@@ -174,12 +174,12 @@ class TestListCommand:
 
     @requires_sudo
     def test_list_empty(self, fake_machines_root: Path) -> None:
-        result = _run_our_box(fake_machines_root, "list")
+        result = _run_our_container(fake_machines_root, "list")
         assert result.returncode == 0
 
     @requires_sudo
     def test_list_shows_existing_containers(self, fake_machines_root: Path, fake_container: Path) -> None:
-        result = _run_our_box(fake_machines_root, "list")
+        result = _run_our_container(fake_machines_root, "list")
         assert result.returncode == 0
         assert "test-container" in result.stdout
 
@@ -197,7 +197,7 @@ class TestFullLifecycle:
 
         try:
             result = subprocess.run(
-                ["sudo", "bash", str(_our_box_path()), "create", name, "arch"],
+                ["sudo", "bash", str(_our_container_path()), "create", name, "arch"],
                 capture_output=True, text=True, timeout=300,
             )
             if result.returncode != 0:
@@ -218,7 +218,7 @@ class TestFullLifecycle:
             )
 
             result = subprocess.run(
-                ["sudo", "bash", str(_our_box_path()), "remove", name],
+                ["sudo", "bash", str(_our_container_path()), "remove", name],
                 capture_output=True, text=True, timeout=30,
             )
             assert result.returncode == 0
@@ -246,7 +246,7 @@ class TestPersistence:
 
     @requires_sudo
     def test_container_survives_list_operation(self, fake_machines_root: Path, fake_container: Path) -> None:
-        result = _run_our_box(fake_machines_root, "list")
+        result = _run_our_container(fake_machines_root, "list")
         assert result.returncode == 0
         assert fake_container.exists()
         assert (fake_container / "etc" / "passwd").exists()
@@ -379,7 +379,7 @@ class TestContainerStateTransitions:
         (cdir / "etc").mkdir()
         (cdir / "etc" / "passwd").touch()
 
-        result = _run_our_box(fake_machines_root, "start", name)
+        result = _run_our_container(fake_machines_root, "start", name)
         assert result.returncode in (0, 1, 124)
 
     @requires_sudo
@@ -389,12 +389,12 @@ class TestContainerStateTransitions:
         cdir.mkdir()
         (cdir / "etc").mkdir()
 
-        result = _run_our_box(fake_machines_root, "stop", name)
+        result = _run_our_container(fake_machines_root, "stop", name)
         assert result.returncode in (0, 1, 124)
 
     @requires_sudo
     def test_list_alias_works(self, fake_machines_root: Path) -> None:
-        result = _run_our_box(fake_machines_root, "ls")
+        result = _run_our_container(fake_machines_root, "ls")
         assert result.returncode == 0
 
     @requires_sudo
@@ -404,19 +404,19 @@ class TestContainerStateTransitions:
         cdir.mkdir()
         (cdir / "etc").mkdir()
 
-        result = _run_our_box(fake_machines_root, "rm", name)
+        result = _run_our_container(fake_machines_root, "rm", name)
         assert result.returncode == 0
         assert not cdir.exists()
 
 
-def _our_box_path() -> Path:
+def _our_container_path() -> Path:
     return Path(__file__).resolve().parent.parent.parent.parent / (
-        "src/ouroborOS-profile/airootfs/usr/local/bin/our-box"
+        "src/ouroborOS-profile/airootfs/usr/local/bin/our-container"
     )
 
 
 def _make_wrapper(fake_machines_root: Path) -> Path:
-    script = _our_box_path()
+    script = _our_container_path()
     mr = fake_machines_root
     wrapper = Path(tempfile.mktemp(suffix=".sh"))
     content = f'''#!/usr/bin/env bash
@@ -436,7 +436,7 @@ MACHINES_ROOT="{mr}"
     return wrapper
 
 
-def _run_our_box(
+def _run_our_container(
     fake_machines_root: Path,
     *args: str,
     timeout: int = 15,
@@ -449,7 +449,7 @@ def _run_our_box(
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(
-            args=["our-box"] + list(args),
+            args=["our-container"] + list(args),
             returncode=124,
             stdout="",
             stderr="timeout",

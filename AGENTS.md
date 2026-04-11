@@ -24,7 +24,7 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Release v0.1.0:** Publicado el 2026-04-07 con ISO (1.3GB) + SHA256SUMS. Fases 1-5 completadas.
 
-**Estado actual:** Phase 2 completa — namespace `our-*` (`our-pac`, `our-box`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`. Phase 3 pendiente.
+**Estado actual:** Phase 2 completa — namespace `our-*` (`our-pacman`, `our-container`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`. Phase 3 pendiente.
 
 ## ESTRUCTURA
 
@@ -65,11 +65,11 @@ ouroborOS/
 | Agregar test | `src/installer/tests/` o `tests/scripts/` | pytest o scripts shell |
 | Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, installer-phases |
 | Config default interactiva | `templates/install-config.yaml` | Template YAML con contraseña plaintext, auto-hasseada |
-| Plan Phase 2 | `docs/PHASE_2_PLAN.md` | our-pac, our-box, desktop profiles, homed |
-| Documentación our-box | `docs/our-box.md` | Guía de usuario completa (651 líneas) |
-| Tests E2E our-box | `tests/scripts/e2e-our-box.sh` | 15 fases, 1382 líneas, QEMU+SSH |
-| Tests unitarios our-box | `tests/our_box/` | pytest unit tests |
-| Tests integración our-box | `src/installer/tests/test_our_box_integration.py` | pytest integration tests |
+| Plan Phase 2 | `docs/PHASE_2_PLAN.md` | our-pacman, our-container, desktop profiles, homed |
+| Documentación our-container | `docs/our-container.md` | Guía de usuario completa (651 líneas) |
+| Tests E2E our-container | `tests/scripts/e2e-our-container.sh` | 15 fases, 1382 líneas, QEMU+SSH |
+| Tests unitarios our-container | `tests/our_container/` | pytest unit tests |
+| Tests integración our-container | `src/installer/tests/test_our_container_integration.py` | pytest integration tests |
 | CI build + release | `.github/workflows/build.yml` | Tag push → ISO build → release en repo público |
 
 ## MAPA DE CÓDIGO
@@ -94,8 +94,8 @@ ouroborOS/
 | `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab completo |
 | `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
 | configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM enable, homed |
-| `our-pac` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-pac` | Wrapper de pacman con snapshot + remount rw (antes `ouroboros-upgrade`, symlink de compat) |
-| `our-box` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-box` | Wrapper systemd-nspawn: create/enter/start/stop/list/remove, snapshot, storage mount, image pull, monitor, diagnose, stats, logs, check (17 comandos, 1786 líneas) |
+| `our-pacman` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-pacman` | Wrapper de pacman con snapshot + remount rw (antes `ouroboros-upgrade`, symlink de compat) |
+| `our-container` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-container` | Wrapper systemd-nspawn: create/enter/start/stop/list/remove, snapshot, storage mount, image pull, monitor, diagnose, stats, logs, check (17 comandos, 1786 líneas) |
 
 ## CONVENCIONES
 
@@ -179,10 +179,10 @@ tests/scripts/test-shellcheck.sh
 - `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
 - `skills/qemu-e2e-test.md` — plan completo de test E2E: build ISO → install en QEMU (desatendido) → verificar sistema instalado via SSH + serial log.
 - Dual-repo: `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push en dev dispara build.yml que construye ISO y publica release en el repo público.
-- `our-pac` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-box` es el wrapper de systemd-nspawn con 17 comandos (create/enter/start/stop/list/remove, snapshot create/list/restore, storage mount/umount, cleanup, disk-usage, image pull/list/remove, monitor, diagnose, stats, logs, check). Documentación en `docs/our-box.md`. Tests E2E en `tests/scripts/e2e-our-box.sh` (15 fases, 1382 líneas). Tests unitarios en `tests/our_box/`. Tests de integración en `src/installer/tests/test_our_box_integration.py`.
+- `our-pacman` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-container` es el wrapper de systemd-nspawn con 17 comandos (create/enter/start/stop/list/remove, snapshot create/list/restore, storage mount/umount, cleanup, disk-usage, image pull/list/remove, monitor, diagnose, stats, logs, check). Documentación en `docs/our-container.md`. Tests E2E en `tests/scripts/e2e-our-container.sh` (15 fases, 1382 líneas). Tests unitarios en `tests/our_container/`. Tests de integración en `src/installer/tests/test_our_container_integration.py`.
 - `desktop_profiles.py` define 5 perfiles: minimal, hyprland, niri, gnome, kde. GNOME usa gdm, KDE usa plm (plasma-login-manager), hyprland/niri usan sddm, minimal arranca desde TTY. DM desacoplado del perfil con 4 opciones (gdm, sddm, plm, none) y selector visual ↑↓.
 - La FSM ahora tiene estados USER y DESKTOP antes de PARTITION — todas las decisiones humanas se toman antes de cualquier operación destructiva.
-- pacman PreTransaction hooks NO funcionan para remount rw (pacman verifica escritura antes de ejecutar hooks). Por eso existe el wrapper `our-pac`.
+- pacman PreTransaction hooks NO funcionan para remount rw (pacman verifica escritura antes de ejecutar hooks). Por eso existe el wrapper `our-pacman`.
 - **homed-migrate.sh** es no-interactivo: usa JSON identity file (`--identity=`) para `homectl create` y D-Bus `ActivateHome` para activate. El password plaintext se pasa via `HOMED_PASSWORD` env var, se guarda en `/etc/ouroboros/homed-migration.conf` (chmod 600), y se elimina post-migration.
 - **Remote config URL:** Si no hay config local, el INIT state pregunta si el usuario quiere proveer una URL (ej: GitHub raw) para descargar un config remoto. Usa `urllib.request` (stdlib). Si falla, cae a modo interactivo.
 - **Reflector mirrors:** Usa `--sort score` (server-side, instantáneo) en vez de `--fastest` (benchmark local, lento). Fallback worldwide si regional falla.
