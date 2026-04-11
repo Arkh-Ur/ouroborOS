@@ -1,41 +1,50 @@
 #!/usr/bin/env bash
 # our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
-# On the installed system:
-#   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
-#      the VFS ro restriction (circular deadlock prevention).
-#   2. Remounts / read-write at the VFS layer.
-#   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
-#   4. Runs pacman (NOT exec — we need control back after pacman exits).
-#   5. Locks root again via lock_root() AFTER pacman and ALL its hooks finish.
+# Full Phase 3 flow on an installed immutable system:
+#   1. Verify ≥ 2 GB free on Btrfs pool (abort if insufficient)
+#   2. Create timestamped snapshot + metadata JSON (pre-upgrade baseline)
+#   3. Unlock @ via subvolid=5 mount (avoids circular deadlock)
+#   4. Remount / read-write
+#   5. Run pacman with all arguments forwarded
+#   6. Lock @ (Btrfs ro=true) and remount /  ro
+#   7. [if sbctl active] sbctl sign-all (post-upgrade EFI re-signing)
+#   8. Sync systemd-boot entries for all snapshots
+#   9. Write JSON upgrade log to /var/log/our-pacman/
+#  10. Auto-prune snapshots if count > 10
 #
-# Why NOT use exec:
-#   pacman hooks are sorted alphabetically. Hooks from packages like gtk4,
-#   dconf, glib write to /usr/share/* and sort AFTER zzz-post-upgrade.hook.
-#   By doing the lock here — after pacman returns — we guarantee ALL hooks
-#   completed on a writable root before we restore immutability.
+# Why NOT exec pacman:
+#   Pacman hooks run alphabetically. Hooks from gtk4, dconf, glib write to
+#   /usr/share/* AFTER zzz-post-upgrade. Using exec would hand control to
+#   pacman permanently, preventing steps 6-10 from running.
 #
 # On the live ISO:
 #   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
 readonly PROGRAM_NAME="our-pacman"
+readonly SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
+readonly LOG_DIR="/var/log/our-pacman"
+readonly MIN_FREE_GB=2
 
-_msg()    { echo "[${PROGRAM_NAME}] $*"; }
-_err()    { _msg "ERROR: $*" >&2; }
+_msg()  { echo "[${PROGRAM_NAME}] $*"; }
+_warn() { echo "[${PROGRAM_NAME}] WARNING: $*" >&2; }
+_err()  { echo "[${PROGRAM_NAME}] ERROR: $*" >&2; }
 
 if [[ $EUID -ne 0 ]]; then
     exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
 fi
 
-# Check if the root subvolume is read-only at the Btrfs level.
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 is_immutable_root() {
     btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
 }
 
 # Unlock root via top-level Btrfs mount (avoids circular deadlock).
-# btrfs property set / ro false fails when VFS mount is ro — metadata
-# writes are blocked. Mounting subvolid=5 to a temp dir bypasses this.
+# btrfs property set / ro false fails when VFS mount is ro — kernel blocks
+# metadata writes when superblock is mounted ro. Mounting subvolid=5 to a
+# temp dir provides a separate rw mount point for the property change.
 unlock_root() {
     local root_dev tmp
     root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
@@ -76,26 +85,155 @@ lock_root() {
         _msg "Root busy — Btrfs property protects immutability regardless"
 }
 
-if is_immutable_root; then
-    _msg "Preparing package operation on immutable root..."
+# Verify sufficient free space on the Btrfs pool (unallocated + free allocated).
+check_free_space() {
+    local free_gb
+    free_gb=$(btrfs filesystem usage -b / 2>/dev/null \
+        | awk '/Free \(estimated\)/{gsub(/,/,""); print int($3/1073741824); exit}')
 
-    snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
-    if [[ -r "$snapshot_lib" ]]; then
-        source "$snapshot_lib"
-        unlock_root
-        pre_upgrade_snapshot
-    else
-        _msg "Snapshot library not found — unlocking root (direct)"
-        unlock_root
+    if [[ -z "$free_gb" ]]; then
+        # Fallback: use df
+        free_gb=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -d 'G ')
     fi
 
-    _msg "Running pacman $*"
+    if [[ -n "$free_gb" && "$free_gb" -lt "$MIN_FREE_GB" ]]; then
+        _err "Insufficient disk space: ${free_gb} GB free, need at least ${MIN_FREE_GB} GB."
+        _err "Run 'our-snapshot prune' to free space, or delete unused snapshots."
+        exit 1
+    fi
+
+    _msg "Disk space: ${free_gb:-?} GB free (minimum: ${MIN_FREE_GB} GB)"
+}
+
+# Write metadata JSON alongside snapshot.
+write_snapshot_metadata() {
+    local snap_name="$1"
+    local snap_dir="/.snapshots/${snap_name}"
+    local meta_file="${snap_dir}.json"
+    local kernel_ver
+    kernel_ver=$(uname -r 2>/dev/null || echo "unknown")
+    local pacman_db_hash
+    pacman_db_hash=$(sha256sum /var/lib/pacman/local/ALPM_DB_VERSION 2>/dev/null | awk '{print $1}' || echo "")
+
+    cat > "$meta_file" << EOF
+{
+  "snapshot": "${snap_name}",
+  "timestamp": "$(date -Iseconds)",
+  "kernel": "${kernel_ver}",
+  "pacman_db_hash": "${pacman_db_hash}",
+  "operation": "pre-upgrade",
+  "program": "${PROGRAM_NAME}"
+}
+EOF
+    chmod 644 "$meta_file"
+}
+
+# Append a JSON entry to /var/log/our-pacman/YYYY-MM-DD.json
+write_upgrade_log() {
+    local snap_name="$1"
+    local pacman_exit="$2"
+    local start_ts="$3"
+    local end_ts
+    end_ts=$(date -Iseconds)
+    local args="${*:4}"
+
+    mkdir -p "$LOG_DIR"
+    local log_file="${LOG_DIR}/$(date +%Y-%m-%d).json"
+
+    # Append newline-delimited JSON (one object per line)
+    cat >> "$log_file" << EOF
+{"timestamp":"${end_ts}","start":"${start_ts}","snapshot":"${snap_name}","exit":${pacman_exit},"args":$(printf '%s' "${args}" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().split()))" 2>/dev/null || echo '"'"${args}"'"')}
+EOF
+}
+
+# Re-sign EFI binaries if sbctl is installed and Secure Boot keys are enrolled.
+sign_after_upgrade() {
+    command -v sbctl &>/dev/null || return 0
+    sbctl status 2>/dev/null | grep -q "Installed.*true\|Keys.*installed" || return 0
+
+    _msg "Secure Boot: re-signing EFI binaries with sbctl..."
+    sbctl sign-all 2>/dev/null || \
+        _warn "sbctl sign-all encountered errors. Run: sudo ouroboros-secureboot sign-all"
+}
+
+# Sync systemd-boot entries for all snapshots (no-op if our-snapshot missing)
+sync_boot_entries() {
+    local snap_tool="/usr/local/bin/our-snapshot"
+    [[ -x "$snap_tool" ]] || return 0
+    _msg "Syncing systemd-boot entries for snapshots..."
+    "$snap_tool" sync-boot-entries 2>/dev/null || \
+        _warn "Boot entry sync failed. Run: sudo our-snapshot sync-boot-entries"
+}
+
+# Prune snapshots if count > 10 (safety cap regardless of age policy)
+auto_prune_if_needed() {
+    local snap_tool="/usr/local/bin/our-snapshot"
+    [[ -x "$snap_tool" ]] || return 0
+
+    local count
+    count=$(find "/.snapshots" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+    if [[ "$count" -gt 10 ]]; then
+        _msg "Snapshot count (${count}) exceeds 10 — auto-pruning..."
+        "$snap_tool" prune --keep 5 --days 30 2>/dev/null || \
+            _warn "Auto-prune failed. Run: sudo our-snapshot prune"
+    fi
+}
+
+# ── Main flow ─────────────────────────────────────────────────────────────────
+
+if is_immutable_root; then
+    _msg "Preparing package operation on immutable root..."
+    start_ts=$(date -Iseconds)
+
+    # 1. Space check
+    check_free_space
+
+    # 2. Snapshot + metadata
+    snap_name=""
+    if [[ -r "$SNAPSHOT_LIB" ]]; then
+        # shellcheck source=/dev/null
+        source "$SNAPSHOT_LIB"
+
+        snap_name=$(date +%Y-%m-%dT%H%M%S)
+        _msg "Creating pre-upgrade snapshot: ${snap_name}"
+        create_snapshot "/" "/.snapshots/${snap_name}" --readonly 2>/dev/null || \
+            _warn "Snapshot creation failed — continuing without snapshot"
+
+        if [[ -d "/.snapshots/${snap_name}" ]]; then
+            write_snapshot_metadata "$snap_name"
+            generate_snapshot_boot_entry "$snap_name" "/boot" "quiet ro" 2>/dev/null || true
+        fi
+    else
+        _warn "Snapshot library not found at ${SNAPSHOT_LIB} — skipping snapshot"
+    fi
+
+    # 3-4. Unlock and remount rw
+    unlock_root
+
+    # 5. Run pacman
+    _msg "Running: pacman $*"
     /usr/bin/pacman "$@"
     pacman_exit=$?
 
+    # 6. Lock root
     lock_root
+
+    # 7. sbctl sign-all (if Secure Boot active)
+    sign_after_upgrade
+
+    # 8. Sync boot entries
+    sync_boot_entries
+
+    # 9. Write upgrade log
+    if [[ -n "$snap_name" ]]; then
+        write_upgrade_log "$snap_name" "$pacman_exit" "$start_ts" "$@" 2>/dev/null || true
+    fi
+
+    # 10. Auto-prune if snapshot count > 10
+    auto_prune_if_needed
+
     exit "$pacman_exit"
 else
-    _msg "Running pacman $* (writable root — live ISO or unlocked)"
+    _msg "Running: pacman $* (writable root — live ISO or unlocked)"
     exec /usr/bin/pacman "$@"
 fi
