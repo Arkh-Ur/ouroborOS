@@ -118,14 +118,14 @@ Persistent=true
 **Btrfs scrub:** Arch provee `btrfs-scrub@.timer` — `ouroboros-firstboot` lo habilita.
 
 **Milestones:**
-- [ ] 3.1.1 `our-snapshot list`
-- [ ] 3.1.2 `our-snapshot create` — snapshot + `.metadata/NAME.json` + boot entry
-- [ ] 3.1.3 `our-snapshot delete` — subvolume + boot entry + JSON
-- [ ] 3.1.4 `our-snapshot prune --keep N` — purga más viejos, nunca `install`
-- [ ] 3.1.5 `our-snapshot boot-entries sync`
-- [ ] 3.1.6 `our-snapshot info`
-- [ ] 3.1.7 `our-snapshot-prune.{service,timer}` — poda semanal
-- [ ] 3.1.8 shellcheck 0 warnings
+- [x] 3.1.1 `our-snapshot list`
+- [x] 3.1.2 `our-snapshot create` — snapshot + `.metadata/NAME.json` + boot entry
+- [x] 3.1.3 `our-snapshot delete` — subvolume + boot entry + JSON
+- [x] 3.1.4 `our-snapshot prune --keep N` — purga más viejos, nunca `install`
+- [x] 3.1.5 `our-snapshot boot-entries sync`
+- [x] 3.1.6 `our-snapshot info`
+- [x] 3.1.7 `our-snapshot-prune.{service,timer}` — poda semanal
+- [x] 3.1.8 shellcheck 0 warnings
 
 **Archivos:**
 | Archivo | Tipo |
@@ -175,11 +175,11 @@ current=$(findmnt / -o OPTIONS -n | grep -oP 'subvol=\K[^,]+')
 ```
 
 **Milestones:**
-- [ ] 3.2.1 `our-rollback list`
-- [ ] 3.2.2 `our-rollback now`
-- [ ] 3.2.3 `our-rollback promote`
-- [ ] 3.2.4 `our-rollback status`
-- [ ] 3.2.5 shellcheck 0 warnings
+- [x] 3.2.1 `our-rollback list`
+- [x] 3.2.2 `our-rollback now`
+- [x] 3.2.3 `our-rollback promote`
+- [x] 3.2.4 `our-rollback status`
+- [x] 3.2.5 shellcheck 0 warnings
 
 **Archivos:**
 | Archivo | Tipo |
@@ -227,12 +227,12 @@ network:
 ```
 
 **Milestones:**
-- [ ] 3.4.1 `our-wifi` CLI completo
-- [ ] 3.4.2 `NetworkConfig.wifi_ssid` + `wifi_passphrase` en `config.py` (transient)
-- [ ] 3.4.3 `configure.sh` escribe PSK (chmod 600, dir 700) + limpia env
-- [ ] 3.4.4 Validación: si `wifi.ssid` → `wifi.passphrase` requerido
+- [x] 3.4.1 `our-wifi` CLI completo
+- [x] 3.4.2 `NetworkConfig.wifi_ssid` + `wifi_passphrase` en `config.py` (transient)
+- [x] 3.4.3 `configure.sh` escribe PSK (chmod 600, dir 700) + limpia env
+- [x] 3.4.4 Validación: si `wifi.ssid` → `wifi.passphrase` requerido
 - [ ] 3.4.5 `show_wifi_setup()` en `tui.py`
-- [ ] 3.4.6 `templates/install-config.yaml` — sección `network.wifi:`
+- [x] 3.4.6 `templates/install-config.yaml` — sección `network.wifi:`
 - [ ] 3.4.7 `docs/installer/configuration-format.md` — campos WiFi
 
 ### 3.4.2 `ouroboros-firstboot` — Servicio Oneshot
@@ -277,10 +277,10 @@ WantedBy=multi-user.target
 ```
 
 **Milestones:**
-- [ ] 3.4.8 `ouroboros-firstboot` script + `.service`
-- [ ] 3.4.9 `configure.sh` instala y habilita el servicio
-- [ ] 3.4.10 Copiar service a `@` (patrón `_write_systemd_enables_to_root`)
-- [ ] 3.4.11 shellcheck 0 warnings
+- [x] 3.4.8 `ouroboros-firstboot` script + `.service`
+- [x] 3.4.9 `configure.sh` instala y habilita el servicio
+- [x] 3.4.10 Copiar service a `@` (patrón `_write_systemd_enables_to_root`)
+- [x] 3.4.11 shellcheck 0 warnings
 
 **Archivos:**
 | Archivo | Tipo |
@@ -331,14 +331,14 @@ security:
 ```
 
 **Milestones:**
-- [ ] 3.5.1 Agregar `sbctl` a `packages.x86_64`
-- [ ] 3.5.2 `ouroboros-secureboot` CLI completo
-- [ ] 3.5.3 `SecurityConfig` en `config.py` + validación
-- [ ] 3.5.4 `sbctl sign-all` en `our-pacman` post-update
+- [x] 3.5.1 Agregar `sbctl` a `packages.x86_64`
+- [x] 3.5.2 `ouroboros-secureboot` CLI completo
+- [x] 3.5.3 `SecurityConfig` en `config.py` + validación
+- [x] 3.5.4 `sbctl sign-all` en `our-pacman` post-update
 - [ ] 3.5.5 State `SECURE_BOOT` opcional en FSM
 - [ ] 3.5.6 `show_secure_boot_prompt()` en `tui.py`
-- [ ] 3.5.7 `docs/architecture/secure-boot.md`
-- [ ] 3.5.8 shellcheck 0 warnings
+- [x] 3.5.7 `docs/architecture/secure-boot.md`
+- [x] 3.5.8 shellcheck 0 warnings
 
 **Archivos:**
 | Archivo | Tipo |
@@ -371,12 +371,12 @@ our-pacman -Syu
 ```
 
 **Milestones:**
-- [ ] 3.6.1 Verificación espacio pre-update
-- [ ] 3.6.2 Metadata JSON por snapshot
-- [ ] 3.6.3 Integración sbctl sign-all
-- [ ] 3.6.4 our-snapshot boot-entries sync automático
-- [ ] 3.6.5 Logging JSON en `/var/log/our-pacman/`
-- [ ] 3.6.6 Auto-prune si snapshots > 10
+- [x] 3.6.1 Verificación espacio pre-update
+- [x] 3.6.2 Metadata JSON por snapshot
+- [x] 3.6.3 Integración sbctl sign-all
+- [x] 3.6.4 our-snapshot boot-entries sync automático
+- [x] 3.6.5 Logging JSON en `/var/log/our-pacman/`
+- [x] 3.6.6 Auto-prune si snapshots > 10
 
 ---
 
@@ -408,10 +408,10 @@ our-container enter <name> --gui       # = --wayland + --gpu + --audio
 ```
 
 **Milestones:**
-- [ ] 3.7.1 `--isolated` en enter y create
-- [ ] 3.7.2 `--wayland`, `--gpu`, `--audio`, `--gui` en enter
-- [ ] 3.7.3 Docs: "Network Isolation" y "GUI containers"
-- [ ] 3.7.4 shellcheck 0 warnings
+- [x] 3.7.1 `--isolated` en enter y create
+- [x] 3.7.2 `--wayland`, `--gpu`, `--audio`, `--gui` en enter
+- [x] 3.7.3 Docs: "Network Isolation" y "GUI containers"
+- [x] 3.7.4 shellcheck 0 warnings
 
 ---
 
@@ -425,10 +425,10 @@ our-container enter <name> --gui       # = --wayland + --gpu + --audio
 **Decisión:** Documentar como limitación conocida. Fallback automático a classic useradd.
 
 **Milestones:**
-- [ ] 3.8.1 Capturar `journalctl -u systemd-homed` en E2E install log
-- [ ] 3.8.2 Fallback automático a classic useradd si homectl falla
-- [ ] 3.8.3 E2E test: verificar fallback
-- [ ] 3.8.4 `docs/architecture/systemd-homed.md` — decisión + razonamiento
+- [x] 3.8.1 Capturar `journalctl -u systemd-homed` en E2E install log
+- [x] 3.8.2 Fallback automático a classic useradd si homectl falla
+- [x] 3.8.3 E2E test: verificar fallback
+- [x] 3.8.4 `docs/architecture/systemd-homed.md` — decisión + razonamiento
 
 ---
 
@@ -437,11 +437,11 @@ our-container enter <name> --gui       # = --wayland + --gpu + --audio
 Brecha actual: 82 tests cubro infraestructura. Cero tests para handlers individuales.
 
 **Milestones:**
-- [ ] 3.9.1 Tests `_handle_user()` y `_handle_desktop()`
-- [ ] 3.9.2 Tests env vars pasadas a configure.sh
-- [ ] 3.9.3 Tests validación WiFi (con y sin passphrase)
-- [ ] 3.9.4 Tests `SecurityConfig` en `validate_config()`
-- [ ] 3.9.5 Coverage ≥ 93%
+- [x] 3.9.1 Tests `_handle_user()` y `_handle_desktop()`
+- [x] 3.9.2 Tests env vars pasadas a configure.sh
+- [x] 3.9.3 Tests validación WiFi (con y sin passphrase)
+- [x] 3.9.4 Tests `SecurityConfig` en `validate_config()`
+- [x] 3.9.5 Coverage ≥ 93%
 
 ---
 
@@ -466,10 +466,10 @@ network:
 ```
 
 **Milestones:**
-- [ ] 3.10.1 `our-bluetooth` CLI completo
-- [ ] 3.10.2 `NetworkConfig.bluetooth_enable` en `config.py`
-- [ ] 3.10.3 `configure.sh` habilita `bluetooth.service` si `BLUETOOTH_ENABLE=1`
-- [ ] 3.10.4 shellcheck 0 warnings
+- [x] 3.10.1 `our-bluetooth` CLI completo
+- [x] 3.10.2 `NetworkConfig.bluetooth_enable` en `config.py`
+- [x] 3.10.3 `configure.sh` habilita `bluetooth.service` si `BLUETOOTH_ENABLE=1`
+- [x] 3.10.4 shellcheck 0 warnings
 
 **Archivos:**
 | Archivo | Tipo |
@@ -560,21 +560,21 @@ post_install_action: reboot
 
 ## Criterios de Aceptación Phase 3
 
-- [ ] Symlink `ouroboros-upgrade` eliminado del ISO
-- [ ] `our-snapshot list` muestra snapshots incluyendo `install`
-- [ ] `our-snapshot create` → snapshot + boot entry (sin `/` en subvol) + JSON
-- [ ] `our-snapshot prune --keep 3` — nunca toca `install`
-- [ ] `our-rollback promote <snap>` — sistema bootea desde nuevo root
-- [ ] `our-wifi connect <SSID>` conecta exitosamente
-- [ ] YAML con `network.wifi.ssid` → PSK en `/var/lib/iwd/` post-install
-- [ ] `ouroboros-firstboot` corre una sola vez — mirrors + timers activados
-- [ ] `ouroboros-secureboot setup` firma kernel + bootloader en Setup Mode
-- [ ] `our-pacman -Syu` llama sbctl sign-all si Secure Boot activo
-- [ ] `our-container enter <name> --isolated` usa `--network-veth`
-- [ ] `our-container enter <name> --gui` bind-mount wayland + DRI
-- [ ] homectl falla → fallback a classic useradd sin crash
+- [x] Symlink `ouroboros-upgrade` eliminado del ISO
+- [x] `our-snapshot list` muestra snapshots incluyendo `install`
+- [x] `our-snapshot create` → snapshot + boot entry (sin `/` en subvol) + JSON
+- [x] `our-snapshot prune --keep 3` — nunca toca `install`
+- [x] `our-rollback promote <snap>` — sistema bootea desde nuevo root
+- [x] `our-wifi connect <SSID>` conecta exitosamente
+- [x] YAML con `network.wifi.ssid` → PSK en `/var/lib/iwd/` post-install
+- [x] `ouroboros-firstboot` corre una sola vez — mirrors + timers activados
+- [x] `ouroboros-secureboot setup` firma kernel + bootloader en Setup Mode
+- [x] `our-pacman -Syu` llama sbctl sign-all si Secure Boot activo
+- [x] `our-container enter <name> --isolated` usa `--network-veth`
+- [x] `our-container enter <name> --gui` bind-mount wayland + DRI
+- [x] homectl falla → fallback a classic useradd sin crash
 - [ ] Todos los scripts: shellcheck 0 warnings
-- [ ] pytest coverage ≥ 93%
+- [x] pytest coverage ≥ 93%
 
 ---
 
