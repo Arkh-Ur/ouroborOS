@@ -400,18 +400,18 @@ class TestValidateConfigBranches:
 
     def test_invalid_shell_raises(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
-        data["user"]["shell"] = "/bin/tcsh"
+        data["shell"] = "tcsh"
         with pytest.raises(ConfigValidationError, match="shell"):
             validate_config(data)
 
     def test_valid_shell_zsh(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
-        data["user"]["shell"] = "/bin/zsh"
+        data["shell"] = "zsh"
         validate_config(data)
 
     def test_valid_shell_fish(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
-        data["user"]["shell"] = "/usr/bin/fish"
+        data["shell"] = "fish"
         validate_config(data)
 
     def test_invalid_desktop_profile_raises(self) -> None:

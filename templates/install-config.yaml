@@ -33,11 +33,13 @@ user:
     - audio
     - video
     - input
-  # Login shell. Options: /bin/bash (default) | /bin/zsh | /usr/bin/fish
-  shell: /bin/bash
   # systemd-homed storage backend for the home directory.
   # Options: subvolume (default, Btrfs) | luks | directory | classic
   homed_storage: subvolume
+
+# Login shell. Options: bash (default) | zsh | fish
+# zsh and fish are installed automatically if selected.
+shell: bash
 
 # Desktop profile — a starting-point package set. Optional; defaults to
 # "minimal" (no extra packages, TTY-only base) if omitted.

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from installer.desktop_profiles import VALID_DMS, VALID_PROFILES
+from installer.desktop_profiles import VALID_DMS, VALID_PROFILES, VALID_SHELLS, shell_path
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -224,12 +224,11 @@ def validate_config(data: dict) -> None:
             f"user.homed_storage must be one of "
             f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
         )
-    _VALID_SHELLS = {"/bin/bash", "/bin/zsh", "/usr/bin/fish"}
-    shell = user.get("shell", "/bin/bash")
-    if shell not in _VALID_SHELLS:
+    # shell (top-level, optional — defaults to "bash")
+    shell = data.get("shell", "bash")
+    if shell not in VALID_SHELLS:
         raise ConfigValidationError(
-            f"user.shell must be one of "
-            f"'/bin/bash'|'/bin/zsh'|'/usr/bin/fish', got: {shell!r}"
+            f"shell must be one of {sorted(VALID_SHELLS)}, got: {shell!r}"
         )
 
     # security section (optional — defaults to secure_boot: false)
@@ -340,7 +339,7 @@ def load_config(path: Path) -> InstallerConfig:
         cfg.user.password_hash = result.stdout.strip()
         cfg.user.password_plaintext = plaintext
     cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
-    cfg.user.shell = str(usr.get("shell", "/bin/bash"))
+    cfg.user.shell = shell_path(str(data.get("shell", "bash")))
     cfg.user.homed_storage = str(usr.get("homed_storage", "subvolume"))
 
     # Desktop profile (optional)
