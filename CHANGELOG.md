@@ -22,7 +22,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **`our-container --isolated`** — `--network-veth` flag for private container networking with NAT toward the host.
 - **`our-container --gui`** — Wayland socket, DRI (GPU), and PipeWire passthrough for graphical containers (`--wayland`, `--gpu`, `--audio`, `--gui`).
 - **`our-bluetooth`** — Bluetooth manager wrapping `bluetoothctl`: `list`, `pair`, `connect`, `disconnect`, `forget`, `status`, `on`, `off`. New `le` subcommand: `le status`, `le experimental on/off`, `le advmon`.
-- **`our-fido2`** — FIDO2/WebAuthn/Passkey CLI for USB, BLE, and Hybrid QR transport: `list`, `info`, `pin set/verify/info`, `cred list/delete`, `ble scan/pair/list`, `qr-ready`, `reset`.
+- **`our-fido2`** — FIDO2/WebAuthn/Passkey CLI covering all OS integration points:
+  - Token management: `list`, `info`, `pin set/verify/info`, `cred list/delete`, `reset`
+  - BLE: `ble scan/pair/list`, `qr-ready` (CTAP2 hybrid transport readiness check)
+  - PAM: `pam register [--system]`, `pam enable/disable <sudo|login|ssh|all>`, `pam status` — integrates FIDO2 into sudo, TTY login, and SSH via `pam_u2f`
+  - SSH: `ssh generate [--resident]`, `ssh list`, `ssh load-resident` — ed25519-sk keys; private key material stays on hardware token
+  - LUKS2: `luks enroll/list/unenroll <device>` — disk unlock via `systemd-cryptenroll --fido2-device=auto`
+- **`security.fido2_pam`** YAML field — when `true`, installs `pam-u2f` and creates `/etc/u2f_mappings` during install. User registers token post-install with `our-fido2 pam register --system`.
 - **BlueZ experimental mode** — `bluetooth.service.d/experimental.conf` drop-in enables `bluetoothd --experimental`. Required for Chrome/Firefox CTAP2 hybrid QR passkey flow (AdvertisingMonitor D-Bus API).
 - **BLE LE tuning** — `/etc/bluetooth/main.conf` with `AdvMonAllowlistScanDuration=300`, `ExchangeMTU=517` (BLE 5.0 LE Data Length Extension for full FIDO2 response in one packet).
 - **FIDO2 BLE udev rules** — `71-fido2-ble.rules`: HID-over-GATT (HOGP) access for BLE FIDO2 tokens + generic HID fallback for tokens not in libfido2 vendor list.
