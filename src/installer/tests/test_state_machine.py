@@ -72,6 +72,7 @@ class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
             "INIT", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "SECURE_BOOT",
             "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
         }

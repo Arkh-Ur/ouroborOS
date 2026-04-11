@@ -758,6 +758,65 @@ class TUI:
         raise TUIError("Password entry failed after 3 attempts.")
 
     # ------------------------------------------------------------------
+    # Secure Boot
+    # ------------------------------------------------------------------
+
+    def show_secure_boot_prompt(self) -> None:
+        """Show Secure Boot setup instructions and wait for user acknowledgement."""
+        if self._backend == "rich":
+            self._rich_secure_boot_prompt()
+        else:
+            self._whiptail_secure_boot_prompt()
+
+    def _rich_secure_boot_prompt(self) -> None:
+        assert self._console is not None
+        self._stop_progress()
+        self._console.print(
+            Panel(
+                Text.from_markup(
+                    "[bold yellow]Secure Boot requires your UEFI firmware to be in Setup Mode.[/]\n\n"
+                    "Before the installer continues, please:\n\n"
+                    "  1. [bold]Reboot[/] into your UEFI firmware settings\n"
+                    "     (usually [bold]Del[/], [bold]F2[/], or [bold]F12[/] during POST)\n\n"
+                    "  2. Navigate to [bold]Secure Boot[/] settings\n\n"
+                    "  3. Select [bold]\"Clear Secure Boot Keys\"[/] or\n"
+                    "     [bold]\"Delete All Secure Boot Variables\"[/]\n\n"
+                    "  4. The firmware should now show [bold green]Setup Mode[/]\n\n"
+                    "  5. Save and exit the firmware, then [bold]boot back into the installer[/]\n\n"
+                    "[dim]sbctl will create and enroll your custom keys automatically.\n"
+                    "Use[/] [bold]ouroboros-secureboot setup[/] [dim]after install to re-run if needed.[/]"
+                ),
+                title="[bold red]Secure Boot — Setup Mode Required[/]",
+                border_style="red",
+            )
+        )
+        Confirm.ask(
+            "  I have put my firmware in Setup Mode and am ready to continue",
+            default=True,
+            console=self._console,
+        )
+
+    def _whiptail_secure_boot_prompt(self) -> None:
+        msg = (
+            "SECURE BOOT — Setup Mode Required\n\n"
+            "Before continuing, put your UEFI firmware in Setup Mode:\n\n"
+            "1. Reboot into UEFI firmware settings (Del/F2/F12 during POST)\n"
+            "2. Navigate to Secure Boot settings\n"
+            "3. Select 'Clear Secure Boot Keys' or 'Delete All Secure Boot Variables'\n"
+            "4. Firmware should now show 'Setup Mode'\n"
+            "5. Save and exit, then boot back into the installer\n\n"
+            "sbctl will create and enroll your keys automatically."
+        )
+        _whiptail(
+            *self._args(
+                "--msgbox",
+                msg,
+                str(self._HEIGHT),
+                str(self._WIDTH),
+            )
+        )
+
+    # ------------------------------------------------------------------
     # WiFi connection
     # ------------------------------------------------------------------
 

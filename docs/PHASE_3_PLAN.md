@@ -231,9 +231,9 @@ network:
 - [x] 3.4.2 `NetworkConfig.wifi_ssid` + `wifi_passphrase` en `config.py` (transient)
 - [x] 3.4.3 `configure.sh` escribe PSK (chmod 600, dir 700) + limpia env
 - [x] 3.4.4 Validación: si `wifi.ssid` → `wifi.passphrase` requerido
-- [ ] 3.4.5 `show_wifi_setup()` en `tui.py`
+- [x] 3.4.5 `show_wifi_connect()` en `tui.py` (implementado como `show_wifi_connect`)
 - [x] 3.4.6 `templates/install-config.yaml` — sección `network.wifi:`
-- [ ] 3.4.7 `docs/installer/configuration-format.md` — campos WiFi
+- [x] 3.4.7 `docs/installer/configuration-format.md` — campos WiFi
 
 ### 3.4.2 `ouroboros-firstboot` — Servicio Oneshot
 
@@ -335,9 +335,9 @@ security:
 - [x] 3.5.2 `ouroboros-secureboot` CLI completo
 - [x] 3.5.3 `SecurityConfig` en `config.py` + validación
 - [x] 3.5.4 `sbctl sign-all` en `our-pacman` post-update
-- [ ] 3.5.5 State `SECURE_BOOT` opcional en FSM
-- [ ] 3.5.6 `show_secure_boot_prompt()` en `tui.py`
-- [x] 3.5.7 `docs/architecture/secure-boot.md`
+- [x] 3.5.5 State `SECURE_BOOT` en FSM (entre DESKTOP y PARTITION)
+- [x] 3.5.6 `show_secure_boot_prompt()` en `tui.py` (Rich + whiptail)
+- [x] 3.5.7 `docs/architecture/secure-boot.md` — creado
 - [x] 3.5.8 shellcheck 0 warnings
 
 **Archivos:**

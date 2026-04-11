@@ -7,6 +7,53 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.3.0] — 2026-04-11
+
+### Added
+
+- **`our-snapshot`** — CLI for Btrfs snapshot management: `list`, `create`, `delete`, `prune`, `info`, `boot-entries sync`, `scrub`. Exposes the internal snapshot engine from `our-pacman` to users.
+- **`our-rollback`** — One-command rollback: `now` (next-boot only via `bootctl set-oneshot`), `promote` (permanent atomic `@` swap), `status`, `undo`. Allows reverting a bad update without knowing Btrfs internals.
+- **Shell selector** — `bash`, `zsh`, and `fish` selectable at install time via TUI and YAML (`user.shell`). Fish and zsh are installed on-demand.
+- **`our-wifi`** — Interactive WiFi manager wrapping `iwctl`: `list`, `connect`, `status`, `forget`, `show-password`. WiFi pre-configuration from YAML (`network.wifi.ssid` + `network.wifi.passphrase`) writes an iwd PSK file and clears the passphrase from memory immediately.
+- **`ouroboros-firstboot`** — Oneshot systemd service that runs once after install: updates mirrors with reflector, ensures a unique `machine-id`, enables the snapshot prune timer and Btrfs scrub timer.
+- **`our-snapshot-prune.timer`** — Weekly automatic snapshot prune (keeps last 5, never removes the `install` baseline).
+- **`ouroboros-secureboot`** — Secure Boot management via `sbctl` without shims or MOK: `setup`, `status`, `sign-all`, `verify`, `rotate-keys`. Enrolls custom PK/KEK/db into UEFI firmware.
+- **`SECURE_BOOT` FSM state** — New installer state between `DESKTOP` and `PARTITION`. Shows instructions for putting the firmware in Setup Mode when `security.secure_boot: true`.
+- **`our-container --isolated`** — `--network-veth` flag for private container networking with NAT toward the host.
+- **`our-container --gui`** — Wayland socket, DRI (GPU), and PipeWire passthrough for graphical containers (`--wayland`, `--gpu`, `--audio`, `--gui`).
+- **`our-bluetooth`** — Bluetooth manager wrapping `bluetoothctl`: `list`, `pair`, `connect`, `disconnect`, `forget`, `status`, `on`, `off`. New `le` subcommand: `le status`, `le experimental on/off`, `le advmon`.
+- **`our-fido2`** — FIDO2/WebAuthn/Passkey CLI for USB, BLE, and Hybrid QR transport: `list`, `info`, `pin set/verify/info`, `cred list/delete`, `ble scan/pair/list`, `qr-ready`, `reset`.
+- **BlueZ experimental mode** — `bluetooth.service.d/experimental.conf` drop-in enables `bluetoothd --experimental`. Required for Chrome/Firefox CTAP2 hybrid QR passkey flow (AdvertisingMonitor D-Bus API).
+- **BLE LE tuning** — `/etc/bluetooth/main.conf` with `AdvMonAllowlistScanDuration=300`, `ExchangeMTU=517` (BLE 5.0 LE Data Length Extension for full FIDO2 response in one packet).
+- **FIDO2 BLE udev rules** — `71-fido2-ble.rules`: HID-over-GATT (HOGP) access for BLE FIDO2 tokens + generic HID fallback for tokens not in libfido2 vendor list.
+- **`our-pacman` hardening** — Pre-update free space check (≥2GB), structured JSON logging to `/var/log/our-pacman/`, `sbctl sign-all` post-update when Secure Boot is active, auto-prune if snapshots exceed 10.
+- **systemd-homed fallback** — Automatic fallback to classic `useradd` when `homectl create` fails (QEMU Btrfs subvolume conflict). Installer no longer crashes; a warning is logged.
+- **Test coverage ≥93%** — New test files for `config.py` branches (`TestValidateConfigBranches`, `TestLoadConfigBranches`, `TestFindUnattendedConfig`, `TestLoadConfigFromUrl`), `desktop_profiles.py` (100% coverage), `state_machine._handle_install` (direct handler tests), and TUI desktop/shell/progress/wifi methods.
+- **`docs/architecture/secure-boot.md`** — Architecture document for Secure Boot: sbctl flow, YAML config, our-pacman integration, known limitations (QEMU, Microsoft key inclusion).
+- **`docs/architecture/systemd-homed.md`** — Architecture document for systemd-homed: known QEMU Btrfs conflict, fallback strategy, community context.
+
+### Changed
+
+- **`ouroboros-upgrade` removed** — Compatibility symlink from Phase 2 deleted. Use `our-pacman` directly.
+- **`our-container` renamed** — Internal "our-box" references cleaned up (102 occurrences). External interface unchanged.
+- **Snapshot metadata JSON** — Each snapshot now writes a `.metadata/NAME.json` with `timestamp`, `type`, `description`, and `packages_count`.
+- **Boot entries** — `our-snapshot boot-entries sync` regenerates systemd-boot entries for all existing snapshots. `rootflags=subvol=@snapshots/...` (no leading `/` — kernel requirement).
+
+### Fixed
+
+- `homectl create` crash in QEMU — installer now catches the error and falls back to classic user creation.
+- `our-container` help text still referencing `our-box` (102 occurrences) — renamed to `our-container` throughout.
+- `rootflags` in boot entries incorrectly prefixed with `/` — kernel silently ignores the subvolume, causing boot from `@` instead of snapshot.
+- WiFi PSK files not written with correct permissions (`chmod 600` file, `chmod 700` directory).
+
+### Known Issues
+
+- `homectl create` fails in QEMU (see Phase 2 Known Issues). Fallback to classic `useradd` is now automatic.
+- `bootctl set-oneshot` requires writable EFI variables. Fails in QEMU. Use `our-rollback promote` for VM rollback testing.
+- `ouroboros-secureboot setup` cannot run in QEMU (OVMF does not expose a real Secure Boot database). Test on real hardware only.
+
+---
+
 ## [0.2.0] — 2026-04-10
 
 ### Added

@@ -65,6 +65,7 @@ class State(Enum):
     LOCALE = auto()
     USER = auto()
     DESKTOP = auto()
+    SECURE_BOOT = auto()
     PARTITION = auto()
     FORMAT = auto()
     INSTALL = auto()
@@ -86,6 +87,7 @@ _STATE_ORDER: list[State] = [
     State.LOCALE,
     State.USER,
     State.DESKTOP,
+    State.SECURE_BOOT,
     State.PARTITION,
     State.FORMAT,
     State.INSTALL,
@@ -100,7 +102,8 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
     State.LOCALE: (8, 13),
     State.USER: (13, 16),
     State.DESKTOP: (16, 20),
-    State.PARTITION: (20, 30),
+    State.SECURE_BOOT: (20, 22),
+    State.PARTITION: (22, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
     State.CONFIGURE: (70, 90),
@@ -114,6 +117,7 @@ _STEP_LABELS: dict[State, str] = {
     State.LOCALE: "Configurando idioma",
     State.USER: "Creando usuario",
     State.DESKTOP: "Seleccionando escritorio",
+    State.SECURE_BOOT: "Configurando Secure Boot",
     State.PARTITION: "Seleccionando disco",
     State.FORMAT: "Preparando disco",
     State.INSTALL: "Instalando paquetes",
@@ -207,6 +211,7 @@ class Installer:
             State.LOCALE: self._handle_locale,
             State.USER: self._handle_user,
             State.DESKTOP: self._handle_desktop,
+            State.SECURE_BOOT: self._handle_secure_boot,
             State.PARTITION: self._handle_partition,
             State.FORMAT: self._handle_format,
             State.INSTALL: self._handle_install,
@@ -420,6 +425,18 @@ class Installer:
             resolve_dm(self.config.desktop.profile, self.config.desktop.dm),
         )
         self._update_progress(State.DESKTOP, 100)
+
+    def _handle_secure_boot(self) -> None:
+        """SECURE_BOOT — show Secure Boot setup instructions if enabled in config."""
+        self._update_progress(State.SECURE_BOOT, 0)
+        if not self.config.security.secure_boot:
+            log.info("Secure Boot disabled in config — skipping state.")
+            self._update_progress(State.SECURE_BOOT, 100)
+            return
+        if self.tui:
+            self.tui.show_secure_boot_prompt()
+        log.info("Secure Boot: sbctl setup will run during CONFIGURE (sbctl create-keys + enroll-keys + sign-all).")
+        self._update_progress(State.SECURE_BOOT, 100)
 
     def _handle_partition(self) -> None:
         """PARTITION — disk selection, layout preview, confirmation."""
