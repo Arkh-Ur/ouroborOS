@@ -598,8 +598,8 @@ assert_contains "our-fido2 pam status: runs without crash" \
 # =============================================================================
 log_section "Phase 5g: our-bluetooth"
 
-bt_help=$(ssh_out "our-bluetooth --help 2>&1 || our-bluetooth help 2>&1 || true")
-assert_contains "our-bluetooth: le subcommand documented" "$bt_help" "le|LE|bluetooth"
+bt_help=$(ssh_out "our-bluetooth --help 2>&1 || true")
+assert_contains "our-bluetooth: le subcommand documented" "$bt_help" "Low Energy\|le experimental\|cmd_le"
 
 # bluetooth service enabled (because bluetooth.enable: true in config)
 assert_unit_enabled "bluetooth.service enabled (config: network.bluetooth.enable)" "bluetooth.service"

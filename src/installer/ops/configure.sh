@@ -780,6 +780,52 @@ STUB
         chmod 0755 "${TARGET}/usr/local/bin/our-container"
     fi
 
+    # Phase 3 user-facing tools — copy from live ISO to installed system.
+    # These tools live in airootfs/usr/local/bin/ on the ISO and must be
+    # explicitly copied; pacstrap does not pick them up from the live environment.
+    local _p3_tools=(
+        our-snapshot
+        our-rollback
+        our-wifi
+        our-bluetooth
+        our-fido2
+        ouroboros-secureboot
+    )
+    for _tool in "${_p3_tools[@]}"; do
+        local _src="/usr/local/bin/${_tool}"
+        if [[ -f "${_src}" && -r "${_src}" ]]; then
+            cp "${_src}" "${TARGET}/usr/local/bin/${_tool}"
+            chmod 0755 "${TARGET}/usr/local/bin/${_tool}"
+            log_ok "${_tool} installed."
+        else
+            log_warn "${_tool} not found on live ISO at ${_src} — skipping."
+        fi
+    done
+    unset _p3_tools _tool _src
+
+    # Phase 3 Bluetooth/FIDO2 config files — copy from live ISO.
+    # /etc/bluetooth/main.conf: BLE LE tuning (MTU, AdvMon scan duration).
+    # experimental.conf drop-in: enables bluetoothd --experimental (CTAP2 hybrid QR).
+    # 71-fido2-ble.rules: udev rules for HID-over-GATT BLE FIDO2 tokens.
+    local _bt_main_src="/etc/bluetooth/main.conf"
+    if [[ -f "${_bt_main_src}" ]]; then
+        mkdir -p "${TARGET}/etc/bluetooth"
+        cp "${_bt_main_src}" "${TARGET}/etc/bluetooth/main.conf"
+        log_ok "Bluetooth main.conf installed (BLE LE tuning)."
+    fi
+    local _bt_exp_src="/etc/systemd/system/bluetooth.service.d/experimental.conf"
+    if [[ -f "${_bt_exp_src}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system/bluetooth.service.d"
+        cp "${_bt_exp_src}" "${TARGET}/etc/systemd/system/bluetooth.service.d/experimental.conf"
+        log_ok "BlueZ experimental mode drop-in installed."
+    fi
+    local _fido2_udev_src="/etc/udev/rules.d/71-fido2-ble.rules"
+    if [[ -f "${_fido2_udev_src}" ]]; then
+        mkdir -p "${TARGET}/etc/udev/rules.d"
+        cp "${_fido2_udev_src}" "${TARGET}/etc/udev/rules.d/71-fido2-ble.rules"
+        log_ok "FIDO2 BLE udev rules installed."
+    fi
+
     # our-container-autostart — oneshot service that starts containers listed in
     # /etc/our-container/autostart.conf at boot.  The wrapper script reads the conf
     # and calls `our-container start <name>` for each entry.
