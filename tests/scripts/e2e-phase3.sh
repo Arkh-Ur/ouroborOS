@@ -14,8 +14,8 @@ set -euo pipefail
 #
 # QEMU setup:
 #   GPU:     -vga virtio  (virtio-gpu, best QEMU virtual GPU)
-#   VNC:     -vnc :5      — connect with: vncviewer localhost:5905
-#   SSH:     localhost:2225 → guest:22
+#   VNC:     -vnc :1      — connect with: vncviewer localhost:5901
+#   SSH:     localhost:2222 → guest:22
 #   Display: -display none (headless, VNC for debug access)
 #
 # Prerequisites:
@@ -26,8 +26,8 @@ set -euo pipefail
 #   P3_ISO_PATH        — use existing ISO instead of building (skips Phase 1)
 #   P3_TEST_USER       — SSH username (default: admin)
 #   P3_TEST_PASSWORD   — SSH password (default: changeme)
-#   P3_TEST_SSH_PORT   — SSH port (default: 2225)
-#   P3_VNC_DISPLAY     — VNC display number (default: 5, → port 5905)
+#   P3_TEST_SSH_PORT   — SSH port (default: 2222)
+#   P3_VNC_DISPLAY     — VNC display number (default: 1, → port 5901)
 #   P3_DISK_SIZE       — QEMU disk size (default: 20G)
 #   P3_QEMU_MEMORY     — RAM in MB (default: 3072)
 #   P3_BUILD_WORKDIR   — ISO build workdir (default: /home/p3-build)
@@ -64,8 +64,8 @@ log_die()     { echo -e "${RED}FATAL: $*${RESET}" >&2; exit 2; }
 # ── Configuration ─────────────────────────────────────────────────────────────
 P3_TEST_USER="${P3_TEST_USER:-admin}"
 P3_TEST_PASSWORD="${P3_TEST_PASSWORD:-changeme}"
-P3_TEST_SSH_PORT="${P3_TEST_SSH_PORT:-2225}"
-P3_VNC_DISPLAY="${P3_VNC_DISPLAY:-5}"
+P3_TEST_SSH_PORT="${P3_TEST_SSH_PORT:-2222}"
+P3_VNC_DISPLAY="${P3_VNC_DISPLAY:-1}"
 P3_DISK_SIZE="${P3_DISK_SIZE:-20G}"
 P3_QEMU_MEMORY="${P3_QEMU_MEMORY:-3072}"
 P3_BUILD_WORKDIR="${P3_BUILD_WORKDIR:-/home/p3-build}"
