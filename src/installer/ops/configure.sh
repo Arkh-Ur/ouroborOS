@@ -771,6 +771,21 @@ main() {
         log_info "our-container-autostart.service not enabled (no containers in autostart.conf)."
     fi
 
+    # our-snapshot-prune.timer — daily automatic snapshot rotation.
+    # Keeps at most 5 snapshots, removes snapshots older than 30 days.
+    # The timer is installed from the ISO; enable it unconditionally.
+    local PRUNE_UNIT_SRC="/etc/systemd/system/our-snapshot-prune.service"
+    local PRUNE_TIMER_SRC="/etc/systemd/system/our-snapshot-prune.timer"
+    if [[ -f "${PRUNE_UNIT_SRC}" && -f "${PRUNE_TIMER_SRC}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${PRUNE_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-snapshot-prune.service"
+        cp "${PRUNE_TIMER_SRC}" "${TARGET}/etc/systemd/system/our-snapshot-prune.timer"
+        in_chroot systemctl enable our-snapshot-prune.timer
+        log_ok "our-snapshot-prune.timer enabled (daily snapshot rotation)."
+    else
+        log_warn "our-snapshot-prune units not found on live ISO — skipping."
+    fi
+
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
     # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.

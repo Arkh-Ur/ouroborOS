@@ -1,0 +1,15 @@
+# our-snapshot-prune.service — automatic snapshot pruning for ouroborOS
+#
+# Runs `our-snapshot prune` to remove snapshots that exceed the retention
+# policy (default: keep last 5, max 30 days).
+#
+# Activated by our-snapshot-prune.timer daily.
+
+[Unit]
+Description=ouroborOS automatic snapshot pruning
+After=local-fs.target
+ConditionPathIsMountPoint=/.snapshots
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/our-snapshot prune
