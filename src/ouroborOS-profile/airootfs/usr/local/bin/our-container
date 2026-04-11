@@ -101,7 +101,18 @@ _nspawn_file() {
 cmd_create() {
     local name="${1:-}"
     local distro="${2:-arch}"
-    [[ -n "$name" ]] || die "usage: our-box create <name> [distro]"
+    local opt_isolated=false
+
+    # Parse optional flags after name and distro
+    shift 2 2>/dev/null || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --isolated) opt_isolated=true; shift ;;
+            *) die "unknown option: $1 (valid: --isolated)" ;;
+        esac
+    done
+
+    [[ -n "$name" ]] || die "usage: our-container create <name> [distro] [--isolated]"
     [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "invalid container name '${name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
     require_root "create" "$name" "$distro"
 
@@ -144,19 +155,104 @@ cmd_create() {
         log_warn "Could not set root password -- set it manually via: our-box enter ${name}"
     }
 
-    log_info "Container '${name}' ready. Enter with: our-box enter ${name}"
+    # Write .nspawn override for isolated networking
+    if [[ "$opt_isolated" == true ]]; then
+        local nspawn_dir="/etc/systemd/nspawn"
+        mkdir -p "$nspawn_dir"
+        cat > "${nspawn_dir}/${name}.nspawn" << EOF
+[Network]
+VirtualEthernet=yes
+EOF
+        log_info "Network isolation configured: ${nspawn_dir}/${name}.nspawn"
+    fi
+
+    log_info "Container '${name}' ready. Enter with: our-container enter ${name}"
 }
 
 # --- Command: enter ---
 cmd_enter() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box enter <name>"
+    [[ -n "$name" ]] || die "usage: our-container enter <name> [--isolated] [--wayland] [--gpu] [--audio] [--gui]"
+    shift
+
+    # Parse optional flags
+    local opt_isolated=false opt_wayland=false opt_gpu=false opt_audio=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --isolated) opt_isolated=true; shift ;;
+            --wayland)  opt_wayland=true;  shift ;;
+            --gpu)      opt_gpu=true;      shift ;;
+            --audio)    opt_audio=true;    shift ;;
+            --gui)      opt_wayland=true; opt_gpu=true; opt_audio=true; shift ;;
+            *) die "unknown option: $1 (valid: --isolated --wayland --gpu --audio --gui)" ;;
+        esac
+    done
+
     require_root "enter" "$name"
     _require_container_exists "$name" "enter"
+
+    # Build extra systemd-nspawn arguments for the flags
+    local nspawn_extra=()
+
+    if [[ "$opt_isolated" == true ]]; then
+        # Private network via veth pair — container gets its own network namespace
+        nspawn_extra+=(--network-veth)
+        log_info "Network isolation: --network-veth (private veth pair)"
+    fi
+
+    if [[ "$opt_wayland" == true ]]; then
+        local uid
+        uid=$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo "0")
+        local wayland_sock="/run/user/${uid}/wayland-0"
+        if [[ -S "$wayland_sock" ]]; then
+            nspawn_extra+=(--bind-ro="${wayland_sock}")
+            nspawn_extra+=(--setenv=WAYLAND_DISPLAY=wayland-0)
+            nspawn_extra+=(--setenv=XDG_RUNTIME_DIR=/run/user/${uid})
+            log_info "Wayland passthrough: binding ${wayland_sock}"
+        else
+            log_warn "Wayland socket not found at ${wayland_sock} — --wayland ignored"
+        fi
+    fi
+
+    if [[ "$opt_gpu" == true ]]; then
+        if [[ -d /dev/dri ]]; then
+            nspawn_extra+=(--bind=/dev/dri)
+            nspawn_extra+=(--property=DeviceAllow=char-drm rw)
+            log_info "GPU passthrough: binding /dev/dri"
+        else
+            log_warn "/dev/dri not found — --gpu ignored"
+        fi
+    fi
+
+    if [[ "$opt_audio" == true ]]; then
+        local uid
+        uid=$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo "0")
+        local pw_sock="/run/user/${uid}/pipewire-0"
+        if [[ -S "$pw_sock" ]]; then
+            nspawn_extra+=(--bind-ro="${pw_sock}")
+            nspawn_extra+=(--setenv=PIPEWIRE_REMOTE="${pw_sock}")
+            log_info "Audio passthrough: binding PipeWire socket ${pw_sock}"
+        else
+            local pulse_sock="/run/user/${uid}/pulse/native"
+            if [[ -S "$pulse_sock" ]]; then
+                nspawn_extra+=(--bind-ro="${pulse_sock}")
+                nspawn_extra+=(--setenv=PULSE_SERVER="unix:${pulse_sock}")
+                log_info "Audio passthrough: binding PulseAudio socket (PipeWire not found)"
+            else
+                log_warn "No PipeWire or PulseAudio socket found — --audio ignored"
+            fi
+        fi
+    fi
 
     local state
     state="$(_container_state "$name")"
     log_info "Container '${name}' state: ${state}"
+
+    # If flags are set, always use systemd-nspawn directly (machinectl doesn't support them)
+    if [[ ${#nspawn_extra[@]} -gt 0 ]]; then
+        log_info "Using systemd-nspawn with flags: ${nspawn_extra[*]}"
+        exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" "${nspawn_extra[@]}"
+    fi
 
     if [[ "$state" != "unknown" ]]; then
         log_info "Entering container '${name}' via machinectl shell"
