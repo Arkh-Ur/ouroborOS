@@ -1,0 +1,684 @@
+#!/usr/bin/env bash
+# our-fido2 — FIDO2 / WebAuthn / Passkey management for ouroborOS
+#
+# Wraps libfido2 tools (fido2-token, fido2-cred, fido2-assert) and BlueZ
+# to manage FIDO2 authenticators over USB and Bluetooth LE.
+#
+# TRANSPORT SUPPORT
+#   USB HID    Physical security keys (YubiKey, SoloKey, Nitrokey, etc.)
+#              /dev/hidraw* — requires libfido2 + udev rules from libfido2 pkg
+#
+#   BLE GATT   Bluetooth LE FIDO2 tokens (YubiKey 5Ci, SoloKey BLE, etc.)
+#              Paired via bluetoothctl, appear as /dev/hidraw* via HOGP
+#
+#   Hybrid QR  CTAP2 hybrid transport — use your phone as a FIDO2 authenticator
+#              by scanning a QR code shown in Chrome/Firefox.
+#              Requires BlueZ experimental mode (AdvertisingMonitor API).
+#              The browser handles all QR/hybrid logic; this tool verifies
+#              the BLE stack is correctly configured to support it.
+#
+# USAGE
+#   our-fido2 list                      List all FIDO2 authenticators
+#   our-fido2 info  <device>            Show capabilities and metadata
+#   our-fido2 pin   set <device>        Set or change PIN
+#   our-fido2 pin   verify <device>     Verify PIN is accepted
+#   our-fido2 pin   info <device>       Show PIN retry counter
+#   our-fido2 cred  list <device>       List discoverable credentials (passkeys)
+#   our-fido2 cred  delete <device>     Delete a passkey from the authenticator
+#   our-fido2 ble   scan                Scan for BLE FIDO2 authenticators
+#   our-fido2 ble   pair <MAC>          Pair a BLE FIDO2 authenticator
+#   our-fido2 ble   list                List paired BLE FIDO2 authenticators
+#   our-fido2 qr-ready                  Check BLE stack readiness for QR/passkey
+#   our-fido2 reset <device>            Factory reset (DESTROYS ALL CREDENTIALS)
+#   our-fido2 help
+#
+# REQUIREMENTS
+#   libfido2       (fido2-token, fido2-cred, fido2-assert executables)
+#   bluez          (for BLE transport)
+#   bluez-utils    (bluetoothctl for BLE pairing)
+#   udev rules:    /etc/udev/rules.d/71-fido2-ble.rules  (BLE HID)
+#                  /usr/lib/udev/rules.d/70-u2f.rules    (USB, from libfido2)
+#   BlueZ experimental mode enabled for QR hybrid transport
+#     (/etc/systemd/system/bluetooth.service.d/experimental.conf)
+#
+# PASSKEY / DISCOVERABLE CREDENTIALS
+#   A "passkey" is a FIDO2 discoverable credential (resident key) stored on
+#   the authenticator. Unlike non-discoverable credentials, passkeys contain
+#   the user identity and allow passwordless login without a username prompt.
+#   The browser manages the WebAuthn ceremony; this tool only manages the
+#   credentials stored on the physical authenticator.
+#
+# QR CODE / HYBRID TRANSPORT
+#   The QR code flow (CTAP2 hybrid transport) works entirely in the browser:
+#   1. Browser shows QR code containing a BLE advertisement UUID + ephemeral key
+#   2. Phone camera scans the QR code
+#   3. Phone advertises the FIDO2 caBLE tunnel service over BLE
+#   4. Browser detects the advertisement via BlueZ AdvertisingMonitor API
+#   5. Authentication tunnels through an HTTPS relay (not device-to-device)
+#   BlueZ --experimental mode is required for the AdvertisingMonitor D-Bus API.
+
+set -euo pipefail
+
+readonly PROGRAM="our-fido2"
+readonly BLE_FIDO2_GATT_UUID="0000fffd-0000-1000-8000-00805f9b34fb"
+readonly BLE_FIDO2_GATT_SHORT="FFFD"
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+_bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
+_dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+
+# ── Prerequisite checks ───────────────────────────────────────────────────────
+
+_require_libfido2() {
+    command -v fido2-token &>/dev/null || \
+        _die "fido2-token not found. Install: sudo our-pacman -S libfido2"
+}
+
+_require_bluetoothctl() {
+    command -v bluetoothctl &>/dev/null || \
+        _die "bluetoothctl not found. Install: sudo our-pacman -S bluez-utils"
+}
+
+_require_bluetooth_service() {
+    systemctl is-active --quiet bluetooth.service 2>/dev/null || {
+        _warn "bluetooth.service is not running. Starting..."
+        systemctl start bluetooth.service || \
+            _die "Failed to start bluetooth.service. Is bluez installed?"
+    }
+}
+
+_validate_mac() {
+    local mac="$1"
+    [[ "$mac" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || \
+        _die "Invalid MAC address: '${mac}'. Expected format: AA:BB:CC:DD:EE:FF"
+}
+
+_validate_device() {
+    local dev="$1"
+    [[ "$dev" == /dev/hidraw* ]] || \
+        _die "Expected a /dev/hidraw* device, got: '${dev}'"
+    [[ -e "$dev" ]] || \
+        _die "Device not found: ${dev}. Is the authenticator plugged in or paired?"
+    [[ -r "$dev" && -w "$dev" ]] || \
+        _die "Cannot read/write ${dev}. Check udev rules: /etc/udev/rules.d/71-fido2-ble.rules"
+}
+
+# ── list ──────────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    _require_libfido2
+
+    _info "Enumerating FIDO2 authenticators..."
+
+    local devices
+    devices=$(fido2-token -L 2>/dev/null) || true
+
+    if [[ -z "$devices" ]]; then
+        _warn "No FIDO2 authenticators found."
+        echo ""
+        _dim "  USB:  check that the token is plugged in and udev rules are loaded"
+        _dim "        (sudo udevadm trigger --subsystem-match=hidraw)"
+        _dim "  BLE:  pair first with: ${PROGRAM} ble pair <MAC>"
+        _dim "        then connect the BLE token via bluetoothctl"
+        return 0
+    fi
+
+    echo ""
+    _bold "  FIDO2 / WebAuthn authenticators:"
+    echo "  ──────────────────────────────────────────"
+    while IFS= read -r line; do
+        local path proto
+        # fido2-token -L output: "/dev/hidraw0: vendor/product (name)"
+        path=$(echo "$line" | awk -F': ' '{print $1}')
+        proto=$(echo "$line" | awk -F': ' '{print $2}' | sed 's/^[[:space:]]*//')
+
+        # Try to get transport type from sysfs
+        local transport="USB"
+        local sysfs_path
+        sysfs_path=$(udevadm info --query=path --name="$path" 2>/dev/null || true)
+        if echo "$sysfs_path" | grep -qi "bluetooth\|hci\|hogp"; then
+            transport="BLE"
+        fi
+
+        printf '  \033[1m%-20s\033[0m  [%s]  %s\n' "$path" "$transport" "$proto"
+    done <<< "$devices"
+    echo ""
+    _dim "  Use '${PROGRAM} info <device>' for detailed capabilities."
+}
+
+# ── info ──────────────────────────────────────────────────────────────────────
+
+cmd_info() {
+    local device="${1:?Usage: ${PROGRAM} info <device>}"
+    _require_libfido2
+    _validate_device "$device"
+
+    _info "Authenticator info: ${device}"
+    echo ""
+
+    local info
+    info=$(fido2-token -I "$device" 2>&1) || {
+        _die "Could not read device info. Is the token plugged in?"
+    }
+
+    echo "$info" | while IFS= read -r line; do
+        echo "  $line"
+    done
+
+    echo ""
+
+    # Parse and highlight key capabilities
+    local aaguid proto pinretries creds
+    aaguid=$(echo "$info"  | grep -i "AAGUID"        | awk '{print $NF}' || true)
+    proto=$(echo "$info"   | grep -i "proto"          | awk '{print $NF}' || true)
+    pinretries=$(echo "$info" | grep -i "pin retries" | awk '{print $NF}' || true)
+    creds=$(echo "$info"   | grep -i "resident cred"  | awk '{print $NF}' || true)
+
+    echo "  ── Summary ──────────────────────────────"
+    [[ -n "$aaguid"    ]] && printf '  AAGUID:            %s\n' "$aaguid"
+    [[ -n "$proto"     ]] && printf '  Protocol:          %s\n' "$proto"
+    [[ -n "$pinretries" ]] && printf '  PIN retries left:  %s\n' "$pinretries"
+    [[ -n "$creds"     ]] && printf '  Discoverable slots: %s\n' "$creds"
+
+    # Transport detection
+    local sysfs_path
+    sysfs_path=$(udevadm info --query=path --name="$device" 2>/dev/null || true)
+    if echo "$sysfs_path" | grep -qi "bluetooth\|hci\|hogp"; then
+        printf '  Transport:         BLE (HID-over-GATT)\n'
+    else
+        printf '  Transport:         USB HID\n'
+    fi
+    echo ""
+}
+
+# ── pin ───────────────────────────────────────────────────────────────────────
+
+cmd_pin() {
+    local subcommand="${1:-}"; shift || true
+    _require_libfido2
+
+    case "$subcommand" in
+        set)
+            local device="${1:?Usage: ${PROGRAM} pin set <device>}"
+            _validate_device "$device"
+            _info "Setting PIN on ${device}..."
+            _warn "If a PIN is already set, you will be asked to enter the current PIN first."
+            fido2-token -S "$device" || _die "PIN set failed."
+            _ok "PIN set successfully."
+            ;;
+        verify)
+            local device="${1:?Usage: ${PROGRAM} pin verify <device>}"
+            _validate_device "$device"
+            _info "Verifying PIN on ${device}..."
+            _warn "Incorrect PIN attempts reduce the retry counter. Be careful!"
+            fido2-token -V "$device" || _die "PIN verification failed."
+            _ok "PIN verified successfully."
+            ;;
+        info)
+            local device="${1:?Usage: ${PROGRAM} pin info <device>}"
+            _validate_device "$device"
+            local out
+            out=$(fido2-token -I "$device" 2>&1) || _die "Could not read device info."
+            local retries
+            retries=$(echo "$out" | grep -i "pin retries" | awk '{print $NF}' || true)
+            if [[ -n "$retries" ]]; then
+                _info "PIN retry counter: ${retries} attempts remaining"
+                if [[ "$retries" -le 3 ]]; then
+                    _warn "CRITICAL: only ${retries} attempts left before PIN lockout!"
+                fi
+            else
+                _info "No PIN set on this device."
+            fi
+            ;;
+        *)
+            _err "Unknown pin subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} pin set|verify|info <device>"
+            exit 1
+            ;;
+    esac
+}
+
+# ── cred ──────────────────────────────────────────────────────────────────────
+
+cmd_cred() {
+    local subcommand="${1:-}"; shift || true
+    _require_libfido2
+
+    case "$subcommand" in
+        list)
+            local device="${1:?Usage: ${PROGRAM} cred list <device>}"
+            _validate_device "$device"
+            _info "Listing discoverable credentials (passkeys) on ${device}..."
+            _info "(You will be prompted for your PIN)"
+            echo ""
+
+            local out
+            # fido2-token -L requires PIN; it lists resident keys
+            if ! out=$(fido2-token -L -k "$device" 2>&1); then
+                _die "Could not list credentials. Verify PIN and that the device supports resident keys."
+            fi
+
+            if [[ -z "$out" ]]; then
+                _info "No discoverable credentials found on this authenticator."
+                return 0
+            fi
+
+            _bold "  Discoverable credentials (passkeys):"
+            echo "  ──────────────────────────────────────────"
+            local idx=0
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                printf '  [%d] %s\n' "$idx" "$line"
+                (( idx++ )) || true
+            done <<< "$out"
+            echo ""
+            _dim "  Delete a credential with: ${PROGRAM} cred delete ${device}"
+            ;;
+        delete)
+            local device="${1:?Usage: ${PROGRAM} cred delete <device>}"
+            _validate_device "$device"
+            _warn "This will DELETE a discoverable credential (passkey) from the authenticator."
+            _warn "This action is IRREVERSIBLE."
+            echo ""
+            _info "Listing credentials first..."
+            fido2-token -L -k "$device" 2>&1 || _die "Could not list credentials."
+            echo ""
+            _info "Enter the credential ID to delete (from the list above):"
+            read -r -p "  Credential ID: " cred_id
+            [[ -z "$cred_id" ]] && _die "No credential ID entered."
+
+            _info "Deleting credential ${cred_id}..."
+            fido2-token -D -k "$cred_id" "$device" || _die "Delete failed."
+            _ok "Credential deleted."
+            ;;
+        *)
+            _err "Unknown cred subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} cred list|delete <device>"
+            exit 1
+            ;;
+    esac
+}
+
+# ── ble ───────────────────────────────────────────────────────────────────────
+
+cmd_ble() {
+    local subcommand="${1:-}"; shift || true
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    case "$subcommand" in
+        scan)
+            _info "Scanning for BLE FIDO2 authenticators (${SCAN_TIMEOUT:-15}s)..."
+            _dim "  FIDO2 BLE devices advertise the GATT service UUID ${BLE_FIDO2_GATT_SHORT}"
+            echo ""
+
+            # Use bluetoothctl to scan and filter by FIDO2 UUID
+            # Some BLE FIDO2 tokens include the UUID in their advertisement; others don't
+            # until after pairing (they require the GATT service to be discovered)
+            local scan_out
+            scan_out=$(
+                printf '%s\n' "scan on" | \
+                timeout "$(( ${SCAN_TIMEOUT:-15} + 2 ))" bluetoothctl 2>/dev/null | \
+                grep -i "NEW\|Device" | head -30 || true
+            )
+            bluetoothctl scan off &>/dev/null || true
+            sleep 1
+
+            # List all discovered devices
+            local devices
+            devices=$(bluetoothctl devices 2>/dev/null || true)
+
+            if [[ -z "$devices" ]]; then
+                _warn "No BLE devices found. Check adapter with: ${PROGRAM} qr-ready"
+                return 0
+            fi
+
+            _bold "  Discovered BLE devices (inspect each for FIDO2 capability):"
+            echo "  ──────────────────────────────────────────────────────────"
+            while IFS= read -r line; do
+                local mac name
+                mac=$(echo  "$line" | awk '{print $2}')
+                name=$(echo "$line" | cut -d' ' -f3-)
+
+                # Check if this device has the FIDO2 GATT UUID in its service list
+                local fido2_mark="     "
+                local dev_info
+                dev_info=$(bluetoothctl info "$mac" 2>/dev/null || true)
+                if echo "$dev_info" | grep -qi "fffd\|fido"; then
+                    fido2_mark="[F2] "
+                fi
+
+                printf '  %s%-20s  %s\n' "$fido2_mark" "$mac" "$name"
+            done <<< "$devices"
+            echo ""
+            _dim "  [F2] = FIDO2 GATT service detected in advertisement"
+            _dim "  Pair with: ${PROGRAM} ble pair <MAC>"
+            ;;
+        pair)
+            local mac="${1:?Usage: ${PROGRAM} ble pair <MAC>}"
+            _validate_mac "$mac"
+
+            _info "Pairing BLE FIDO2 authenticator: ${mac}"
+            _info "Put the authenticator in pairing mode (usually tap or hold button)"
+
+            # Short scan to ensure the device is visible
+            printf '%s\n' "scan on" | timeout 5 bluetoothctl &>/dev/null || true
+
+            # Pair
+            if bluetoothctl -- pair "$mac" 2>/dev/null; then
+                _ok "Paired with ${mac}."
+                # Trust the device so it reconnects automatically
+                bluetoothctl trust "$mac" &>/dev/null || true
+                _info "Device trusted for auto-reconnect."
+                echo ""
+                _info "Connect and check it appears in: ${PROGRAM} list"
+                _dim "  After connecting, the BLE FIDO2 token appears as /dev/hidraw*"
+                _dim "  Verify with: ${PROGRAM} list"
+            else
+                _warn "Pairing may have failed. Ensure the authenticator is in pairing mode."
+                _info "You can also pair interactively: bluetoothctl pair ${mac}"
+            fi
+            ;;
+        list)
+            _info "Paired BLE devices (potential FIDO2 authenticators):"
+            echo ""
+
+            local paired
+            paired=$(bluetoothctl paired-devices 2>/dev/null || true)
+
+            if [[ -z "$paired" ]]; then
+                echo "  (no paired devices)"
+                _dim "  Pair a BLE FIDO2 token with: ${PROGRAM} ble pair <MAC>"
+                return 0
+            fi
+
+            while IFS= read -r line; do
+                local mac name connected fido2_mark
+                mac=$(echo  "$line" | awk '{print $2}')
+                name=$(echo "$line" | cut -d' ' -f3-)
+
+                local dev_info
+                dev_info=$(bluetoothctl info "$mac" 2>/dev/null || true)
+                connected="  "
+                echo "$dev_info" | grep -q "Connected: yes" && connected="✓ "
+                fido2_mark="     "
+                echo "$dev_info" | grep -qi "fffd\|fido" && fido2_mark="[F2] "
+
+                printf '  %s%s%-20s  %s\n' "$connected" "$fido2_mark" "$mac" "$name"
+            done <<< "$paired"
+            echo ""
+            _dim "  ✓ = currently connected   [F2] = FIDO2 GATT service detected"
+            ;;
+        *)
+            _err "Unknown ble subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} ble scan|pair|list"
+            exit 1
+            ;;
+    esac
+}
+
+# ── qr-ready ──────────────────────────────────────────────────────────────────
+
+cmd_qr_ready() {
+    _info "Checking BLE stack readiness for CTAP2 hybrid transport (QR passkey)..."
+    echo ""
+
+    local all_ok=true
+
+    # 1. BlueZ installed?
+    if command -v bluetoothd &>/dev/null; then
+        _ok "  bluetoothd:       found ($(bluetoothd --version 2>/dev/null || echo 'version unknown'))"
+    else
+        _err "  bluetoothd:       NOT FOUND — install bluez"
+        all_ok=false
+    fi
+
+    # 2. libfido2 installed?
+    if command -v fido2-token &>/dev/null; then
+        _ok "  libfido2:         found"
+    else
+        _warn "  libfido2:         not found (USB/BLE FIDO2 management unavailable)"
+        _dim "             install: sudo our-pacman -S libfido2"
+    fi
+
+    # 3. bluetooth.service running?
+    if systemctl is-active --quiet bluetooth.service 2>/dev/null; then
+        _ok "  bluetooth.service: active"
+    else
+        _err "  bluetooth.service: INACTIVE"
+        _dim "             start: systemctl start bluetooth.service"
+        all_ok=false
+    fi
+
+    # 4. Experimental mode enabled?
+    # Check two places: main.conf and the service ExecStart
+    local experimental_conf=false
+    local experimental_flag=false
+
+    [[ -f /etc/bluetooth/main.conf ]] && \
+        grep -qi "^Experimental\s*=\s*true" /etc/bluetooth/main.conf 2>/dev/null && \
+        experimental_conf=true
+
+    if systemctl cat bluetooth.service 2>/dev/null | grep -q -- "--experimental"; then
+        experimental_flag=true
+    fi
+
+    if $experimental_conf || $experimental_flag; then
+        _ok "  Experimental mode: enabled"
+        $experimental_conf  && _dim "              via /etc/bluetooth/main.conf"
+        $experimental_flag  && _dim "              via service ExecStart --experimental"
+    else
+        _err "  Experimental mode: DISABLED"
+        _err "  QR hybrid transport WILL NOT WORK without experimental mode."
+        _dim "  Fix: enable /etc/systemd/system/bluetooth.service.d/experimental.conf"
+        _dim "       or add 'Experimental = true' to /etc/bluetooth/main.conf"
+        all_ok=false
+    fi
+
+    # 5. AdvertisingMonitor API available?
+    # Try to call the D-Bus method (available only in experimental mode)
+    local advmon_ok=false
+    if command -v busctl &>/dev/null; then
+        if busctl call org.bluez /org/bluez \
+            org.bluez.AdvertisementMonitorManager1 \
+            GetSupportedMonitorTypes 2>/dev/null | grep -q "or_patterns\|type"; then
+            advmon_ok=true
+        elif busctl introspect org.bluez /org/bluez 2>/dev/null | \
+            grep -q "AdvertisementMonitorManager"; then
+            advmon_ok=true
+        fi
+    fi
+
+    if $advmon_ok; then
+        _ok "  AdvertisingMonitor API: available"
+        _dim "              Chrome/Firefox can detect QR code phone authenticators"
+    else
+        _warn "  AdvertisingMonitor API: not detected"
+        _dim "              This is required for the QR code passkey flow."
+        _dim "              Restart bluetooth.service after enabling experimental mode."
+        _dim "              systemctl restart bluetooth.service"
+    fi
+
+    # 6. BLE adapter present?
+    local adapter_powered=false
+    if command -v bluetoothctl &>/dev/null; then
+        if bluetoothctl show 2>/dev/null | grep -q "Powered: yes"; then
+            adapter_powered=true
+            _ok "  BLE adapter:      powered on"
+            # Show adapter address
+            local addr
+            addr=$(bluetoothctl show 2>/dev/null | grep "Address:" | awk '{print $2}' || true)
+            [[ -n "$addr" ]] && _dim "              Address: ${addr}"
+        else
+            _err "  BLE adapter:      found but NOT powered"
+            _dim "              Power on: our-bluetooth on"
+            all_ok=false
+        fi
+    else
+        _warn "  BLE adapter:      cannot check (bluetoothctl not found)"
+    fi
+
+    # 7. udev rules
+    local udev_u2f=false
+    local udev_ble=false
+    [[ -f /usr/lib/udev/rules.d/70-u2f.rules ]] && udev_u2f=true
+    [[ -f /etc/udev/rules.d/70-u2f.rules   ]] && udev_u2f=true
+    [[ -f /etc/udev/rules.d/71-fido2-ble.rules ]] && udev_ble=true
+
+    if $udev_u2f; then
+        _ok "  USB FIDO2 udev:   installed (70-u2f.rules)"
+    else
+        _warn "  USB FIDO2 udev:   not found"
+        _dim "             install libfido2: sudo our-pacman -S libfido2"
+    fi
+
+    if $udev_ble; then
+        _ok "  BLE FIDO2 udev:   installed (71-fido2-ble.rules)"
+    else
+        _warn "  BLE FIDO2 udev:   not found"
+        _dim "             expected: /etc/udev/rules.d/71-fido2-ble.rules"
+    fi
+
+    echo ""
+    if $all_ok; then
+        _ok "System is ready for FIDO2 / WebAuthn / QR passkey authentication."
+        echo ""
+        echo "  To use passkeys in Chrome/Firefox:"
+        echo "    1. Open a WebAuthn-enabled site and start login"
+        echo "    2. Select 'Passkey' or 'Security Key'"
+        echo "    3. For QR / phone: scan the QR code with your phone camera"
+        echo "       (phone must have a passkey or the site credential stored)"
+        echo "    4. For USB key: insert your FIDO2 token and touch it"
+        echo "    5. For BLE key: pair first with: ${PROGRAM} ble pair <MAC>"
+    else
+        _err "Some checks FAILED. Review the items above and fix them."
+        echo ""
+        echo "  Quick fix for QR passkey support:"
+        echo "    1. systemctl enable --now bluetooth.service"
+        echo "    2. cp /etc/systemd/system/bluetooth.service.d/experimental.conf \\"
+        echo "          (already present in ouroborOS — just restart the service)"
+        echo "    3. systemctl restart bluetooth.service"
+        echo "    4. our-bluetooth on"
+        echo "    5. our-fido2 qr-ready   (re-run this check)"
+        return 1
+    fi
+}
+
+# ── reset ─────────────────────────────────────────────────────────────────────
+
+cmd_reset() {
+    local device="${1:?Usage: ${PROGRAM} reset <device>}"
+    _require_libfido2
+    _validate_device "$device"
+
+    echo ""
+    _warn "╔══════════════════════════════════════════════════════════════════╗"
+    _warn "║                    !! FACTORY RESET !!                          ║"
+    _warn "║                                                                  ║"
+    _warn "║  This will PERMANENTLY ERASE all credentials on:                ║"
+    _warn "║    ${device}"
+    _warn "║                                                                  ║"
+    _warn "║  This includes ALL passkeys, discoverable credentials, and       ║"
+    _warn "║  the PIN. There is NO UNDO. All WebAuthn accounts linked to      ║"
+    _warn "║  this key will lose their FIDO2 credential and may be            ║"
+    _warn "║  inaccessible if no other authentication method is set up.       ║"
+    _warn "╚══════════════════════════════════════════════════════════════════╝"
+    echo ""
+    read -r -p "  Type RESET to confirm factory reset: " confirm
+    [[ "$confirm" == "RESET" ]] || _die "Reset cancelled."
+
+    _info "Resetting ${device}..."
+    _info "(Touch the authenticator if prompted)"
+    fido2-token -R "$device" || _die "Reset failed. The device may require a touch or PIN."
+    _ok "Factory reset complete. The device is now blank."
+}
+
+# ── help ──────────────────────────────────────────────────────────────────────
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — FIDO2 / WebAuthn / Passkey manager for ouroborOS
+
+USAGE
+  ${PROGRAM} <command> [subcommand] [options]
+
+COMMANDS
+  list                      List all FIDO2 authenticators (USB + BLE)
+  info <device>             Show capabilities, AAGUID, PIN status, transport
+  reset <device>            Factory reset (DESTROYS ALL CREDENTIALS)
+
+  pin set <device>          Set or change PIN
+  pin verify <device>       Verify PIN is accepted
+  pin info <device>         Show PIN retry counter
+
+  cred list <device>        List discoverable credentials (passkeys) on device
+  cred delete <device>      Delete a passkey from the device (interactive)
+
+  ble scan                  Scan for BLE FIDO2 authenticators
+  ble pair <MAC>            Pair a BLE FIDO2 authenticator
+  ble list                  List paired BLE devices
+
+  qr-ready                  Check BLE stack readiness for QR / hybrid transport
+
+TRANSPORTS
+  USB HID      Plug in a FIDO2 key (YubiKey, SoloKey, Nitrokey, etc.)
+  BLE GATT     Pair a BLE FIDO2 token with: ${PROGRAM} ble pair <MAC>
+  Hybrid QR    Use your phone as authenticator — scan QR in Chrome/Firefox
+               (requires BlueZ experimental mode — see qr-ready)
+
+EXAMPLES
+  ${PROGRAM} list
+  ${PROGRAM} info /dev/hidraw0
+  ${PROGRAM} pin set /dev/hidraw0
+  ${PROGRAM} cred list /dev/hidraw0
+  ${PROGRAM} ble scan
+  ${PROGRAM} ble pair AA:BB:CC:DD:EE:FF
+  ${PROGRAM} qr-ready
+
+REQUIREMENTS
+  libfido2       (for USB/BLE FIDO2 management)
+  bluez, bluez-utils (for BLE transport)
+  BlueZ experimental mode (for QR/hybrid transport — see qr-ready)
+
+PASSKEYS / QR CODE FLOW
+  Passkeys are FIDO2 discoverable credentials stored on the authenticator.
+  The QR code flow uses CTAP2 hybrid transport: your phone is the authenticator,
+  BLE is used only for proximity verification, and authentication tunnels over
+  HTTPS. Chrome 108+ and Firefox 120+ support this on Linux when BlueZ
+  experimental mode (AdvertisingMonitor API) is active.
+
+REFERENCES
+  FIDO2 spec:      https://fidoalliance.org/specs/fido-v2.2/
+  CTAP2 hybrid:    https://fidoalliance.org/specs/fido-v2.2/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#sctn-hybrid
+  BlueZ AdvMon:    /usr/share/doc/bluez/advertising-monitor-api.txt
+  Arch Wiki:       https://wiki.archlinux.org/title/FIDO2
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+readonly SCAN_TIMEOUT=15
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    list)           cmd_list ;;
+    info)           cmd_info "${1:-}" ;;
+    pin)            cmd_pin  "${1:-}" "${2:-}" ;;
+    cred)           cmd_cred "${1:-}" "${2:-}" ;;
+    ble)            cmd_ble  "${1:-}" "${2:-}" ;;
+    qr-ready)       cmd_qr_ready ;;
+    reset)          cmd_reset "${1:-}" ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

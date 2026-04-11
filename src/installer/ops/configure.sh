@@ -372,16 +372,107 @@ EOF
         fi
     fi
 
-    # Bluetooth: enable bluetooth.service if requested.
+    # Bluetooth: enable bluetooth.service + configure experimental LE for FIDO2.
     # bluez must be installed (not in the default package set — user must add it
     # via extra_packages or our-pacman post-install).
     if [[ "${BLUETOOTH_ENABLE:-0}" == "1" ]]; then
         if in_chroot pacman -Qi bluez &>/dev/null 2>&1; then
             in_chroot systemctl enable bluetooth.service
             log_ok "bluetooth.service enabled."
+
+            # Install libfido2 for FIDO2/WebAuthn/passkey support (USB + BLE).
+            # libfido2 provides:
+            #   - fido2-token, fido2-cred, fido2-assert CLI tools
+            #   - /usr/lib/udev/rules.d/70-u2f.rules (USB FIDO2 HID access rules)
+            # Required for our-fido2 and for browser WebAuthn with physical keys.
+            if in_chroot pacman -Qi libfido2 &>/dev/null 2>&1; then
+                log_ok "libfido2 already installed."
+            else
+                log_info "Installing libfido2 for FIDO2/WebAuthn support..."
+                if in_chroot pacman -S --noconfirm libfido2 2>/dev/null; then
+                    log_ok "libfido2 installed."
+                else
+                    log_warn "Could not install libfido2 — FIDO2 management tools unavailable."
+                    log_warn "Install after first boot: sudo our-pacman -S libfido2"
+                fi
+            fi
+
+            # Configure BlueZ experimental LE mode.
+            # Required for CTAP2 hybrid transport (QR code passkey flow) and for
+            # the BLE AdvertisingMonitor API used by Chrome/Firefox on Linux.
+            local bt_drop_in_dir="${TARGET}/etc/systemd/system/bluetooth.service.d"
+            local bt_drop_in="${bt_drop_in_dir}/experimental.conf"
+            if [[ ! -f "$bt_drop_in" ]]; then
+                mkdir -p "$bt_drop_in_dir"
+                cat > "$bt_drop_in" << 'BT_DROPIN'
+# Installed by ouroborOS configure.sh (BLUETOOTH_ENABLE=1)
+# Enables BlueZ experimental D-Bus APIs required for:
+#   - CTAP2 hybrid transport (QR code passkey flow) via AdvertisingMonitor API
+#   - BLE FIDO2 GATT profile improvements
+[Service]
+ExecStart=
+ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+BT_DROPIN
+                log_ok "BlueZ experimental mode drop-in written."
+            fi
+
+            # Install BlueZ main.conf (experimental LE tuning for FIDO2).
+            # The source is the live ISO's own /etc/bluetooth/main.conf,
+            # which was placed there by the ouroborOS airootfs profile.
+            local bt_conf_dir="${TARGET}/etc/bluetooth"
+            if [[ ! -f "${bt_conf_dir}/main.conf" ]]; then
+                mkdir -p "$bt_conf_dir"
+                if [[ -f /etc/bluetooth/main.conf ]]; then
+                    cp /etc/bluetooth/main.conf "${bt_conf_dir}/main.conf"
+                    log_ok "/etc/bluetooth/main.conf installed (experimental LE + GATT tuning)."
+                else
+                    # Fallback: write a minimal config inline
+                    cat > "${bt_conf_dir}/main.conf" << 'BT_CONF'
+[General]
+Experimental = true
+KernelExperimental = true
+FastConnectable = true
+
+[Policy]
+AutoEnable = true
+
+[LE]
+MinConnectionInterval = 6
+MaxConnectionInterval = 9
+ConnectionLatency = 0
+ConnectionSupervisionTimeout = 100
+AdvMonAllowlistScanDuration = 300
+AdvMonNoFilterScanDuration = 10
+EnableAdvMonInterleaveScan = 1
+
+[GATT]
+Cache = yes
+KeySize = 0
+ExchangeMTU = 517
+Channels = 3
+BT_CONF
+                    log_ok "/etc/bluetooth/main.conf written (inline fallback)."
+                fi
+            fi
+
+            # Install BLE FIDO2 udev rules (supplement libfido2 USB rules with BLE HID-over-GATT).
+            # Source: live ISO's /etc/udev/rules.d/71-fido2-ble.rules (from airootfs).
+            local udev_rules_dir="${TARGET}/etc/udev/rules.d"
+            local ble_udev="${udev_rules_dir}/71-fido2-ble.rules"
+            if [[ ! -f "$ble_udev" ]]; then
+                mkdir -p "$udev_rules_dir"
+                if [[ -f /etc/udev/rules.d/71-fido2-ble.rules ]]; then
+                    cp /etc/udev/rules.d/71-fido2-ble.rules "$ble_udev"
+                    log_ok "BLE FIDO2 udev rules installed (71-fido2-ble.rules)."
+                else
+                    log_warn "71-fido2-ble.rules not found in live ISO — skipping."
+                    log_warn "Install after first boot from: our-fido2 qr-ready"
+                fi
+            fi
+
         else
             log_warn "BLUETOOTH_ENABLE=1 but bluez is not installed — skipping."
-            log_warn "Install after first boot with: sudo our-pacman -S bluez bluez-utils"
+            log_warn "Install after first boot with: sudo our-pacman -S bluez bluez-utils libfido2"
         fi
     fi
 
