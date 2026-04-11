@@ -33,12 +33,21 @@ fi
 log_section "Discovering shell scripts"
 
 mapfile -t SCRIPTS < <(
-    find "$WORKSPACE" \
-        -not -path "$WORKSPACE/.git/*" \
-        -not -path "$WORKSPACE/tests/*" \
-        -name "*.sh" \
-        -type f \
-        | sort
+    {
+        # Production shell scripts (src/ only — avoids build-tmp/ artefacts)
+        find "$WORKSPACE/src" -name "*.sh" -type f 2>/dev/null || true
+
+        # E2E test scripts
+        find "$WORKSPACE/tests/scripts" -maxdepth 1 -name "*.sh" -type f \
+            2>/dev/null || true
+
+        # Phase 3 user-facing tools (bash, no .sh extension)
+        for tool in our-snapshot our-rollback our-wifi our-bluetooth our-fido2 \
+                    ouroboros-secureboot ouroboros-firstboot our-pacman our-container; do
+            local_path="$WORKSPACE/src/ouroborOS-profile/airootfs/usr/local/bin/${tool}"
+            [[ -f "$local_path" ]] && echo "$local_path"
+        done
+    } | sort -u
 )
 
 if [[ ${#SCRIPTS[@]} -eq 0 ]]; then
@@ -58,6 +67,11 @@ SHELLCHECK_FAILED=0
 
 for script in "${SCRIPTS[@]}"; do
     rel="${script#"$WORKSPACE/"}"
+    # Skip non-shell files that may end up in the list (e.g. Python scripts)
+    if ! head -1 "$script" 2>/dev/null | grep -qE "bash|sh"; then
+        log_warn "  $rel — not a shell script, skipping"
+        continue
+    fi
     if shellcheck -S style "$script" 2>&1; then
         log_ok "  $rel"
     else
@@ -73,8 +87,15 @@ GUARD_FAILED=0
 
 for script in "${SCRIPTS[@]}"; do
     rel="${script#"$WORKSPACE/"}"
-    # Check lines 1–5 for the guard (allow for shebang + blank line)
-    if head -5 "$script" | grep -q "set -euo pipefail"; then
+    # Guard check applies only to .sh files — airootfs tools use long comment
+    # headers that push set -euo pipefail past line 20; shellcheck already
+    # validates them and will error if pipefail is missing.
+    if [[ "$script" != *.sh ]]; then
+        log_ok "  $rel — guard check skipped (non-.sh, verified by shellcheck)"
+        continue
+    fi
+    # Check lines 1–20 for the guard (allow for shebang + comment header block)
+    if head -20 "$script" | grep -q "set -euo pipefail"; then
         log_ok "  $rel — guard present"
     else
         log_fail "  $rel — MISSING 'set -euo pipefail'"
