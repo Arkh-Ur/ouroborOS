@@ -38,6 +38,7 @@ set -euo pipefail
 : "${WIFI_SSID:=''}"
 : "${WIFI_PASSPHRASE:=''}"
 : "${BLUETOOTH_ENABLE:='0'}"
+: "${FIDO2_PAM:='0'}""
 
 TARGET="$INSTALL_TARGET"
 
@@ -479,6 +480,55 @@ BT_CONF
     log_ok "Network configured."
 }
 
+# --- Step 6b: FIDO2 PAM integration ----------------------------------------
+
+configure_fido2_pam() {
+    # Install pam-u2f and pre-configure PAM for FIDO2 sudo + login.
+    # The user must still register their token post-install:
+    #   our-fido2 pam register --system
+    #   our-fido2 pam enable sudo login
+    #
+    # This step only installs pam-u2f and creates the empty authfile so that
+    # the PAM module doesn't error if the file is missing.
+
+    [[ "${FIDO2_PAM:-0}" == "1" ]] || return 0
+
+    log_info "Configuring FIDO2 PAM integration (pam-u2f)..."
+
+    # Install pam-u2f (Yubico's PAM module, available in Arch official repos)
+    if in_chroot pacman -Qi pam-u2f &>/dev/null 2>&1; then
+        log_ok "pam-u2f already installed."
+    else
+        log_info "Installing pam-u2f..."
+        if in_chroot pacman -S --noconfirm pam-u2f 2>/dev/null; then
+            log_ok "pam-u2f installed."
+        else
+            log_warn "Could not install pam-u2f — FIDO2 PAM integration skipped."
+            log_warn "Install after first boot: sudo our-pacman -S pam-u2f"
+            return 0
+        fi
+    fi
+
+    # Create empty system authfile so pam_u2f doesn't fail before registration
+    local authfile="${TARGET}/etc/u2f_mappings"
+    if [[ ! -f "$authfile" ]]; then
+        touch "$authfile"
+        chmod 600 "$authfile"
+        log_ok "Created empty FIDO2 authfile: /etc/u2f_mappings"
+    fi
+
+    # Note: we do NOT configure /etc/pam.d/* here — that would lock the user
+    # out before they register a token. The user runs:
+    #   our-fido2 pam register --system
+    #   our-fido2 pam enable sudo login
+    # after first boot once their token is present.
+
+    log_info "FIDO2 PAM ready. Register your token after first boot:"
+    log_info "  sudo our-fido2 pam register --system"
+    log_info "  sudo our-fido2 pam enable sudo login"
+    log_ok "FIDO2 PAM integration configured."
+}
+
 # --- Step 7: zram swap ------------------------------------------------------
 
 configure_zram() {
@@ -867,6 +917,7 @@ main() {
     configure_initramfs
     configure_bootloader
     configure_network
+    configure_fido2_pam
     configure_zram
     configure_users
     configure_immutable_root

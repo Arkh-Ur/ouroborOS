@@ -91,12 +91,19 @@ class LocaleConfig:
 
 @dataclass
 class SecurityConfig:
-    """Secure Boot configuration."""
+    """Security configuration: Secure Boot + FIDO2 PAM integration."""
 
     secure_boot: bool = False
     # Include Microsoft OEM keys when enrolling (sbctl enroll-keys -m).
     # Required for dual-boot systems or hardware with pre-signed Option ROMs.
     sbctl_include_ms_keys: bool = False
+
+    # FIDO2 PAM integration.
+    # When true, installs pam-u2f and configures /etc/pam.d/sudo + login
+    # to accept a FIDO2 hardware token as authentication factor (sufficient).
+    # The user must register their token post-install with:
+    #   our-fido2 pam register --system
+    fido2_pam: bool = False
 
 
 @dataclass
@@ -233,6 +240,11 @@ def validate_config(data: dict) -> None:
             raise ConfigValidationError(
                 "security.secure_boot must be a boolean (true/false)"
             )
+        fido2_pam = security.get("fido2_pam", False)
+        if not isinstance(fido2_pam, bool):
+            raise ConfigValidationError(
+                "security.fido2_pam must be a boolean (true/false)"
+            )
 
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})
@@ -340,6 +352,7 @@ def load_config(path: Path) -> InstallerConfig:
     sec = data.get("security", {}) or {}
     cfg.security.secure_boot = bool(sec.get("secure_boot", False))
     cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
+    cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))

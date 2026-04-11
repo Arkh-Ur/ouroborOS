@@ -597,6 +597,378 @@ cmd_reset() {
     _ok "Factory reset complete. The device is now blank."
 }
 
+# ── pam ───────────────────────────────────────────────────────────────────────
+#
+# Integrates FIDO2 into the PAM stack for sudo, TTY login, and SSH.
+# Uses pam_u2f (pam-u2f package). Tokens are registered to
+# /etc/u2f_mappings (system-wide) for sudo/login, or
+# ~/.config/Yubico/u2f_keys (per-user) for session unlock.
+#
+# PAM line format (added with a marker so it can be cleanly removed):
+#   auth  sufficient  pam_u2f.so authfile=/etc/u2f_mappings cue  # [our-fido2]
+
+_PAM_MARKER="# [our-fido2]"
+_PAM_AUTHFILE="/etc/u2f_mappings"
+
+_require_pamu2f() {
+    command -v pamu2fcfg &>/dev/null || \
+        _die "pamu2fcfg not found. Install: sudo our-pacman -S pam-u2f"
+}
+
+_pam_file() {
+    case "$1" in
+        sudo)   echo "/etc/pam.d/sudo"  ;;
+        login)  echo "/etc/pam.d/login" ;;
+        ssh)    echo "/etc/pam.d/sshd"  ;;
+        *)      _die "Unknown PAM target: '$1'. Use sudo|login|ssh" ;;
+    esac
+}
+
+_pam_line() {
+    echo "auth      sufficient    pam_u2f.so authfile=${_PAM_AUTHFILE} cue  ${_PAM_MARKER}"
+}
+
+_pam_enable() {
+    local target="$1"
+    local pam_file
+    pam_file=$(_pam_file "$target")
+    [[ -f "$pam_file" ]] || _die "PAM file not found: ${pam_file}"
+
+    local line
+    line=$(_pam_line)
+
+    if grep -qF "${_PAM_MARKER}" "$pam_file" 2>/dev/null; then
+        _ok "FIDO2 already enabled for ${target} (${pam_file})"
+        return 0
+    fi
+
+    # Backup before modifying
+    cp "$pam_file" "${pam_file}.bak.our-fido2" 2>/dev/null || true
+
+    # Insert after the first 'auth' line (right above password fallback)
+    if grep -q "^auth" "$pam_file"; then
+        sed -i "0,/^auth/s|^auth|${line}\nauth|" "$pam_file"
+    else
+        echo "$line" >> "$pam_file"
+    fi
+
+    _ok "FIDO2 enabled for ${target} → ${pam_file}"
+    _dim "  Backup: ${pam_file}.bak.our-fido2"
+}
+
+_pam_disable() {
+    local target="$1"
+    local pam_file
+    pam_file=$(_pam_file "$target")
+    [[ -f "$pam_file" ]] || _die "PAM file not found: ${pam_file}"
+
+    if ! grep -qF "${_PAM_MARKER}" "$pam_file" 2>/dev/null; then
+        _info "FIDO2 not configured in ${pam_file} — nothing to remove."
+        return 0
+    fi
+
+    sed -i "/$(printf '%s' "${_PAM_MARKER}" | sed 's/[[\.*^$()+?{|]/\\&/g')/d" "$pam_file"
+    _ok "FIDO2 removed from ${target} → ${pam_file}"
+}
+
+cmd_pam() {
+    local subcommand="${1:-status}"; shift || true
+
+    case "$subcommand" in
+        register)
+            _require_pamu2f
+            local system_flag=""
+            local target_user="${USER:-root}"
+
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --system) system_flag="--system"; target_user="$(id -un)" ;;
+                    *)        target_user="$1" ;;
+                esac
+                shift
+            done
+
+            if [[ -n "$system_flag" ]]; then
+                _info "Registering FIDO2 token for user '${target_user}' in ${_PAM_AUTHFILE}..."
+                _info "(Touch the token when it blinks)"
+                local entry
+                entry=$(pamu2fcfg -u "$target_user" 2>/dev/null) || \
+                    _die "pamu2fcfg failed. Is the token plugged in?"
+
+                # Append to system authfile (remove existing entry for this user first)
+                touch "$_PAM_AUTHFILE" 2>/dev/null || \
+                    _die "Cannot write ${_PAM_AUTHFILE}. Run as root."
+                sed -i "/^${target_user}:/d" "$_PAM_AUTHFILE" 2>/dev/null || true
+                echo "$entry" >> "$_PAM_AUTHFILE"
+                chmod 600 "$_PAM_AUTHFILE"
+                _ok "Token registered → ${_PAM_AUTHFILE}"
+            else
+                local keyfile="${HOME}/.config/Yubico/u2f_keys"
+                _info "Registering FIDO2 token to ${keyfile}..."
+                _info "(Touch the token when it blinks)"
+                mkdir -p "$(dirname "$keyfile")"
+                local entry
+                entry=$(pamu2fcfg 2>/dev/null) || \
+                    _die "pamu2fcfg failed. Is the token plugged in?"
+
+                # If file exists, append; otherwise create
+                if [[ -f "$keyfile" ]]; then
+                    # Remove existing entry and re-add
+                    local uname
+                    uname=$(pamu2fcfg -n 2>/dev/null | cut -d: -f1 || echo "${USER:-$(id -un)}")
+                    sed -i "/^${uname}:/d" "$keyfile" 2>/dev/null || true
+                fi
+                echo "$entry" >> "$keyfile"
+                chmod 600 "$keyfile"
+                _ok "Token registered → ${keyfile}"
+            fi
+            ;;
+
+        enable)
+            local targets=()
+            while [[ $# -gt 0 ]]; do
+                targets+=("$1"); shift
+            done
+            [[ ${#targets[@]} -eq 0 ]] && targets=("sudo")
+
+            for t in "${targets[@]}"; do
+                if [[ "$t" == "all" ]]; then
+                    _pam_enable sudo
+                    _pam_enable login
+                    _pam_enable ssh
+                else
+                    _pam_enable "$t"
+                fi
+            done
+            echo ""
+            _info "Register your token if not done yet:"
+            echo "  ${PROGRAM} pam register --system"
+            ;;
+
+        disable)
+            local targets=()
+            while [[ $# -gt 0 ]]; do
+                targets+=("$1"); shift
+            done
+            [[ ${#targets[@]} -eq 0 ]] && targets=("sudo")
+
+            for t in "${targets[@]}"; do
+                if [[ "$t" == "all" ]]; then
+                    _pam_disable sudo
+                    _pam_disable login
+                    _pam_disable ssh
+                else
+                    _pam_disable "$t"
+                fi
+            done
+            ;;
+
+        status)
+            _info "FIDO2 PAM integration status:"
+            echo ""
+            for target in sudo login ssh; do
+                local pam_file
+                pam_file=$(_pam_file "$target")
+                if [[ ! -f "$pam_file" ]]; then
+                    printf '  %-8s  %s\n' "$target" "[file not found: ${pam_file}]"
+                elif grep -qF "${_PAM_MARKER}" "$pam_file" 2>/dev/null; then
+                    printf '  %-8s  \033[0;32m✓ enabled\033[0m → %s\n' "$target" "$pam_file"
+                else
+                    printf '  %-8s  \033[2m✗ disabled\033[0m\n' "$target"
+                fi
+            done
+            echo ""
+            if [[ -f "$_PAM_AUTHFILE" ]]; then
+                local count
+                count=$(grep -c "^[^#]" "$_PAM_AUTHFILE" 2>/dev/null || echo 0)
+                _info "System token mappings (${_PAM_AUTHFILE}): ${count} registered"
+            else
+                _warn "No system token mappings found (${_PAM_AUTHFILE} does not exist)"
+                _dim "  Register with: ${PROGRAM} pam register --system"
+            fi
+            ;;
+
+        *)
+            _err "Unknown pam subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} pam register [--system] [username]"
+            echo "         ${PROGRAM} pam enable  <sudo|login|ssh|all>"
+            echo "         ${PROGRAM} pam disable <sudo|login|ssh|all>"
+            echo "         ${PROGRAM} pam status"
+            exit 1
+            ;;
+    esac
+}
+
+# ── ssh ───────────────────────────────────────────────────────────────────────
+#
+# FIDO2 SSH keys — private key material stays on the hardware token.
+# ed25519-sk (or ecdsa-sk) keys require the token for every signature.
+#
+# Resident keys (-O resident): discoverable from the token itself.
+#   Load all resident keys with: our-fido2 ssh load-resident
+#
+# Non-resident keys: key file on disk acts as a pointer; signing still needs
+#   the physical token.
+
+cmd_ssh() {
+    local subcommand="${1:-list}"; shift || true
+
+    case "$subcommand" in
+        generate)
+            local resident=false
+            local key_file="${HOME}/.ssh/id_ed25519_sk"
+            local app="ssh:"
+
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --resident)          resident=true ;;
+                    --file)              key_file="$2"; shift ;;
+                    --application|--app) app="$2"; shift ;;
+                    *) _die "Unknown flag: $1" ;;
+                esac
+                shift
+            done
+
+            _info "Generating FIDO2 SSH key (ed25519-sk)..."
+            _info "Touch the token when it blinks."
+            echo ""
+
+            local opts=("-t" "ed25519-sk" "-f" "$key_file")
+            $resident && opts+=("-O" "resident")
+            opts+=("-O" "application=${app}")
+
+            ssh-keygen "${opts[@]}" || _die "ssh-keygen failed. Is the token plugged in?"
+
+            echo ""
+            _ok "Key generated: ${key_file}"
+            _ok "Public key:    ${key_file}.pub"
+            echo ""
+            _info "Add the public key to a remote server:"
+            echo "  ssh-copy-id -i ${key_file}.pub user@host"
+            echo "  # or paste manually: $(cat "${key_file}.pub" 2>/dev/null || echo '(read failed)')"
+            echo ""
+            if $resident; then
+                _info "Resident key stored on token. Reload on any machine with:"
+                echo "  ${PROGRAM} ssh load-resident"
+            fi
+            ;;
+
+        list)
+            _info "FIDO2 SSH keys in ${HOME}/.ssh/:"
+            echo ""
+            local found=false
+            while IFS= read -r pub; do
+                local algo
+                algo=$(awk '{print $1}' "$pub" 2>/dev/null || true)
+                if [[ "$algo" == "sk-"* ]]; then
+                    local key_name
+                    key_name=$(basename "${pub%.pub}")
+                    printf '  %-35s  %s\n' "$key_name" "$algo"
+                    found=true
+                fi
+            done < <(find "${HOME}/.ssh/" -name "*.pub" 2>/dev/null || true)
+            if ! $found; then
+                _warn "No FIDO2 SSH keys found in ${HOME}/.ssh/"
+                _dim "  Generate one with: ${PROGRAM} ssh generate [--resident]"
+            fi
+            echo ""
+            ;;
+
+        load-resident)
+            _info "Loading resident FIDO2 SSH keys from token..."
+            _info "(Touch the token when it blinks)"
+            echo ""
+            local out_dir="${HOME}/.ssh"
+            mkdir -p "$out_dir"
+            # ssh-keygen -K writes id_ecdsa_sk / id_ed25519_sk to CWD
+            ( cd "$out_dir" && ssh-keygen -K ) || \
+                _die "ssh-keygen -K failed. Is the token plugged in and a resident key enrolled?"
+            echo ""
+            _ok "Resident keys loaded into ${out_dir}/"
+            _info "View with: ${PROGRAM} ssh list"
+            ;;
+
+        *)
+            _err "Unknown ssh subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} ssh generate [--resident] [--file PATH] [--application APP]"
+            echo "         ${PROGRAM} ssh list"
+            echo "         ${PROGRAM} ssh load-resident"
+            exit 1
+            ;;
+    esac
+}
+
+# ── luks ──────────────────────────────────────────────────────────────────────
+#
+# Enroll a FIDO2 token as a LUKS2 unlock method using systemd-cryptenroll.
+# The token must be plugged in during enrollment AND each boot.
+# Complements (does not replace) the existing passphrase slot.
+#
+# Note: requires LUKS2 (ouroborOS uses LUKS2 by default when use_luks: true).
+
+cmd_luks() {
+    local subcommand="${1:-list}"; shift || true
+
+    command -v systemd-cryptenroll &>/dev/null || \
+        _die "systemd-cryptenroll not found. Install systemd (should be present)."
+
+    case "$subcommand" in
+        enroll)
+            local device="${1:?Usage: ${PROGRAM} luks enroll <luks-device>}"
+            [[ -b "$device" ]] || _die "Not a block device: ${device}"
+
+            _info "Enrolling FIDO2 token in LUKS2 device: ${device}"
+            _warn "The LUKS passphrase will be required to authorize this enrollment."
+            _info "Touch the token when it blinks."
+            echo ""
+
+            systemd-cryptenroll --fido2-device=auto "$device" || \
+                _die "Enrollment failed. Verify: LUKS2 format, token plugged in, PIN set."
+
+            echo ""
+            _ok "FIDO2 token enrolled in ${device}."
+            _info "At next boot, touch the token when prompted to unlock."
+            _info "The passphrase slot is still active as fallback."
+            echo ""
+            _dim "  List enrolled slots: ${PROGRAM} luks list ${device}"
+            _dim "  Remove token slot:   ${PROGRAM} luks unenroll ${device}"
+            ;;
+
+        list)
+            local device="${1:?Usage: ${PROGRAM} luks list <luks-device>}"
+            [[ -b "$device" ]] || _die "Not a block device: ${device}"
+
+            _info "Enrolled key slots for ${device}:"
+            echo ""
+            systemd-cryptenroll --dump "$device" 2>/dev/null || \
+                _die "Could not read LUKS2 metadata. Is ${device} a LUKS2 device?"
+            ;;
+
+        unenroll)
+            local device="${1:?Usage: ${PROGRAM} luks unenroll <luks-device>}"
+            [[ -b "$device" ]] || _die "Not a block device: ${device}"
+
+            _warn "This will remove ALL FIDO2 slots from ${device}."
+            _warn "The passphrase slot will remain active."
+            printf '  Confirm (type YES): '
+            read -r confirm
+            [[ "$confirm" == "YES" ]] || _die "Aborted."
+
+            systemd-cryptenroll --wipe-slot=fido2 "$device" || \
+                _die "Failed to remove FIDO2 slot."
+            _ok "FIDO2 slot removed from ${device}."
+            ;;
+
+        *)
+            _err "Unknown luks subcommand: '${subcommand}'"
+            echo "  Usage: ${PROGRAM} luks enroll  <luks-device>"
+            echo "         ${PROGRAM} luks list    <luks-device>"
+            echo "         ${PROGRAM} luks unenroll <luks-device>"
+            exit 1
+            ;;
+    esac
+}
+
 # ── help ──────────────────────────────────────────────────────────────────────
 
 cmd_help() {
@@ -606,56 +978,80 @@ ${PROGRAM} — FIDO2 / WebAuthn / Passkey manager for ouroborOS
 USAGE
   ${PROGRAM} <command> [subcommand] [options]
 
-COMMANDS
-  list                      List all FIDO2 authenticators (USB + BLE)
-  info <device>             Show capabilities, AAGUID, PIN status, transport
-  reset <device>            Factory reset (DESTROYS ALL CREDENTIALS)
+TOKEN MANAGEMENT
+  list                            List all FIDO2 authenticators (USB + BLE)
+  info <device>                   Show capabilities, AAGUID, PIN status, transport
+  reset <device>                  Factory reset (DESTROYS ALL CREDENTIALS)
+  pin set <device>                Set or change PIN
+  pin verify <device>             Verify PIN is accepted
+  pin info <device>               Show PIN retry counter
+  cred list <device>              List discoverable credentials (passkeys)
+  cred delete <device>            Delete a passkey from the device (interactive)
 
-  pin set <device>          Set or change PIN
-  pin verify <device>       Verify PIN is accepted
-  pin info <device>         Show PIN retry counter
+BLUETOOTH
+  ble scan                        Scan for BLE FIDO2 authenticators
+  ble pair <MAC>                  Pair a BLE FIDO2 authenticator
+  ble list                        List paired BLE FIDO2 devices
+  qr-ready                        Check BLE stack readiness for QR / hybrid
 
-  cred list <device>        List discoverable credentials (passkeys) on device
-  cred delete <device>      Delete a passkey from the device (interactive)
+PAM INTEGRATION  (sudo / TTY login / SSH)
+  pam status                      Show FIDO2 PAM configuration
+  pam register [--system] [user]  Register token (--system → /etc/u2f_mappings)
+  pam enable  <sudo|login|ssh|all>  Enable FIDO2 for service(s)
+  pam disable <sudo|login|ssh|all>  Remove FIDO2 from service(s)
 
-  ble scan                  Scan for BLE FIDO2 authenticators
-  ble pair <MAC>            Pair a BLE FIDO2 authenticator
-  ble list                  List paired BLE devices
+SSH FIDO2 KEYS  (private key stays on token)
+  ssh generate [--resident]       Generate ed25519-sk key (resident = stored on token)
+  ssh generate --file PATH        Write to custom path
+  ssh list                        List FIDO2 SSH keys in ~/.ssh/
+  ssh load-resident               Load resident keys from token (ssh-keygen -K)
 
-  qr-ready                  Check BLE stack readiness for QR / hybrid transport
+LUKS2 UNLOCK  (disk encryption with hardware token)
+  luks enroll <device>            Enroll FIDO2 token in LUKS2 partition
+  luks list   <device>            Show enrolled key slots
+  luks unenroll <device>          Remove FIDO2 slot (passphrase slot preserved)
 
 TRANSPORTS
-  USB HID      Plug in a FIDO2 key (YubiKey, SoloKey, Nitrokey, etc.)
-  BLE GATT     Pair a BLE FIDO2 token with: ${PROGRAM} ble pair <MAC>
-  Hybrid QR    Use your phone as authenticator — scan QR in Chrome/Firefox
-               (requires BlueZ experimental mode — see qr-ready)
+  USB HID    Plug in a FIDO2 key (YubiKey, SoloKey, Nitrokey, etc.)
+  BLE GATT   Pair a BLE FIDO2 token with: ${PROGRAM} ble pair <MAC>
+  Hybrid QR  Use your phone as authenticator — scan QR in Chrome/Firefox
+             (requires BlueZ experimental mode — see qr-ready)
 
-EXAMPLES
-  ${PROGRAM} list
-  ${PROGRAM} info /dev/hidraw0
-  ${PROGRAM} pin set /dev/hidraw0
-  ${PROGRAM} cred list /dev/hidraw0
-  ${PROGRAM} ble scan
-  ${PROGRAM} ble pair AA:BB:CC:DD:EE:FF
-  ${PROGRAM} qr-ready
+QUICK START — FULL SETUP
+  1. Plug in token, check connectivity:
+       ${PROGRAM} list
+       ${PROGRAM} info /dev/hidraw0
+
+  2. Set PIN (required for PAM + resident keys):
+       ${PROGRAM} pin set /dev/hidraw0
+
+  3. PAM — sudo with FIDO2:
+       sudo ${PROGRAM} pam register --system
+       sudo ${PROGRAM} pam enable sudo
+       # Test: sudo -k; sudo whoami  (touch token when prompted)
+
+  4. SSH — FIDO2 resident key:
+       ${PROGRAM} ssh generate --resident
+       ${PROGRAM} ssh list
+       ssh-copy-id -i ~/.ssh/id_ed25519_sk.pub user@remote
+
+  5. LUKS2 — unlock disk with token:
+       sudo ${PROGRAM} luks enroll /dev/sda2
+       sudo ${PROGRAM} luks list /dev/sda2
+
+  6. Browser (WebAuthn / passkeys):
+       ${PROGRAM} qr-ready     # Verify BLE stack for phone QR flow
+       # Then use any FIDO2-capable site; the token works directly
 
 REQUIREMENTS
-  libfido2       (for USB/BLE FIDO2 management)
+  libfido2        (fido2-token, fido2-cred, fido2-assert)
+  pam-u2f         (pamu2fcfg — for PAM integration only)
   bluez, bluez-utils (for BLE transport)
-  BlueZ experimental mode (for QR/hybrid transport — see qr-ready)
+  openssh         (ssh-keygen — for SSH key generation)
+  systemd         (systemd-cryptenroll — for LUKS2 enrollment)
+  BlueZ experimental mode active (for QR/hybrid — see qr-ready)
 
-PASSKEYS / QR CODE FLOW
-  Passkeys are FIDO2 discoverable credentials stored on the authenticator.
-  The QR code flow uses CTAP2 hybrid transport: your phone is the authenticator,
-  BLE is used only for proximity verification, and authentication tunnels over
-  HTTPS. Chrome 108+ and Firefox 120+ support this on Linux when BlueZ
-  experimental mode (AdvertisingMonitor API) is active.
-
-REFERENCES
-  FIDO2 spec:      https://fidoalliance.org/specs/fido-v2.2/
-  CTAP2 hybrid:    https://fidoalliance.org/specs/fido-v2.2/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#sctn-hybrid
-  BlueZ AdvMon:    /usr/share/doc/bluez/advertising-monitor-api.txt
-  Arch Wiki:       https://wiki.archlinux.org/title/FIDO2
+Arch Wiki: https://wiki.archlinux.org/title/FIDO2
 EOF
 }
 
@@ -674,6 +1070,9 @@ case "$command" in
     ble)            cmd_ble  "${1:-}" "${2:-}" ;;
     qr-ready)       cmd_qr_ready ;;
     reset)          cmd_reset "${1:-}" ;;
+    pam)            cmd_pam  "${1:-status}" "${2:-}" "${3:-}" ;;
+    ssh)            cmd_ssh  "${@}" ;;
+    luks)           cmd_luks "${1:-list}" "${2:-}" ;;
     help|--help|-h) cmd_help ;;
     *)
         _err "Unknown command: ${command}"

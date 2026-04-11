@@ -760,6 +760,7 @@ class Installer:
                 "WIFI_SSID": self.config.network.wifi_ssid,
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
                 "BLUETOOTH_ENABLE": "1" if self.config.network.bluetooth_enable else "0",
+                "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
             }
         )
 
