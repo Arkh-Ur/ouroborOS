@@ -37,6 +37,7 @@ set -euo pipefail
 : "${ROOT_DEVICE:=''}"
 : "${WIFI_SSID:=''}"
 : "${WIFI_PASSPHRASE:=''}"
+: "${BLUETOOTH_ENABLE:='0'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -368,6 +369,19 @@ EOF
 
             # Security: clear passphrase from env immediately after writing
             WIFI_PASSPHRASE=""
+        fi
+    fi
+
+    # Bluetooth: enable bluetooth.service if requested.
+    # bluez must be installed (not in the default package set — user must add it
+    # via extra_packages or our-pacman post-install).
+    if [[ "${BLUETOOTH_ENABLE:-0}" == "1" ]]; then
+        if in_chroot pacman -Qi bluez &>/dev/null 2>&1; then
+            in_chroot systemctl enable bluetooth.service
+            log_ok "bluetooth.service enabled."
+        else
+            log_warn "BLUETOOTH_ENABLE=1 but bluez is not installed — skipping."
+            log_warn "Install after first boot with: sudo our-pacman -S bluez bluez-utils"
         fi
     fi
 

@@ -40,6 +40,9 @@ class NetworkConfig:
     wifi_ssid: str = ""
     wifi_passphrase: str = ""  # Transient — cleared after iwd PSK is written
 
+    # Bluetooth: enable bluetooth.service post-install (requires bluez).
+    bluetooth_enable: bool = False
+
 
 @dataclass
 class UserConfig:
@@ -305,6 +308,8 @@ def load_config(path: Path) -> InstallerConfig:
     wifi_cfg = net.get("wifi", {}) or {}
     cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
     cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))
+    bt_cfg = net.get("bluetooth", {}) or {}
+    cfg.network.bluetooth_enable = bool(bt_cfg.get("enable", False))
 
     # User
     usr = data["user"]

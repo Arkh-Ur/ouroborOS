@@ -21,6 +21,9 @@ network:
   # wifi:
   #   ssid: "MyNetwork"
   #   passphrase: "my-secret-passphrase"
+  # Optional: enable bluetooth.service post-install (requires bluez package).
+  # bluetooth:
+  #   enable: false
 
 user:
   username: admin

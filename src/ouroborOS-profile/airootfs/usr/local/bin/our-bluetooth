@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# our-bluetooth — interactive Bluetooth manager for ouroborOS (bluetoothctl wrapper)
+#
+# Wraps bluetoothctl with a friendly CLI. Requires bluez + bluez-utils.
+#
+# Usage:
+#   our-bluetooth list                  # Scan and list nearby devices
+#   our-bluetooth pair <MAC>            # Pair with a device (interactive PIN if needed)
+#   our-bluetooth connect <MAC>         # Connect to a paired device
+#   our-bluetooth disconnect <MAC>      # Disconnect from a device
+#   our-bluetooth forget <MAC>          # Remove pairing
+#   our-bluetooth status                # Show adapter status and connected devices
+#   our-bluetooth on                    # Enable Bluetooth adapter
+#   our-bluetooth off                   # Disable Bluetooth adapter (power off)
+#   our-bluetooth help
+#
+# Requirements:
+#   - bluez and bluez-utils packages installed
+#   - bluetooth.service running (systemctl start bluetooth)
+set -euo pipefail
+
+readonly PROGRAM="our-bluetooth"
+readonly SCAN_TIMEOUT=10   # seconds to scan before listing
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_require_bluetoothctl() {
+    command -v bluetoothctl &>/dev/null || \
+        _die "bluetoothctl not found. Install: sudo our-pacman -S bluez bluez-utils"
+}
+
+_require_bluetooth_service() {
+    systemctl is-active --quiet bluetooth.service 2>/dev/null || {
+        _warn "bluetooth.service is not running. Starting it now..."
+        systemctl start bluetooth.service || \
+            _die "Failed to start bluetooth.service. Is bluez installed?"
+    }
+}
+
+_validate_mac() {
+    local mac="$1"
+    [[ "$mac" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || \
+        _die "Invalid MAC address: '${mac}'. Expected format: AA:BB:CC:DD:EE:FF"
+}
+
+# Run a bluetoothctl command sequence and return output
+_btctl() {
+    bluetoothctl "$@" 2>/dev/null
+}
+
+# Send commands to bluetoothctl via stdin (for interactive sequences)
+_btctl_cmd() {
+    local timeout_s="${1}"; shift
+    printf '%s\n' "$@" | timeout "$timeout_s" bluetoothctl 2>/dev/null || true
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Scanning for ${SCAN_TIMEOUT}s..."
+    _btctl_cmd "$(( SCAN_TIMEOUT + 2 ))" \
+        "scan on" \
+        "$(sleep "${SCAN_TIMEOUT}"; echo "scan off")" \
+        "devices" \
+        "quit" 2>/dev/null || true
+
+    echo ""
+    _info "Known/discovered devices:"
+    _btctl devices 2>/dev/null | while IFS= read -r line; do
+        local mac name
+        mac=$(echo "$line" | awk '{print $2}')
+        name=$(echo "$line" | cut -d' ' -f3-)
+        # Check if connected
+        local connected="  "
+        _btctl info "$mac" 2>/dev/null | grep -q "Connected: yes" && connected="✓ "
+        echo "  ${connected}${mac}  ${name}"
+    done
+}
+
+cmd_pair() {
+    local mac="${1:?Usage: ${PROGRAM} pair <MAC>}"
+    _validate_mac "$mac"
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Scanning briefly to discover '${mac}'..."
+    _btctl_cmd 5 "scan on" "quit" 2>/dev/null || true
+
+    _info "Pairing with ${mac}..."
+    _info "(If the device requires a PIN, confirm it on both sides)"
+
+    # Use bluetoothctl interactively for pairing (PIN exchange)
+    bluetoothctl -- pair "$mac" 2>/dev/null && {
+        _ok "Paired with ${mac}."
+        _info "Now connect with: ${PROGRAM} connect ${mac}"
+    } || {
+        _warn "Pairing may have failed. Check if device is in pairing mode."
+        _info "Run '${PROGRAM} list' to verify device is visible."
+    }
+}
+
+cmd_connect() {
+    local mac="${1:?Usage: ${PROGRAM} connect <MAC>}"
+    _validate_mac "$mac"
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Connecting to ${mac}..."
+    if _btctl connect "$mac" 2>/dev/null | grep -q "Connection successful"; then
+        _ok "Connected to ${mac}."
+    else
+        _warn "Connection may have failed. Is the device paired and in range?"
+        _info "Pair first with: ${PROGRAM} pair ${mac}"
+    fi
+}
+
+cmd_disconnect() {
+    local mac="${1:?Usage: ${PROGRAM} disconnect <MAC>}"
+    _validate_mac "$mac"
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Disconnecting ${mac}..."
+    _btctl disconnect "$mac" 2>/dev/null && _ok "Disconnected." || \
+        _warn "Device may not have been connected."
+}
+
+cmd_forget() {
+    local mac="${1:?Usage: ${PROGRAM} forget <MAC>}"
+    _validate_mac "$mac"
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Removing pairing with ${mac}..."
+    _btctl remove "$mac" 2>/dev/null && _ok "Pairing removed for ${mac}." || \
+        _warn "Could not remove pairing. Was it paired?"
+}
+
+cmd_status() {
+    _require_bluetoothctl
+
+    _info "Adapter status:"
+    _btctl show 2>/dev/null | grep -E "Name:|Powered:|Discoverable:|Pairable:|Address:" | \
+        sed 's/^/  /' || _warn "Could not get adapter info."
+
+    echo ""
+    _info "Connected devices:"
+    local found=false
+    _btctl devices Connected 2>/dev/null | while IFS= read -r line; do
+        echo "  ${line}"
+        found=true
+    done
+    $found || echo "  (none)"
+}
+
+cmd_on() {
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Powering on Bluetooth adapter..."
+    _btctl power on 2>/dev/null && _ok "Bluetooth adapter powered on." || \
+        _die "Failed to power on Bluetooth adapter."
+}
+
+cmd_off() {
+    _require_bluetoothctl
+    _require_bluetooth_service
+
+    _info "Powering off Bluetooth adapter..."
+    _btctl power off 2>/dev/null && _ok "Bluetooth adapter powered off." || \
+        _warn "Could not power off adapter."
+}
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — Bluetooth manager for ouroborOS (bluetoothctl wrapper)
+
+USAGE
+  ${PROGRAM} <command> [options]
+
+COMMANDS
+  list                  Scan and list nearby + paired devices (✓ = connected)
+  pair <MAC>            Pair with a device (interactive PIN if needed)
+  connect <MAC>         Connect to a paired device
+  disconnect <MAC>      Disconnect from a device
+  forget <MAC>          Remove device pairing
+  status                Show adapter status and connected devices
+  on                    Power on the Bluetooth adapter
+  off                   Power off the Bluetooth adapter
+  help                  Show this help
+
+EXAMPLES
+  ${PROGRAM} list
+  ${PROGRAM} pair AA:BB:CC:DD:EE:FF
+  ${PROGRAM} connect AA:BB:CC:DD:EE:FF
+  ${PROGRAM} disconnect AA:BB:CC:DD:EE:FF
+  ${PROGRAM} forget AA:BB:CC:DD:EE:FF
+  ${PROGRAM} status
+
+REQUIREMENTS
+  - bluez and bluez-utils installed
+  - bluetooth.service running (auto-started by this tool if needed)
+  - Install: sudo our-pacman -S bluez bluez-utils
+
+NOTES
+  - MAC address format: AA:BB:CC:DD:EE:FF
+  - 'pair' may prompt for PIN confirmation on both the device and terminal
+  - Use 'on'/'off' to control the adapter power state
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    list)           cmd_list ;;
+    pair)           cmd_pair "${1:-}" ;;
+    connect)        cmd_connect "${1:-}" ;;
+    disconnect)     cmd_disconnect "${1:-}" ;;
+    forget)         cmd_forget "${1:-}" ;;
+    status)         cmd_status ;;
+    on)             cmd_on ;;
+    off)            cmd_off ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac
