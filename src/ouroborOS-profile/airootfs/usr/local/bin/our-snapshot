@@ -53,8 +53,9 @@ _validate_name() {
     local name="$1"
     [[ "$name" =~ ^[a-zA-Z0-9_\.\-]+$ ]] || \
         _die "Invalid snapshot name '${name}'. Use letters, digits, -, _ or ."
-    [[ "$name" == "." || "$name" == ".." ]] && \
+    if [[ "$name" == "." || "$name" == ".." ]]; then
         _die "Invalid snapshot name '${name}'."
+    fi
 }
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -97,7 +98,9 @@ cmd_create() {
     fi
 
     local dest="${SNAPSHOTS_DIR}/${name}"
-    [[ -d "$dest" ]] && _die "Snapshot '${name}' already exists."
+    if [[ -d "$dest" ]]; then
+        _die "Snapshot '${name}' already exists."
+    fi
 
     _info "Creating snapshot '${name}'..."
     create_snapshot "/" "$dest" --readonly

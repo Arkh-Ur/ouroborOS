@@ -624,6 +624,10 @@ class Installer:
             # (already in base), used by `our-container` for container workflows.
         ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
 
+        # Add sbctl when Secure Boot is enabled
+        if self.config.security.secure_boot and "sbctl" not in packages:
+            packages.append("sbctl")
+
         # Add DM package if explicitly chosen and not already in profile packages
         resolved_dm = resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
         if resolved_dm != "none":

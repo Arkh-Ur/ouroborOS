@@ -288,7 +288,7 @@ cmd_cred() {
             echo ""
             _info "Enter the credential ID to delete (from the list above):"
             read -r -p "  Credential ID: " cred_id
-            [[ -z "$cred_id" ]] && _die "No credential ID entered."
+            if [[ -z "$cred_id" ]]; then _die "No credential ID entered."; fi
 
             _info "Deleting credential ${cred_id}..."
             fido2-token -D -k "$cred_id" "$device" || _die "Delete failed."
