@@ -60,7 +60,6 @@
 set -euo pipefail
 
 readonly PROGRAM="our-fido2"
-readonly BLE_FIDO2_GATT_UUID="0000fffd-0000-1000-8000-00805f9b34fb"
 readonly BLE_FIDO2_GATT_SHORT="FFFD"
 
 _info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
@@ -319,12 +318,8 @@ cmd_ble() {
             # Use bluetoothctl to scan and filter by FIDO2 UUID
             # Some BLE FIDO2 tokens include the UUID in their advertisement; others don't
             # until after pairing (they require the GATT service to be discovered)
-            local scan_out
-            scan_out=$(
-                printf '%s\n' "scan on" | \
-                timeout "$(( ${SCAN_TIMEOUT:-15} + 2 ))" bluetoothctl 2>/dev/null | \
-                grep -i "NEW\|Device" | head -30 || true
-            )
+            printf '%s\n' "scan on" | \
+                timeout "$(( ${SCAN_TIMEOUT:-15} + 2 ))" bluetoothctl &>/dev/null || true
             bluetoothctl scan off &>/dev/null || true
             sleep 1
 
@@ -504,10 +499,8 @@ cmd_qr_ready() {
     fi
 
     # 6. BLE adapter present?
-    local adapter_powered=false
     if command -v bluetoothctl &>/dev/null; then
         if bluetoothctl show 2>/dev/null | grep -q "Powered: yes"; then
-            adapter_powered=true
             _ok "  BLE adapter:      powered on"
             # Show adapter address
             local addr
@@ -667,6 +660,7 @@ _pam_disable() {
         return 0
     fi
 
+    # shellcheck disable=SC2016
     sed -i "/$(printf '%s' "${_PAM_MARKER}" | sed 's/[[\.*^$()+?{|]/\\&/g')/d" "$pam_file"
     _ok "FIDO2 removed from ${target} → ${pam_file}"
 }

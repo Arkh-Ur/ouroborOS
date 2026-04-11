@@ -109,13 +109,13 @@ cmd_pair() {
     _info "(If the device requires a PIN, confirm it on both sides)"
 
     # Use bluetoothctl interactively for pairing (PIN exchange)
-    bluetoothctl -- pair "$mac" 2>/dev/null && {
+    if bluetoothctl -- pair "$mac" 2>/dev/null; then
         _ok "Paired with ${mac}."
         _info "Now connect with: ${PROGRAM} connect ${mac}"
-    } || {
+    else
         _warn "Pairing may have failed. Check if device is in pairing mode."
         _info "Run '${PROGRAM} list' to verify device is visible."
-    }
+    fi
 }
 
 cmd_connect() {
@@ -140,8 +140,11 @@ cmd_disconnect() {
     _require_bluetooth_service
 
     _info "Disconnecting ${mac}..."
-    _btctl disconnect "$mac" 2>/dev/null && _ok "Disconnected." || \
+    if _btctl disconnect "$mac" 2>/dev/null; then
+        _ok "Disconnected."
+    else
         _warn "Device may not have been connected."
+    fi
 }
 
 cmd_forget() {
@@ -151,8 +154,11 @@ cmd_forget() {
     _require_bluetooth_service
 
     _info "Removing pairing with ${mac}..."
-    _btctl remove "$mac" 2>/dev/null && _ok "Pairing removed for ${mac}." || \
+    if _btctl remove "$mac" 2>/dev/null; then
+        _ok "Pairing removed for ${mac}."
+    else
         _warn "Could not remove pairing. Was it paired?"
+    fi
 }
 
 cmd_status() {
@@ -177,8 +183,11 @@ cmd_on() {
     _require_bluetooth_service
 
     _info "Powering on Bluetooth adapter..."
-    _btctl power on 2>/dev/null && _ok "Bluetooth adapter powered on." || \
+    if _btctl power on 2>/dev/null; then
+        _ok "Bluetooth adapter powered on."
+    else
         _die "Failed to power on Bluetooth adapter."
+    fi
 }
 
 cmd_off() {
@@ -186,8 +195,11 @@ cmd_off() {
     _require_bluetooth_service
 
     _info "Powering off Bluetooth adapter..."
-    _btctl power off 2>/dev/null && _ok "Bluetooth adapter powered off." || \
+    if _btctl power off 2>/dev/null; then
+        _ok "Bluetooth adapter powered off."
+    else
         _warn "Could not power off adapter."
+    fi
 }
 
 cmd_le() {

@@ -165,7 +165,8 @@ cmd_rotate_keys() {
     [[ "$confirm" == "yes" ]] || _die "Aborted."
 
     # Backup existing keys
-    local backup_dir="/var/lib/sbctl/backup-$(date +%Y%m%dT%H%M%S)"
+    local backup_dir
+    backup_dir="/var/lib/sbctl/backup-$(date +%Y%m%dT%H%M%S)"
     _info "Backing up current keys to ${backup_dir}..."
     cp -a /var/lib/sbctl "$backup_dir"
     _ok "Keys backed up."
