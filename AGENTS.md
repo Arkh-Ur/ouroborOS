@@ -1,8 +1,8 @@
 # BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Generado:** 2026-04-08
-**Commit:** a5c318d (uncommitted changes)
-**Branch:** dev
+**Actualizado:** 2026-04-11
+**Commit:** v0.3.0 (tag)
+**Branch:** main
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
 
@@ -22,9 +22,9 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Repositorios:** `Arkh-Ur/ouroborOS-dev` (privado, dev) → `Arkh-Ur/ouroborOS` (público, releases). Tag push en dev dispara build + release en público.
 
-**Release v0.1.0:** Publicado el 2026-04-07 con ISO (1.3GB) + SHA256SUMS. Fases 1-5 completadas.
+**Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11).
 
-**Estado actual:** Phase 2 completa — namespace `our-*` (`our-pacman`, `our-container`), desktop profiles, systemd-homed default-on. Ver `docs/PHASE_2_PLAN.md`. Phase 3 pendiente.
+**Estado actual:** Phase 3 completa — `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-fido2`, `ouroboros-secureboot`, `ouroboros-firstboot`. Ver `docs/PHASE_3_PLAN.md`.
 
 ## ESTRUCTURA
 
@@ -36,6 +36,8 @@ ouroborOS/
 │   └── ouroborOS-profile/ # archiso profile (airootfs, efiboot, packages)
 ├── templates/             # Default install config template for interactive mode
 ├── docs/                  # Architecture, build, installer, messages
+│   └── architecture/      # overview, immutability, systemd, installer-phases,
+│                          # secure-boot, systemd-homed, our-container
 ├── tests/                 # Docker-based test infra + shell scripts
 ├── agents/                # Agent role definitions (qa-tester, developer, etc.)
 ├── skills/                # Domain skill docs (systemd, archiso, filesystem, etc.)
@@ -49,62 +51,78 @@ ouroborOS/
 
 | Tarea | Ubicación | Notas |
 |-------|-----------|-------|
-| Agregar estado/fase del instalador | `src/installer/state_machine.py` | FSM con checkpoints, ver installer/AGENTS.md |
-| Agregar pantalla TUI | `src/installer/tui.py` | Wrapper de UI Rich (primario) + whiptail (fallback) |
+| Agregar estado/fase del instalador | `src/installer/state_machine.py` | FSM con checkpoints |
+| Agregar pantalla TUI | `src/installer/tui.py` | Rich (primario) + whiptail (fallback) |
 | Cambiar esquema de configuración | `src/installer/config.py` | Dataclasses + validación YAML |
-| Agregar perfil de desktop | `src/installer/desktop_profiles.py` | PROFILE_PACKAGES, PROFILE_DM, 5 perfiles |
-| Cambiar DM seleccionable | `src/installer/desktop_profiles.py` | VALID_DMS, _DM_PACKAGE, _DM_SERVICE, dm_package(), dm_service(), resolve_dm() |
+| Agregar perfil de desktop | `src/installer/desktop_profiles.py` | PROFILE_PACKAGES, 5 perfiles |
 | Agregar operación de disco/snapshot/config | `src/installer/ops/*.sh` | Librerías Bash invocadas via `_run_op()` |
-| Agregar paquete al ISO | `src/ouroborOS-profile/packages.x86_64` | Debe justificarse (preocupación de bloat) |
+| Agregar paquete al ISO | `src/ouroborOS-profile/packages.x86_64` | Justificar (bloat) |
 | Cambiar entradas de boot | `src/ouroborOS-profile/efiboot/` | Archivos .conf de systemd-boot |
 | Cambiar filesystem del ISO live | `src/ouroborOS-profile/airootfs/` | Copiado al ISO durante el build |
+| Gestión de snapshots | `airootfs/usr/local/bin/our-snapshot` | list/create/delete/prune/info/boot-entries/scrub |
+| Rollback de sistema | `airootfs/usr/local/bin/our-rollback` | now/promote/status/undo |
+| WiFi interactivo | `airootfs/usr/local/bin/our-wifi` | list/connect/status/forget/show-password |
+| Bluetooth | `airootfs/usr/local/bin/our-bluetooth` | list/pair/connect/disconnect/forget/status/on/off/le |
+| FIDO2/WebAuthn/Passkey | `airootfs/usr/local/bin/our-fido2` | list/info/pin/cred/ble/qr-ready/reset |
+| Secure Boot | `airootfs/usr/local/bin/ouroboros-secureboot` | setup/status/sign-all/verify/rotate-keys |
+| First boot | `airootfs/usr/local/bin/ouroboros-firstboot` | mirrors/machine-id/timers (oneshot) |
+| BlueZ config | `airootfs/etc/bluetooth/main.conf` | Experimental + LE tuning |
 | Construir ISO | `src/scripts/build-iso.sh` | Wrapper de mkarchiso |
 | Flashear USB | `src/scripts/flash-usb.sh` | Wrapper seguro de dd |
-| Entorno de desarrollo | `src/scripts/setup-dev-env.sh` | Instala deps de build en host Arch |
-| Agregar check de CI | `.github/workflows/` | lint.yml, test.yml, build.yml, opencode.yml |
-| Agregar test | `src/installer/tests/` o `tests/scripts/` | pytest o scripts shell |
-| Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, installer-phases |
-| Config default interactiva | `templates/install-config.yaml` | Template YAML con contraseña plaintext, auto-hasseada |
-| Plan Phase 2 | `docs/PHASE_2_PLAN.md` | our-pacman, our-container, desktop profiles, homed |
-| Documentación our-container | `docs/our-container.md` | Guía de usuario completa (651 líneas) |
-| Tests E2E our-container | `tests/scripts/e2e-our-container.sh` | 15 fases, 1382 líneas, QEMU+SSH |
-| Tests unitarios our-container | `tests/our_container/` | pytest unit tests |
-| Tests integración our-container | `src/installer/tests/test_our_container_integration.py` | pytest integration tests |
-| CI build + release | `.github/workflows/build.yml` | Tag push → ISO build → release en repo público |
+| Tests | `src/installer/tests/` | pytest, 323 tests, ≥93% coverage |
+| Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, secure-boot, homed |
 
 ## MAPA DE CÓDIGO
 
 | Símbolo | Tipo | Ubicación | Rol |
 |---------|------|-----------|-----|
 | `Installer` | clase | `src/installer/state_machine.py` | Orquestador FSM principal |
-| `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→USER→DESKTOP→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
+| `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→USER→DESKTOP→**SECURE_BOOT**→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
 | `TUI` | clase | `src/installer/tui.py` | Wrapper de UI Rich (primario) + whiptail (fallback) |
-| `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario, desktop) |
-| `DesktopConfig` | dataclass | `src/installer/config.py` | Config de desktop profile y homed storage |
+| `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario, desktop, security) |
+| `DesktopConfig` | dataclass | `src/installer/config.py` | Config de desktop profile y DM |
+| `SecurityConfig` | dataclass | `src/installer/config.py` | `secure_boot`, `sbctl_include_ms_keys` |
+| `NetworkConfig` | dataclass | `src/installer/config.py` | hostname, networkd, iwd, resolved, wifi, bluetooth |
 | `PROFILE_PACKAGES` | dict | `src/installer/desktop_profiles.py` | Paquetes por perfil (minimal/hyprland/niri/gnome/kde) |
-| `PROFILE_DM` | dict | `src/installer/desktop_profiles.py` | Display manager por perfil (gdm, sddm, o ninguno) |
-| `VALID_DMS` | frozenset | `src/installer/desktop_profiles.py` | DMs permitidos: gdm, sddm, plm, none |
 | `load_config` | func | `src/installer/config.py` | Cargador YAML→InstallerConfig |
 | `load_config_from_url` | func | `src/installer/config.py` | Descarga config remota via URL (stdlib urllib) |
-| `validate_config` | func | `src/installer/config.py` | Validación de esquema (ruta disco, timezone, hostname, username) |
+| `validate_config` | func | `src/installer/config.py` | Validación de esquema |
 | `find_unattended_config` | func | `src/installer/config.py` | Descubre YAML en cmdline/USB/tmp |
-| `show_remote_config_prompt` | method | `src/installer/tui.py` | Prompt para URL de config remota (Rich + whiptail) |
-| `templates/install-config.yaml` | file | `templates/install-config.yaml` | Config default YAML con contraseña plaintext |
 | `main` | func | `src/installer/main.py` | Entry point CLI (--resume, --config, --validate-config) |
-| `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab completo |
-| `create_install_snapshot` | func | `src/installer/ops/snapshot.sh` | Snapshot baseline de Btrfs |
-| configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM enable, homed |
-| `our-pacman` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-pacman` | Wrapper de pacman con snapshot + remount rw (antes `ouroboros-upgrade`, symlink de compat) |
-| `our-container` | script | `src/ouroborOS-profile/airootfs/usr/local/bin/our-container` | Wrapper systemd-nspawn: create/enter/start/stop/list/remove, snapshot, storage mount, image pull, monitor, diagnose, stats, logs, check (17 comandos, 1786 líneas) |
+| `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab |
+| configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM, homed, WiFi PSK, Bluetooth+FIDO2, firstboot |
+| `our-pacman` | script | `airootfs/usr/local/bin/our-pacman` | Wrapper pacman: snapshot pre-update + remount rw + upgrade + remount ro + sbctl sign-all + boot-entries sync + prune |
+| `our-snapshot` | script | `airootfs/usr/local/bin/our-snapshot` | CLI para snapshots Btrfs: list/create/delete/prune/info/boot-entries sync/scrub |
+| `our-rollback` | script | `airootfs/usr/local/bin/our-rollback` | Rollback: now (bootctl set-oneshot), promote (swap atómico @), status, undo |
+| `our-container` | script | `airootfs/usr/local/bin/our-container` | Wrapper systemd-nspawn: 17 comandos, --isolated (veth), --gui (wayland+GPU+audio) |
+| `our-wifi` | script | `airootfs/usr/local/bin/our-wifi` | Wrapper iwctl: list/connect/status/forget/show-password |
+| `our-bluetooth` | script | `airootfs/usr/local/bin/our-bluetooth` | Wrapper bluetoothctl + le subcommand (experimental, advmon) |
+| `our-fido2` | script | `airootfs/usr/local/bin/our-fido2` | FIDO2/WebAuthn: USB + BLE GATT + Hybrid QR (CTAP2) |
+| `ouroboros-secureboot` | script | `airootfs/usr/local/bin/ouroboros-secureboot` | sbctl wrapper: setup/status/sign-all/verify/rotate-keys |
+| `ouroboros-firstboot` | script | `airootfs/usr/local/bin/ouroboros-firstboot` | Oneshot: mirrors + machine-id + timers. Guard: /var/lib/ouroborOS/firstboot.done |
+
+## EJECUTABLES `our-*` Y `ouroboros-*`
+
+| Ejecutable | Prefijo | Audiencia | Descripción |
+|-----------|---------|-----------|-------------|
+| `our-pacman` | `our-*` | Usuario | Atomic package manager wrapper |
+| `our-snapshot` | `our-*` | Usuario | Btrfs snapshot manager |
+| `our-rollback` | `our-*` | Usuario | System rollback en un comando |
+| `our-container` | `our-*` | Usuario | systemd-nspawn container manager |
+| `our-wifi` | `our-*` | Usuario | WiFi setup interactivo |
+| `our-bluetooth` | `our-*` | Usuario | Bluetooth manager + BLE LE |
+| `our-fido2` | `our-*` | Usuario | FIDO2/WebAuthn/Passkey manager |
+| `ouroboros-secureboot` | `ouroboros-*` | Sistema | Secure Boot via sbctl |
+| `ouroboros-firstboot` | `ouroboros-*` | Sistema | First boot oneshot service |
 
 ## CONVENCIONES
 
-- **Python para lógica, Bash para operaciones.** Sin mezclar. `state_machine.py` orquesta; `ops/*.sh` ejecuta. Rich como backend TUI primario, whiptail como fallback.
-- **Conventional Commits:** `feat|fix|docs|build|installer|test|chore|refactor)(scope): description`
-- **Estrategia de branches:** `dev` o `feature/*` solamente. PR para mergear. Nunca push directo a `master`.
-- **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck -S style` (cero warnings).
+- **Python para lógica, Bash para operaciones.** Sin mezclar. `state_machine.py` orquesta; `ops/*.sh` ejecuta.
+- **Conventional Commits:** `feat|fix|docs|build|installer|test|chore|refactor(scope): description`
+- **Estrategia de branches:** `main` es la rama de trabajo. PR para mergear a `master` (releases).
+- **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck` (cero warnings).
 - **Lint Python:** Ruff con E,W,F,I,UP,ANN001,ANN201,E722.
-- **Cobertura mínima de tests:** 93% (forzado por `tests/scripts/run-pytest.sh`, mínimo 70%).
+- **Cobertura mínima de tests:** ≥93% (323 tests, 14 skipped).
 - **No GRUB, no NetworkManager, no /dev/sdX, no root rw en producción.** Ver ANTIPATRONES.
 
 ## ANTIPATRONES
@@ -115,25 +133,57 @@ ouroborOS/
 | NetworkManager | systemd-networkd + iwd |
 | `/dev/sdX` en código runtime | Usar UUID en todo lugar |
 | Root montado read-write en producción | Diseño inmutable; escrituras a /var, /etc, /tmp, /home |
-| Commits directos a master | Estrategia: dev→PR→master |
+| Commits directos a master | Estrategia: main→PR→master |
 | Paquetes injustificados en el ISO | Mantener ISO liviano |
 | Fallos de `shellcheck` | Todos los scripts deben pasar con cero warnings |
-| TODO en código enviado | Trackear apropiadamente o implementar |
-| PARTUUID en fstab para root | Usar UUID= para el subvolumen root |
-| archisolabel hardcodeado en boot entries | Usar template `%ARCHISO_UUID%` + `archisosearchuuid=` (archiso v87+) |
+| `$AIROOTFS` en configure.sh | La variable no existe; usar rutas del live ISO directamente (ej. `/etc/bluetooth/main.conf`) |
+| `/` al inicio de `rootflags=subvol=` | El kernel ignora el subvol si empieza con `/`; usar `subvol=@snapshots/...` |
 | Contraseñas en texto plano en scripts/config | Hash via SHA-512 crypt; passphrase LUKS via stdin |
-| Lógica Python en ops Bash o viceversa | Separación estricta de responsabilidades |
-| URLs de mirrors hardcodeadas en pacman.conf | Parametrizar o configurar |
-| Rich unavailable en el ISO live sin instalarlo | Instalar python-rich en packages.x86_64 del perfil archiso |
+| `--fastest` en reflector | Usar `--sort score` (server-side, instantáneo) |
 
-## ESTILOS ÚNICOS
+## SCHEMA YAML COMPLETO (v0.3.0)
 
-- **FSM con checkpoints:** Estado del instalador persistido por fase en `/tmp/ouroborOS-checkpoints/`; soporta reanudación tras interrupciones.
-- **Límite Python↔Bash:** `state_machine._run_op()` invoca `ops/*.sh` con flags `--action` y `--target`; `configure.sh` es impulsado por variables de entorno.
-- **Layout del perfil archiso:** `airootfs/` refleja el filesystem del ISO live; `efiboot/` contiene las entradas de systemd-boot; `profiledef.sh` define los metadatos de build.
-- **Infra de tests basada en Docker:** Todos los tests de CI corren en un contenedor Arch Linux construido desde `tests/Dockerfile`.
-- **TUI Rich como backend primario:** Rich como backend primario con whiptail como fallback; barra de progreso inline + progreso global de instalación.
-- **Templates de configuración:** `templates/install-config.yaml` sirve como default interactivo; el instalador lo copia/modifica.
+```yaml
+user:
+  username: admin
+  password: changeme           # Hasheado en load_config (SHA-512)
+  shell: /bin/bash             # /bin/bash | /bin/zsh | /usr/bin/fish
+  homed_storage: classic       # subvolume | luks | directory | classic
+  groups: [wheel, audio, video, input]
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+  wifi:
+    ssid: ""                   # Pre-configura iwd PSK en /var/lib/iwd/
+    passphrase: ""             # Transitorio — no persistido en checkpoints
+  bluetooth:
+    enable: false              # Habilita bluetooth.service + instala libfido2
+
+security:
+  secure_boot: false           # true → sbctl setup durante install
+  sbctl_include_ms_keys: false # true → sbctl enroll-keys -m
+
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+desktop:
+  profile: minimal             # minimal | hyprland | niri | gnome | kde
+  dm: auto                     # auto | gdm | sddm | plm | none
+
+extra_packages: []
+post_install_action: reboot    # reboot | poweroff | none
+```
 
 ## COMANDOS
 
@@ -153,39 +203,22 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
   -cdrom out/ouroborOS-*.iso -boot d
 
 # Tests unitarios
-pytest src/installer/tests/ -v
+pytest src/installer/tests/ -v       # 323 tests, ≥93% coverage
 
 # Suite CI completa (Docker)
 docker-compose -f tests/docker-compose.yml run --rm full-suite
-
-# Suites de test individuales
-docker-compose -f tests/docker-compose.yml run --rm shellcheck-suite
-docker-compose -f tests/docker-compose.yml run --rm pytest-suite
-docker-compose -f tests/docker-compose.yml run --rm smoke-test
-
-# Lint
-tests/scripts/lint-python.sh
-tests/scripts/test-shellcheck.sh
 ```
 
 ## NOTAS
 
-- No hay `pyproject.toml`, `pytest.ini`, `conftest.py`, ni `Makefile` — la config de tests está en `tests/scripts/`.
-- `out/` contiene artefactos de build (ISO), gitignored.
-- `IMPLEMENTATION_PLAN.md` trackea progreso de fases; actualmente en Phase 3 completa.
-- TUI usa Rich como backend primario; whiptail como fallback si Rich no está disponible.
-- `templates/install-config.yaml` es la config default para instalación interactiva.
-- El ISO live tiene SSH server habilitado con generación de host keys al boot.
-- `skills/` y `agents/` son bases de conocimiento no-código para Claude Code; no se ejecutan.
-- `skills/qemu-e2e-test.md` — plan completo de test E2E: build ISO → install en QEMU (desatendido) → verificar sistema instalado via SSH + serial log.
-- Dual-repo: `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push en dev dispara build.yml que construye ISO y publica release en el repo público.
-- `our-pacman` reemplaza a `ouroboros-upgrade` (symlink de compatibilidad por un release cycle). `our-container` es el wrapper de systemd-nspawn con 17 comandos (create/enter/start/stop/list/remove, snapshot create/list/restore, storage mount/umount, cleanup, disk-usage, image pull/list/remove, monitor, diagnose, stats, logs, check). Documentación en `docs/our-container.md`. Tests E2E en `tests/scripts/e2e-our-container.sh` (15 fases, 1382 líneas). Tests unitarios en `tests/our_container/`. Tests de integración en `src/installer/tests/test_our_container_integration.py`.
-- `desktop_profiles.py` define 5 perfiles: minimal, hyprland, niri, gnome, kde. GNOME usa gdm, KDE usa plm (plasma-login-manager), hyprland/niri usan sddm, minimal arranca desde TTY. DM desacoplado del perfil con 4 opciones (gdm, sddm, plm, none) y selector visual ↑↓.
-- La FSM ahora tiene estados USER y DESKTOP antes de PARTITION — todas las decisiones humanas se toman antes de cualquier operación destructiva.
-- pacman PreTransaction hooks NO funcionan para remount rw (pacman verifica escritura antes de ejecutar hooks). Por eso existe el wrapper `our-pacman`.
-- **homed-migrate.sh** es no-interactivo: usa JSON identity file (`--identity=`) para `homectl create` y D-Bus `ActivateHome` para activate. El password plaintext se pasa via `HOMED_PASSWORD` env var, se guarda en `/etc/ouroboros/homed-migration.conf` (chmod 600), y se elimina post-migration.
-- **Remote config URL:** Si no hay config local, el INIT state pregunta si el usuario quiere proveer una URL (ej: GitHub raw) para descargar un config remoto. Usa `urllib.request` (stdlib). Si falla, cae a modo interactivo.
-- **Reflector mirrors:** Usa `--sort score` (server-side, instantáneo) en vez de `--fastest` (benchmark local, lento). Fallback worldwide si regional falla.
-- **E2E tests QEMU:** Siempre usar `setsid` para lanzar QEMU (sobrevive tool timeouts). Siempre `fuser -k 2222/tcp` antes de relanzar. Disco qcow2 en `/home/` (NO `/tmp/`, es tmpfs). `ps aux | grep qemu` para encontrar el PID real (`$!` da el PID incorrecto con setsid).
-- **E2E known issue:** `homectl create --identity=JSON` falla en QEMU con error genérico (en investigación). SSH en sistema instalado solo escucha en AF_UNIX socket por default (necesita investigación de networkd DHCP en SLIRP).
-- **Password plaintext lifecycle:** `UserConfig.password_plaintext` es transitorio — se llena en load_config o TUI, se pasa a configure.sh como `USER_PASSWORD`, y se limpia en state_machine.py inmediatamente después de que configure.sh termina. Nunca se persiste en checkpoints.
+- **FSM states (v0.3.0):** INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. SECURE_BOOT se omite si `security.secure_boot: false`.
+- **Snapshots:** `/.snapshots/install/` es el baseline dorado (nunca purgado). Snapshots de pre-update: `YYYY-MM-DDTHHMMSS/`. Manuales: `YYYY-MM-DD_LABEL/`. Metadata JSON en `/.snapshots/.metadata/NAME.json`.
+- **Boot entries:** `rootflags=subvol=@snapshots/...` — sin `/` inicial (requisito del kernel).
+- **Secure Boot:** `sbctl` en `/var/lib/sbctl/` (subvolumen `@var`). Requiere firmware en Setup Mode. `our-pacman` corre `sbctl sign-all` post-update si Secure Boot está activo.
+- **FIDO2/BLE:** BlueZ `--experimental` requerido para AdvertisingMonitor API (Chrome/Firefox CTAP2 hybrid QR). `our-fido2 qr-ready` verifica la stack completa. `71-fido2-ble.rules` maneja acceso a `/dev/hidraw*` para tokens BLE vía HOGP.
+- **systemd-homed:** `homectl create` falla en QEMU (subvolumen Btrfs conflict). Fallback automático a classic `useradd`. Documentado en `docs/architecture/systemd-homed.md`.
+- **WiFi PSK:** Escrito a `/var/lib/iwd/SSID.psk` (chmod 600, dir 700). SSIDs con caracteres especiales usan `=HEXSSID.psk`. La passphrase se limpia del env inmediatamente post-escritura.
+- **ouroboros-firstboot:** Guard file `/var/lib/ouroborOS/firstboot.done`. Corre una sola vez. Activa `our-snapshot-prune.timer` y `btrfs-scrub@-.timer`.
+- **Password plaintext lifecycle:** `UserConfig.password_plaintext` es transitorio. Se pasa a `configure.sh` como `USER_PASSWORD`, se limpia inmediatamente después. Nunca persistido en checkpoints.
+- **E2E tests QEMU:** `setsid` para lanzar QEMU. `fuser -k 2222/tcp` antes de relanzar. Disco qcow2 en `/home/` (NO `/tmp/`). `-device e1000` (virtio-net cuelga). `-display none -vga virtio` (nunca `-nographic`).
+- **Dual-repo:** `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push dispara build.yml.
