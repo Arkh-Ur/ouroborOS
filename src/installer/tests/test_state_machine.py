@@ -1007,3 +1007,116 @@ class TestInstallerRunWithTUI:
         with patch("installer.state_machine._save_checkpoint"):
             result = installer.run()
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# _handle_user — password_plaintext + shell package
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUser:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_password_plaintext_set_from_tui(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+            "password": "plaintext123",
+        }
+        mock_tui.show_shell_selection.return_value = "bash"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert installer.config.user.password_plaintext == "plaintext123"
+
+    def test_non_base_shell_queued_as_extra_package(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+        }
+        mock_tui.show_shell_selection.return_value = "fish"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert "fish" in installer.config.extra_packages
+
+    def test_extra_package_not_duplicated(self) -> None:
+        installer = self._make_installer()
+        installer.config.extra_packages = ["fish"]
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+        }
+        mock_tui.show_shell_selection.return_value = "fish"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert installer.config.extra_packages.count("fish") == 1
+
+
+# ---------------------------------------------------------------------------
+# _handle_secure_boot — enabled branch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleSecureBoot:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_skipped_when_disabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = False
+        installer.tui = MagicMock()
+        installer._handle_secure_boot()
+        installer.tui.show_secure_boot_prompt.assert_not_called()
+
+    def test_shows_prompt_when_enabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = True
+        mock_tui = MagicMock()
+        installer.tui = mock_tui
+        installer._handle_secure_boot()
+        mock_tui.show_secure_boot_prompt.assert_called_once()
+
+    def test_no_tui_with_secure_boot_enabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = True
+        installer.tui = None
+        installer._handle_secure_boot()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# _check_ram — OSError branch
+# ---------------------------------------------------------------------------
+
+
+class TestCheckRam:
+    def _make_installer(self) -> Installer:
+        return Installer()
+
+    def test_raises_when_ram_insufficient(self) -> None:
+        installer = self._make_installer()
+        meminfo = "MemTotal:         512000 kB\n"
+        with patch("installer.state_machine.Path.read_text", return_value=meminfo):
+            with pytest.raises(InstallerError, match="Insufficient RAM"):
+                installer._check_ram()
+
+    def test_passes_when_ram_sufficient(self) -> None:
+        installer = self._make_installer()
+        meminfo = "MemTotal:        4096000 kB\n"
+        with patch("installer.state_machine.Path.read_text", return_value=meminfo):
+            installer._check_ram()  # must not raise
+
+    def test_oserror_reading_meminfo_treats_as_zero_ram(self) -> None:
+        installer = self._make_installer()
+        # OSError is silently caught but mem_kb stays 0 → InstallerError raised
+        with patch("installer.state_machine.Path.read_text", side_effect=OSError("no file")):
+            with pytest.raises(InstallerError, match="Insufficient RAM"):
+                installer._check_ram()
