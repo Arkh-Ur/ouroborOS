@@ -35,6 +35,8 @@ set -euo pipefail
 : "${ENABLE_LUKS:='0'}"
 : "${HOMED_STORAGE:='subvolume'}"
 : "${ROOT_DEVICE:=''}"
+: "${WIFI_SSID:=''}"
+: "${WIFI_PASSPHRASE:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -336,6 +338,37 @@ EnableIPv6=true
 RoutePriorityOffset=300
 EOF
         in_chroot systemctl enable iwd.service
+
+        # Pre-configure WiFi if SSID + passphrase were provided (unattended installs).
+        # Format: /var/lib/iwd/<SSID>.psk (chmod 600, dir chmod 700).
+        # SSIDs with special characters (spaces, =, etc.) use hex-encoded filenames.
+        if [[ -n "${WIFI_SSID:-}" && -n "${WIFI_PASSPHRASE:-}" ]]; then
+            local iwd_dir="${TARGET}/var/lib/iwd"
+            mkdir -p "$iwd_dir"
+            chmod 700 "$iwd_dir"
+
+            # Determine PSK filename.
+            # SSID must be hex-encoded if it contains: =, space, or non-ASCII chars.
+            local psk_file
+            if [[ "$WIFI_SSID" =~ [^[:print:]] || "$WIFI_SSID" =~ [=\ ] ]]; then
+                # Hex-encode: iwd format is =<hex_of_ssid>.psk
+                local ssid_hex
+                ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -tx1 | tr -d ' \n')
+                psk_file="${iwd_dir}/=${ssid_hex}.psk"
+            else
+                psk_file="${iwd_dir}/${WIFI_SSID}.psk"
+            fi
+
+            cat > "$psk_file" << EOF
+[Security]
+Passphrase=${WIFI_PASSPHRASE}
+EOF
+            chmod 600 "$psk_file"
+            log_ok "WiFi pre-configured for SSID '${WIFI_SSID}' (PSK written, passphrase NOT logged)."
+
+            # Security: clear passphrase from env immediately after writing
+            WIFI_PASSPHRASE=""
+        fi
     fi
 
     log_ok "Network configured."
@@ -786,6 +819,21 @@ main() {
         log_warn "our-snapshot-prune units not found on live ISO — skipping."
     fi
 
+    # ouroboros-firstboot — one-shot service that runs on the first real boot.
+    # Handles: reflector mirror update, machine-id check, enable btrfs-scrub timer.
+    local FIRSTBOOT_SRC="/usr/local/bin/ouroboros-firstboot"
+    local FIRSTBOOT_UNIT_SRC="/etc/systemd/system/ouroboros-firstboot.service"
+    if [[ -f "${FIRSTBOOT_SRC}" && -f "${FIRSTBOOT_UNIT_SRC}" ]]; then
+        cp "${FIRSTBOOT_SRC}" "${TARGET}/usr/local/bin/ouroboros-firstboot"
+        chmod 0755 "${TARGET}/usr/local/bin/ouroboros-firstboot"
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${FIRSTBOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-firstboot.service"
+        in_chroot systemctl enable ouroboros-firstboot.service
+        log_ok "ouroboros-firstboot.service installed and enabled."
+    else
+        log_warn "ouroboros-firstboot not found on live ISO — skipping."
+    fi
+
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
     # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.
@@ -909,6 +957,15 @@ main() {
             mkdir -p "${mnt}/etc/systemd"
             cp "${TARGET}/etc/systemd/zram-generator.conf" "${mnt}/etc/systemd/zram-generator.conf"
             log_ok "zram-generator.conf mirrored to @ subvolume."
+        fi
+
+        # Mirror ouroboros-firstboot service: must be visible at first boot
+        # before @etc is mounted, so the unit is found when multi-user.target.wants
+        # symlink is evaluated.
+        if [[ -f "${TARGET}/etc/systemd/system/ouroboros-firstboot.service" ]]; then
+            mkdir -p "${mnt}/etc/systemd/system"
+            cp "${TARGET}/etc/systemd/system/ouroboros-firstboot.service" \
+                "${mnt}/etc/systemd/system/ouroboros-firstboot.service"
         fi
 
         # Mirror homed migration service + config: systemd-homed starts before

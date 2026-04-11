@@ -14,6 +14,13 @@ network:
   enable_networkd: true
   enable_iwd: true
   enable_resolved: true
+  # Optional: pre-configure WiFi for unattended installs.
+  # If ssid is set, passphrase is required.
+  # The passphrase is written to /var/lib/iwd/<SSID>.psk (chmod 600)
+  # and cleared from memory immediately after. Never persisted in checkpoints.
+  # wifi:
+  #   ssid: "MyNetwork"
+  #   passphrase: "my-secret-passphrase"
 
 user:
   username: admin

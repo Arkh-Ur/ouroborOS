@@ -33,6 +33,13 @@ class NetworkConfig:
     enable_iwd: bool = True
     enable_resolved: bool = True
 
+    # WiFi pre-configuration (unattended installs / first-boot).
+    # These fields are transient — written to /var/lib/iwd/*.psk (chmod 600)
+    # during CONFIGURE state, then cleared from the checkpoint.
+    # If wifi_ssid is set, wifi_passphrase is required.
+    wifi_ssid: str = ""
+    wifi_passphrase: str = ""  # Transient — cleared after iwd PSK is written
+
 
 @dataclass
 class UserConfig:
@@ -166,6 +173,18 @@ def validate_config(data: dict) -> None:
         raise ConfigValidationError(
             f"network.hostname is not a valid hostname: {hostname!r}"
         )
+    wifi = network.get("wifi", {}) or {}
+    if wifi:
+        wifi_ssid = wifi.get("ssid", "")
+        wifi_pass = wifi.get("passphrase", "")
+        if wifi_ssid and not wifi_pass:
+            raise ConfigValidationError(
+                "network.wifi.passphrase is required when network.wifi.ssid is set"
+            )
+        if wifi_pass and not wifi_ssid:
+            raise ConfigValidationError(
+                "network.wifi.ssid is required when network.wifi.passphrase is set"
+            )
 
     # user section
     user = data["user"]
@@ -263,6 +282,9 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
     cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
     cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
+    wifi_cfg = net.get("wifi", {}) or {}
+    cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
+    cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))
 
     # User
     usr = data["user"]

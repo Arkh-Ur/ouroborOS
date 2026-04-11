@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+# our-wifi — interactive WiFi manager for ouroborOS (iwd/iwctl wrapper)
+#
+# Wraps iwctl commands behind a friendly CLI. All persistent state is
+# managed by iwd; this tool only drives it and manages PSK files.
+#
+# Usage:
+#   our-wifi list                              # Scan and list networks
+#   our-wifi connect <SSID>                    # Connect interactively (prompts passphrase)
+#   our-wifi connect <SSID> --password <PASS>  # Connect non-interactively
+#   our-wifi status                            # Show current connection
+#   our-wifi forget <SSID>                     # Remove saved PSK
+#   our-wifi show-password <SSID>              # Show saved passphrase
+#   our-wifi help                              # Show this help
+#
+# Requirements:
+#   - iwd must be installed and running (systemctl start iwd)
+#   - Wireless interface must be present (wlan0 or similar)
+set -euo pipefail
+
+readonly PROGRAM="our-wifi"
+readonly IWD_DIR="/var/lib/iwd"
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_require_iwd() {
+    command -v iwctl &>/dev/null || _die "iwctl not found. Install iwd: sudo our-pacman -S iwd"
+    systemctl is-active --quiet iwd.service 2>/dev/null || {
+        _warn "iwd is not running. Starting it now..."
+        systemctl start iwd.service || _die "Failed to start iwd.service"
+    }
+}
+
+# Detect the primary wireless interface (first wlan* or wlp* interface)
+_detect_iface() {
+    local iface
+    iface=$(iwctl device list 2>/dev/null \
+        | awk '/wlan|wlp/ {print $1; exit}')
+    [[ -n "$iface" ]] || _die "No wireless interface found. Is your WiFi adapter present?"
+    echo "$iface"
+}
+
+# Build the iwd PSK filename for a given SSID.
+# SSIDs with =, space, or non-printable characters are hex-encoded.
+_psk_filename() {
+    local ssid="$1"
+    if [[ "$ssid" =~ [^[:print:]] || "$ssid" =~ [=\ ] ]]; then
+        local hex
+        hex=$(printf '%s' "$ssid" | od -An -tx1 | tr -d ' \n')
+        echo "=${hex}.psk"
+    else
+        echo "${ssid}.psk"
+    fi
+}
+
+# Write a PSK file for iwd.
+_write_psk() {
+    local ssid="$1"
+    local passphrase="$2"
+    local filename
+    filename=$(_psk_filename "$ssid")
+    local psk_path="${IWD_DIR}/${filename}"
+
+    [[ $EUID -eq 0 ]] || _die "Writing PSK requires root. Run: sudo ${PROGRAM} connect ${ssid}"
+
+    mkdir -p "$IWD_DIR"
+    chmod 700 "$IWD_DIR"
+
+    cat > "$psk_path" << EOF
+[Security]
+Passphrase=${passphrase}
+EOF
+    chmod 600 "$psk_path"
+}
+
+# Read passphrase from PSK file
+_read_psk() {
+    local ssid="$1"
+    local filename
+    filename=$(_psk_filename "$ssid")
+    local psk_path="${IWD_DIR}/${filename}"
+
+    [[ -f "$psk_path" ]] || return 1
+    grep -m1 "^Passphrase=" "$psk_path" | cut -d= -f2-
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    _require_iwd
+    local iface
+    iface=$(_detect_iface)
+
+    _info "Scanning for networks on ${iface}..."
+    iwctl station "$iface" scan 2>/dev/null
+    sleep 2
+
+    echo ""
+    iwctl station "$iface" get-networks 2>/dev/null || \
+        _warn "Could not list networks. Try: iwctl station ${iface} scan"
+}
+
+cmd_connect() {
+    local ssid="${1:?Usage: ${PROGRAM} connect <SSID> [--password <PASS>]}"
+    local password=""
+
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --password|-p) password="${2:?--password requires a value}"; shift 2 ;;
+            *) _die "Unknown option: $1" ;;
+        esac
+    done
+
+    _require_iwd
+    local iface
+    iface=$(_detect_iface)
+
+    # If no password given, check for saved PSK first
+    if [[ -z "$password" ]]; then
+        local saved
+        saved=$(_read_psk "$ssid" 2>/dev/null || echo "")
+        if [[ -n "$saved" ]]; then
+            _info "Using saved passphrase for '${ssid}'..."
+            password="$saved"
+        fi
+    fi
+
+    # Still no password — prompt interactively
+    if [[ -z "$password" ]]; then
+        read -r -s -p "Passphrase for '${ssid}': " password
+        echo ""
+        [[ -n "$password" ]] || _die "Passphrase cannot be empty."
+    fi
+
+    # Write PSK so iwd can connect non-interactively
+    if [[ $EUID -eq 0 ]]; then
+        _write_psk "$ssid" "$password"
+    else
+        # Need root to write to /var/lib/iwd — re-exec with sudo
+        _warn "PSK storage requires root — prompting sudo..."
+        sudo /usr/local/bin/our-wifi connect "$ssid" --password "$password"
+        return $?
+    fi
+
+    # Reload iwd so it picks up the new PSK
+    pkill -HUP iwd 2>/dev/null || true
+    sleep 1
+
+    _info "Connecting to '${ssid}' on ${iface}..."
+    if iwctl station "$iface" connect "$ssid" 2>/dev/null; then
+        _ok "Connected to '${ssid}'."
+    else
+        _warn "iwctl returned an error. Checking status..."
+        iwctl station "$iface" show 2>/dev/null || true
+    fi
+}
+
+cmd_status() {
+    _require_iwd
+    local iface
+    iface=$(_detect_iface)
+
+    _info "Wireless interface: ${iface}"
+    iwctl station "$iface" show 2>/dev/null || \
+        _warn "Could not get status for ${iface}."
+}
+
+cmd_forget() {
+    local ssid="${1:?Usage: ${PROGRAM} forget <SSID>}"
+    [[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" forget "$ssid"
+
+    local filename
+    filename=$(_psk_filename "$ssid")
+    local psk_path="${IWD_DIR}/${filename}"
+
+    [[ -f "$psk_path" ]] || _die "No saved network found for '${ssid}'."
+
+    # Disconnect if currently connected to this SSID
+    _require_iwd
+    local iface
+    iface=$(_detect_iface 2>/dev/null) || true
+    if [[ -n "$iface" ]]; then
+        local current
+        current=$(iwctl station "$iface" show 2>/dev/null \
+            | grep "Connected network" | awk '{print $NF}' || echo "")
+        if [[ "$current" == "$ssid" ]]; then
+            _info "Disconnecting from '${ssid}'..."
+            iwctl station "$iface" disconnect 2>/dev/null || true
+        fi
+    fi
+
+    rm -f "$psk_path"
+    _ok "Forgotten: '${ssid}' (PSK removed)."
+}
+
+cmd_show_password() {
+    local ssid="${1:?Usage: ${PROGRAM} show-password <SSID>}"
+    [[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" show-password "$ssid"
+
+    local pass
+    pass=$(_read_psk "$ssid") || _die "No saved passphrase for '${ssid}'."
+    echo "$pass"
+}
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — WiFi manager for ouroborOS (iwd wrapper)
+
+USAGE
+  ${PROGRAM} <command> [options]
+
+COMMANDS
+  list                           Scan and list available networks
+  connect <SSID>                 Connect (prompts for passphrase if not saved)
+  connect <SSID> --password <P>  Connect non-interactively
+  status                         Show current connection status
+  forget <SSID>                  Remove saved network passphrase
+  show-password <SSID>           Show saved passphrase for a network
+  help                           Show this help
+
+EXAMPLES
+  ${PROGRAM} list
+  ${PROGRAM} connect "MyHomeWifi"
+  ${PROGRAM} connect "MyOfficeWifi" --password "secret"
+  ${PROGRAM} status
+  ${PROGRAM} forget "OldNetwork"
+
+NOTES
+  - Passphrases are stored in /var/lib/iwd/*.psk (chmod 600).
+  - SSIDs with special characters (=, spaces) use hex-encoded filenames.
+  - iwd must be installed and running (systemctl start iwd).
+  - Use 'our-wifi connect' to replace saved passphrases (overwrites PSK file).
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    list)           cmd_list ;;
+    connect)        cmd_connect "${1:-}" "${@:2}" ;;
+    status)         cmd_status ;;
+    forget)         cmd_forget "${1:-}" ;;
+    show-password)  cmd_show_password "${1:-}" ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

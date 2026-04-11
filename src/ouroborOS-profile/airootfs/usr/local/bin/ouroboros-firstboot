@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# ouroboros-firstboot — first-boot setup for ouroborOS
+#
+# Runs ONCE on the first boot of the installed system (guarded by firstboot.done).
+# Performs tasks that require a live system with network access and can't be
+# done safely during installation (reflector needs internet, machine-id needs
+# the real hardware, btrfs-scrub needs the mounted filesystem).
+#
+# Guard file: /var/lib/ouroborOS/firstboot.done
+# The systemd unit uses ConditionPathExists=! on this file to skip re-runs.
+set -euo pipefail
+
+readonly GUARD_DIR="/var/lib/ouroborOS"
+readonly GUARD_FILE="${GUARD_DIR}/firstboot.done"
+readonly LOG_TAG="ouroboros-firstboot"
+
+_log()  { echo "[${LOG_TAG}] $*"; }
+_warn() { echo "[${LOG_TAG}] WARNING: $*" >&2; }
+_err()  { echo "[${LOG_TAG}] ERROR: $*" >&2; }
+
+# Idempotency guard (belt + suspenders — unit also checks via Condition)
+if [[ -f "$GUARD_FILE" ]]; then
+    _log "Already ran (${GUARD_FILE} exists). Nothing to do."
+    exit 0
+fi
+
+_log "Starting first-boot setup..."
+
+# ── 1. Optimise pacman mirror list ───────────────────────────────────────────
+_log "Updating mirrorlist with reflector (sort score, HTTPS, latest 20)..."
+if command -v reflector &>/dev/null; then
+    reflector \
+        --save /etc/pacman.d/mirrorlist \
+        --sort score \
+        --latest 20 \
+        --protocol https \
+        --verbose 2>/dev/null || \
+        _warn "reflector failed — existing mirrorlist kept."
+    _log "Mirrorlist updated."
+else
+    _warn "reflector not installed — skipping mirror update."
+fi
+
+# ── 2. Ensure machine-id is unique ───────────────────────────────────────────
+# If this machine booted from an ISO or was cloned, the machine-id may be
+# a well-known placeholder.  Regenerate to guarantee uniqueness.
+_log "Verifying machine-id uniqueness..."
+current_id=$(cat /etc/machine-id 2>/dev/null || echo "")
+# Known ISO placeholder IDs (add more as needed)
+PLACEHOLDER_IDS=(
+    "b08dfa6083e7567a1921a715000001fb"
+    "00000000000000000000000000000000"
+)
+needs_regen=false
+for placeholder in "${PLACEHOLDER_IDS[@]}"; do
+    if [[ "$current_id" == "$placeholder" ]]; then
+        needs_regen=true
+        break
+    fi
+done
+
+if [[ "$needs_regen" == true ]]; then
+    _log "Placeholder machine-id detected (${current_id}) — regenerating..."
+    systemd-machine-id-setup --commit 2>/dev/null || \
+        _warn "Could not regenerate machine-id."
+    _log "machine-id regenerated: $(cat /etc/machine-id)"
+else
+    _log "machine-id looks unique: ${current_id}"
+fi
+
+# ── 3. Enable and start system timers ────────────────────────────────────────
+_log "Enabling system maintenance timers..."
+
+# our-snapshot-prune.timer — daily Btrfs snapshot rotation
+# (also enabled at install time; this is a safety net for upgrades)
+if systemctl enable --now our-snapshot-prune.timer 2>/dev/null; then
+    _log "our-snapshot-prune.timer enabled and started."
+else
+    _warn "our-snapshot-prune.timer not available — skipping."
+fi
+
+# btrfs-scrub@-.timer — weekly Btrfs integrity check on root (/)
+# The unit is provided by the btrfs-progs package (Arch ships it).
+# The instance `-` is the systemd path-escape for `/`.
+if systemctl enable --now "btrfs-scrub@-.timer" 2>/dev/null; then
+    _log "btrfs-scrub@-.timer enabled and started (weekly scrub of /)."
+else
+    _warn "btrfs-scrub@-.timer not available (btrfs-progs installed?). Skipping."
+fi
+
+# ── 4. Mark as done ──────────────────────────────────────────────────────────
+mkdir -p "$GUARD_DIR"
+date -Iseconds > "$GUARD_FILE"
+_log "First-boot setup complete. Guard written: ${GUARD_FILE}"

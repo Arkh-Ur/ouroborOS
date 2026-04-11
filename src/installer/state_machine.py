@@ -740,13 +740,16 @@ class Installer:
                 ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",
                 "DESKTOP_PROFILE": self.config.desktop.profile,
                 "HOMED_STORAGE": self.config.user.homed_storage,
+                "WIFI_SSID": self.config.network.wifi_ssid,
+                "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
             }
         )
 
         result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
 
-        # Clear plaintext password after configure — no longer needed
+        # Clear transient secrets after configure — no longer needed
         self.config.user.password_plaintext = ""
+        self.config.network.wifi_passphrase = ""
 
         if result.returncode != 0:
             raise InstallerError(
