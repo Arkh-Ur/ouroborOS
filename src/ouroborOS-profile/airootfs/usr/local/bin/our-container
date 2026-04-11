@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
-# our-box - systemd-nspawn container wrapper for ouroborOS.
+# our-container - systemd-nspawn container wrapper for ouroborOS.
 #
 # Usage:
-#   our-box create <name> [distro]          # bootstrap a container (default: arch)
-#   our-box enter <name>                    # machinectl shell into a container
-#   our-box start <name>                    # boot the container
-#   our-box stop <name>                     # stop the container
-#   our-box list                            # list machines
-#   our-box remove <name>                   # delete container + its subvolume
-#   our-box snapshot create <ctr> <name>    # snapshot a container
-#   our-box snapshot list <ctr>             # list snapshots of a container
-#   our-box snapshot restore <ctr> <name>   # restore a container from snapshot
-#   our-box storage mount <ctr> <h> <c>     # bind-mount host path into container
-#   our-box storage umount <ctr> <c-path>   # remove a bind mount from container
-#   our-box cleanup [--threshold <pct>]     # prune old container snapshots
-#   our-box disk-usage                      # show per-container disk usage
-#   our-box image pull <distro>             # pre-bootstrap a base image
-#   our-box image list                      # list available base images
-#   our-box image remove <distro>           # remove a cached base image
+#   our-container create <name> [distro]          # bootstrap a container (default: arch)
+#   our-container enter <name>                    # machinectl shell into a container
+#   our-container start <name>                    # boot the container
+#   our-container stop <name>                     # stop the container
+#   our-container list                            # list machines
+#   our-container remove <name>                   # delete container + its subvolume
+#   our-container snapshot create <ctr> <name>    # snapshot a container
+#   our-container snapshot list <ctr>             # list snapshots of a container
+#   our-container snapshot restore <ctr> <name>   # restore a container from snapshot
+#   our-container storage mount <ctr> <h> <c>     # bind-mount host path into container
+#   our-container storage umount <ctr> <c-path>   # remove a bind mount from container
+#   our-container cleanup [--threshold <pct>]     # prune old container snapshots
+#   our-container disk-usage                      # show per-container disk usage
+#   our-container image pull <distro>             # pre-bootstrap a base image
+#   our-container image list                      # list available base images
+#   our-container image remove <distro>           # remove a cached base image
 set -euo pipefail
 
 readonly MACHINES_ROOT="/var/lib/machines"
 readonly SNAPSHOTS_ROOT="/var/lib/machines/.snapshots"
 readonly IMAGES_ROOT="/var/lib/machines/.images"
-readonly PROGRAM_NAME="our-box"
+readonly PROGRAM_NAME="our-container"
 
 # --- Logging ---
 _log() {
@@ -41,7 +41,7 @@ die()       { log_error "$*"; exit 1; }
 require_root() {
     if [[ $EUID -ne 0 ]]; then
         log_info "Re-executing with sudo for: $*"
-        exec sudo /usr/local/bin/our-box "$@"
+        exec sudo /usr/local/bin/our-container "$@"
     fi
 }
 
@@ -152,7 +152,7 @@ cmd_create() {
 
     log_info "Setting root password for container '${name}'"
     systemd-nspawn -D "$target" --pipe passwd -d root || {
-        log_warn "Could not set root password -- set it manually via: our-box enter ${name}"
+        log_warn "Could not set root password -- set it manually via: our-container enter ${name}"
     }
 
     # Write .nspawn override for isolated networking
@@ -271,7 +271,7 @@ cmd_enter() {
 # --- Command: start ---
 cmd_start() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box start <name>"
+    [[ -n "$name" ]] || die "usage: our-container start <name>"
     require_root "start" "$name"
     _require_container_exists "$name" "start"
 
@@ -314,7 +314,7 @@ cmd_start() {
 # --- Command: stop ---
 cmd_stop() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box stop <name>"
+    [[ -n "$name" ]] || die "usage: our-container stop <name>"
     require_root "stop" "$name"
     _require_container_exists "$name" "stop"
 
@@ -358,7 +358,7 @@ cmd_list() {
 
     if [[ ! -d "$MACHINES_ROOT" ]]; then
         log_info "Container storage does not exist yet: ${MACHINES_ROOT}"
-        log_info "Create a container first: our-box create <name>"
+        log_info "Create a container first: our-container create <name>"
         return 0
     fi
 
@@ -398,7 +398,7 @@ cmd_list() {
 # --- Command: remove ---
 cmd_remove() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box remove <name>"
+    [[ -n "$name" ]] || die "usage: our-container remove <name>"
     require_root "remove" "$name"
     _require_container_exists "$name" "remove"
 
@@ -409,7 +409,7 @@ cmd_remove() {
         log_info "Container '${name}' is running -- stopping it before removal..."
         if ! machinectl stop "$name"; then
             log_error "Failed to stop container '${name}' -- cannot remove a running container"
-            die "stop the container manually first: our-box stop ${name}"
+            die "stop the container manually first: our-container stop ${name}"
         fi
         sleep 1
     elif [[ "$state" != "unknown" ]]; then
@@ -468,8 +468,8 @@ cmd_remove() {
 cmd_snapshot_create() {
     local container="${1:-}"
     local snap_name="${2:-}"
-    [[ -n "$container" ]] || die "usage: our-box snapshot create CONTAINER SNAPSHOT_NAME"
-    [[ -n "$snap_name" ]]  || die "usage: our-box snapshot create CONTAINER SNAPSHOT_NAME"
+    [[ -n "$container" ]] || die "usage: our-container snapshot create CONTAINER SNAPSHOT_NAME"
+    [[ -n "$snap_name" ]]  || die "usage: our-container snapshot create CONTAINER SNAPSHOT_NAME"
     [[ "$snap_name" =~ ^[a-zA-Z0-9._-]+$ ]] \
         || die "invalid snapshot name '${snap_name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
     require_root "snapshot" "create" "$container" "$snap_name"
@@ -502,7 +502,7 @@ cmd_snapshot_create() {
 
 cmd_snapshot_list() {
     local container="${1:-}"
-    [[ -n "$container" ]] || die "usage: our-box snapshot list CONTAINER"
+    [[ -n "$container" ]] || die "usage: our-container snapshot list CONTAINER"
     _require_container_exists "$container" "list snapshots for"
 
     local snap_dir="${SNAPSHOTS_ROOT}/${container}"
@@ -552,8 +552,8 @@ cmd_snapshot_list() {
 cmd_snapshot_restore() {
     local container="${1:-}"
     local snap_name="${2:-}"
-    [[ -n "$container" ]] || die "usage: our-box snapshot restore CONTAINER SNAPSHOT_NAME"
-    [[ -n "$snap_name" ]]  || die "usage: our-box snapshot restore CONTAINER SNAPSHOT_NAME"
+    [[ -n "$container" ]] || die "usage: our-container snapshot restore CONTAINER SNAPSHOT_NAME"
+    [[ -n "$snap_name" ]]  || die "usage: our-container snapshot restore CONTAINER SNAPSHOT_NAME"
     require_root "snapshot" "restore" "$container" "$snap_name"
 
     _require_container_exists "$container" "restore snapshot for"
@@ -607,7 +607,7 @@ cmd_snapshot_restore() {
     fi
 
     log_info "Container '${container}' restored from snapshot '${snap_name}' successfully"
-    log_info "Start the container to verify: our-box start ${container}"
+    log_info "Start the container to verify: our-container start ${container}"
 }
 
 # =============================================================================
@@ -618,9 +618,9 @@ cmd_storage_mount() {
     local container="${1:-}"
     local host_path="${2:-}"
     local container_path="${3:-}"
-    [[ -n "$container" ]]      || die "usage: our-box storage mount CONTAINER HOST_PATH CONTAINER_PATH"
-    [[ -n "$host_path" ]]      || die "usage: our-box storage mount CONTAINER HOST_PATH CONTAINER_PATH"
-    [[ -n "$container_path" ]] || die "usage: our-box storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    [[ -n "$container" ]]      || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    [[ -n "$host_path" ]]      || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    [[ -n "$container_path" ]] || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
     require_root "storage" "mount" "$container" "$host_path" "$container_path"
 
     _require_container_exists "$container" "mount storage into"
@@ -669,7 +669,7 @@ NSPAWN_EOF
     state="$(_container_state "$container" 2>/dev/null || echo "unknown")"
     if [[ "$state" != "unknown" ]]; then
         log_info "Container '${container}' is registered -- restart it for bind mount to take effect"
-        log_info "Run: our-box stop ${container} && our-box start ${container}"
+        log_info "Run: our-container stop ${container} && our-container start ${container}"
     else
         log_info "Bind mount will take effect when the container is started"
     fi
@@ -680,8 +680,8 @@ NSPAWN_EOF
 cmd_storage_umount() {
     local container="${1:-}"
     local container_path="${2:-}"
-    [[ -n "$container" ]]      || die "usage: our-box storage umount CONTAINER CONTAINER_PATH"
-    [[ -n "$container_path" ]] || die "usage: our-box storage umount CONTAINER CONTAINER_PATH"
+    [[ -n "$container" ]]      || die "usage: our-container storage umount CONTAINER CONTAINER_PATH"
+    [[ -n "$container_path" ]] || die "usage: our-container storage umount CONTAINER CONTAINER_PATH"
     require_root "storage" "umount" "$container" "$container_path"
 
     if [[ "$container_path" != /* ]]; then
@@ -727,7 +727,7 @@ cmd_storage_umount() {
     state="$(_container_state "$container" 2>/dev/null || echo "unknown")"
     if [[ "$state" == "running" ]]; then
         log_warn "Container '${container}' is running -- restart it for changes to take effect"
-        log_info "Run: our-box stop ${container} && our-box start ${container}"
+        log_info "Run: our-container stop ${container} && our-container start ${container}"
     fi
 
     log_info "Bind mount removed successfully"
@@ -746,7 +746,7 @@ cmd_cleanup() {
                 shift 2
                 ;;
             *)
-                die "usage: our-box cleanup [--threshold <percentage>]"
+                die "usage: our-container cleanup [--threshold <percentage>]"
                 ;;
         esac
     done
@@ -967,7 +967,7 @@ cmd_disk_usage() {
     echo ""
     if (( disk_usage >= threshold )); then
         log_warn "Disk usage at ${disk_usage}% -- exceeds ${threshold}% threshold!"
-        log_warn "Consider running: our-box cleanup --threshold ${threshold}"
+        log_warn "Consider running: our-container cleanup --threshold ${threshold}"
     else
         log_info "Disk usage at ${disk_usage}% -- below ${threshold}% threshold"
     fi
@@ -980,7 +980,7 @@ cmd_disk_usage() {
 
 cmd_image_pull() {
     local distro="${1:-}"
-    [[ -n "$distro" ]] || die "usage: our-box image pull DISTRO"
+    [[ -n "$distro" ]] || die "usage: our-container image pull DISTRO"
     require_root "image" "pull" "$distro"
 
     case "$distro" in
@@ -994,7 +994,7 @@ cmd_image_pull() {
 
     if [[ -d "$image_dir" ]]; then
         log_warn "Base image '${distro}' already exists at ${image_dir}"
-        log_info "Remove it first to re-pull: our-box image remove ${distro}"
+        log_info "Remove it first to re-pull: our-container image remove ${distro}"
         return 0
     fi
 
@@ -1027,11 +1027,11 @@ cmd_image_pull() {
     esac
 
     # Create metadata marker
-    cat > "${image_dir}/.our-box-image" << IMAGE_META_EOF
-# our-box base image metadata
+    cat > "${image_dir}/.our-container-image" << IMAGE_META_EOF
+# our-container base image metadata
 DISTRO=${distro}
 CREATED=$(date '+%Y-%m-%dT%H:%M:%S')
-CREATED_BY=our-box
+CREATED_BY=our-container
 IMAGE_META_EOF
 
     if _is_btrfs_subvolume "$image_dir"; then
@@ -1040,7 +1040,7 @@ IMAGE_META_EOF
     fi
 
     log_info "Base image '${distro}' ready at ${image_dir}"
-    log_info "Create a container from this image with: our-box create NAME ${distro}"
+    log_info "Create a container from this image with: our-container create NAME ${distro}"
 }
 
 cmd_image_list() {
@@ -1048,7 +1048,7 @@ cmd_image_list() {
     echo "=== Available base images ==="
 
     if [[ ! -d "$IMAGES_ROOT" ]]; then
-        echo "  (no images found -- pull one with: our-box image pull DISTRO)"
+        echo "  (no images found -- pull one with: our-container image pull DISTRO)"
         echo ""
         return 0
     fi
@@ -1061,8 +1061,8 @@ cmd_image_list() {
         local created="unknown"
         local size="-"
 
-        if [[ -f "${entry}/.our-box-image" ]]; then
-            created="$(grep -m1 '^CREATED=' "${entry}/.our-box-image" 2>/dev/null | cut -d= -f2 || echo 'unknown')"
+        if [[ -f "${entry}/.our-container-image" ]]; then
+            created="$(grep -m1 '^CREATED=' "${entry}/.our-container-image" 2>/dev/null | cut -d= -f2 || echo 'unknown')"
         fi
 
         if _is_btrfs_subvolume "$entry"; then
@@ -1086,7 +1086,7 @@ cmd_image_list() {
     done
 
     if (( count == 0 )); then
-        echo "  (no images found -- pull one with: our-box image pull DISTRO)"
+        echo "  (no images found -- pull one with: our-container image pull DISTRO)"
     else
         echo ""
         echo "Total: ${count} image(s)"
@@ -1096,7 +1096,7 @@ cmd_image_list() {
 
 cmd_image_remove() {
     local distro="${1:-}"
-    [[ -n "$distro" ]] || die "usage: our-box image remove DISTRO"
+    [[ -n "$distro" ]] || die "usage: our-container image remove DISTRO"
     require_root "image" "remove" "$distro"
 
     local image_dir="${IMAGES_ROOT}/${distro}"
@@ -1105,8 +1105,8 @@ cmd_image_remove() {
         die "base image '${distro}' not found (checked: ${image_dir})"
     fi
 
-    if [[ ! -f "${image_dir}/.our-box-image" ]]; then
-        die "directory '${image_dir}' does not appear to be a our-box base image (missing .our-box-image marker)"
+    if [[ ! -f "${image_dir}/.our-container-image" ]]; then
+        die "directory '${image_dir}' does not appear to be a our-container base image (missing .our-container-image marker)"
     fi
 
     if _is_btrfs_subvolume "$image_dir"; then
@@ -1171,7 +1171,7 @@ cmd_monitor() {
         ts="$(date '+%Y-%m-%d %H:%M:%S')"
 
         echo "================================================"
-        echo " our-box container monitor — ${ts}"
+        echo " our-container container monitor — ${ts}"
         echo "================================================"
 
         # System summary
@@ -1294,7 +1294,7 @@ cmd_diagnose() {
             [[ -d "$entry" ]] || continue
             local cname
             cname="$(basename "$entry")"
-            # Skip internal our-box directories
+            # Skip internal our-container directories
             [[ "$cname" == .* ]] && continue
             (( container_count++ )) || true
 
@@ -1324,7 +1324,7 @@ cmd_diagnose() {
             (( warnings += orphaned )) || true
             echo ""
             echo "  [INFO] ${orphaned} orphaned container(s) found"
-            echo "         Use 'our-box start <name>' to register, or 'our-box remove <name>' to clean up"
+            echo "         Use 'our-container start <name>' to register, or 'our-container remove <name>' to clean up"
         fi
     fi
 
@@ -1496,7 +1496,7 @@ cmd_stats() {
         else
             log_info "No running containers to show stats for"
         fi
-        echo "  Start a container first: our-box start <name>"
+        echo "  Start a container first: our-container start <name>"
         echo ""
     fi
 }
@@ -1505,7 +1505,7 @@ cmd_stats() {
 # Shows journal logs for a container via journalctl --machine.
 cmd_logs() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: our-box logs <name> [--follow] [--lines N]"
+    [[ -n "$name" ]] || die "usage: our-container logs <name> [--follow] [--lines N]"
     require_root "logs" "$name"
 
     shift
@@ -1662,7 +1662,7 @@ cmd_check() {
 
         if (( on_disk > registered )); then
             echo "  [WARN] More containers on disk than registered — some may be orphaned"
-            echo "         Use 'our-box diagnose' for details"
+            echo "         Use 'our-container diagnose' for details"
         elif (( registered > on_disk )); then
             echo "  [WARN] More containers registered than on disk — ghost entries may exist"
             echo "         Use 'machinectl list' to identify, then 'machinectl remove <name>' to clean"
@@ -1724,35 +1724,35 @@ cmd_check() {
 # shellcheck disable=SC2317
 usage() {
     cat <<'HELP'
-our-box - systemd-nspawn container wrapper for ouroborOS
+our-container - systemd-nspawn container wrapper for ouroborOS
 
 USAGE
-    our-box create <name> [distro]          Bootstrap a new container (default: arch)
-    our-box enter <name>                    Open a shell in the container
-    our-box start <name>                    Boot the container as a machine
-    our-box stop <name>                     Stop a running machine
-    our-box list                            List all containers
-    our-box remove <name>                   Delete a container and its subvolume
+    our-container create <name> [distro]          Bootstrap a new container (default: arch)
+    our-container enter <name>                    Open a shell in the container
+    our-container start <name>                    Boot the container as a machine
+    our-container stop <name>                     Stop a running machine
+    our-container list                            List all containers
+    our-container remove <name>                   Delete a container and its subvolume
 
-    our-box snapshot create <ctr> <name>    Create a read-only Btrfs snapshot
-    our-box snapshot list <ctr>             List snapshots for a container
-    our-box snapshot restore <ctr> <name>   Restore container from snapshot
+    our-container snapshot create <ctr> <name>    Create a read-only Btrfs snapshot
+    our-container snapshot list <ctr>             List snapshots for a container
+    our-container snapshot restore <ctr> <name>   Restore container from snapshot
 
-    our-box storage mount <ctr> <h> <c>     Bind-mount host path into container
-    our-box storage umount <ctr> <c-path>   Remove a bind mount from container
+    our-container storage mount <ctr> <h> <c>     Bind-mount host path into container
+    our-container storage umount <ctr> <c-path>   Remove a bind mount from container
 
-    our-box cleanup [--threshold <pct>]     Prune old container snapshots
-    our-box disk-usage                      Show per-container disk usage
+    our-container cleanup [--threshold <pct>]     Prune old container snapshots
+    our-container disk-usage                      Show per-container disk usage
 
-    our-box monitor [--interval N]          Real-time container dashboard (default: 2s)
-    our-box diagnose                        Run health checks and report problems
-    our-box stats [name]                    Show CPU, memory, disk, network stats
-    our-box logs <name> [-f] [-n N]         Show container journal logs
-    our-box check                           Verify filesystem and config integrity
+    our-container monitor [--interval N]          Real-time container dashboard (default: 2s)
+    our-container diagnose                        Run health checks and report problems
+    our-container stats [name]                    Show CPU, memory, disk, network stats
+    our-container logs <name> [-f] [-n N]         Show container journal logs
+    our-container check                           Verify filesystem and config integrity
 
-    our-box image pull <distro>             Pre-bootstrap a base image
-    our-box image list                      List available base images
-    our-box image remove <distro>           Remove a cached base image
+    our-container image pull <distro>             Pre-bootstrap a base image
+    our-container image list                      List available base images
+    our-container image remove <distro>           Remove a cached base image
 
 CONTAINERS
     Live under /var/lib/machines/ and use Btrfs subvolumes when available,
@@ -1796,20 +1796,20 @@ SUPPORTED DISTROS (for create and image pull)
     ubuntu    Ubuntu (uses debootstrap)
 
 EXAMPLES
-    our-box create mydev arch              Create an Arch container
-    our-box snapshot create mydev v1.0     Snapshot it
-    our-box snapshot list mydev            List snapshots
-    our-box snapshot restore mydev v1.0    Restore to v1.0
-    our-box storage mount mydev /data /opt/data   Mount /data inside container
-    our-box disk-usage                     Check space usage
-    our-box cleanup --threshold 80         Clean old snapshots if disk > 80%
-    our-box image pull debian              Cache a Debian base image
-    our-box monitor                        Watch all containers in real time
-    our-box diagnose                       Run diagnostics
-    our-box stats mydev                    Show performance stats for mydev
-    our-box logs mydev -f -n 50            Follow logs (last 50 lines)
-    our-box check                          Verify system integrity
-    our-box remove mydev                   Delete it
+    our-container create mydev arch              Create an Arch container
+    our-container snapshot create mydev v1.0     Snapshot it
+    our-container snapshot list mydev            List snapshots
+    our-container snapshot restore mydev v1.0    Restore to v1.0
+    our-container storage mount mydev /data /opt/data   Mount /data inside container
+    our-container disk-usage                     Check space usage
+    our-container cleanup --threshold 80         Clean old snapshots if disk > 80%
+    our-container image pull debian              Cache a Debian base image
+    our-container monitor                        Watch all containers in real time
+    our-container diagnose                       Run diagnostics
+    our-container stats mydev                    Show performance stats for mydev
+    our-container logs mydev -f -n 50            Follow logs (last 50 lines)
+    our-container check                          Verify system integrity
+    our-container remove mydev                   Delete it
 
 EXIT CODES
     0   Success
@@ -1832,10 +1832,10 @@ case "${1:-}" in
             list)     shift; cmd_snapshot_list "$@" ;;
             restore)  shift; cmd_snapshot_restore "$@" ;;
             ""|-h|--help|help)
-                echo "Usage: our-box snapshot {create|list|restore} [args...]"
+                echo "Usage: our-container snapshot {create|list|restore} [args...]"
                 ;;
             *)
-                die "unknown snapshot command: '${1}' -- run 'our-box help' for usage"
+                die "unknown snapshot command: '${1}' -- run 'our-container help' for usage"
                 ;;
         esac
         ;;
@@ -1845,10 +1845,10 @@ case "${1:-}" in
             mount)   shift; cmd_storage_mount "$@" ;;
             umount|unmount)  shift; cmd_storage_umount "$@" ;;
             ""|-h|--help|help)
-                echo "Usage: our-box storage {mount|umount} [args...]"
+                echo "Usage: our-container storage {mount|umount} [args...]"
                 ;;
             *)
-                die "unknown storage command: '${1}' -- run 'our-box help' for usage"
+                die "unknown storage command: '${1}' -- run 'our-container help' for usage"
                 ;;
         esac
         ;;
@@ -1866,10 +1866,10 @@ case "${1:-}" in
             list|ls) cmd_image_list ;;
             remove|rm) shift; cmd_image_remove "$@" ;;
             ""|-h|--help|help)
-                echo "Usage: our-box image {pull|list|remove} [args...]"
+                echo "Usage: our-container image {pull|list|remove} [args...]"
                 ;;
             *)
-                die "unknown image command: '${1}' -- run 'our-box help' for usage"
+                die "unknown image command: '${1}' -- run 'our-container help' for usage"
                 ;;
         esac
         ;;
@@ -1877,6 +1877,6 @@ case "${1:-}" in
         usage
         ;;
     *)
-        die "unknown command: '${1}' -- run 'our-box help' for usage"
+        die "unknown command: '${1}' -- run 'our-container help' for usage"
         ;;
 esac

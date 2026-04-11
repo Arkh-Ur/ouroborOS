@@ -923,3 +923,123 @@ class TestRemoteConfigPrompt:
 
             result = tui.show_remote_config_prompt()
             assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — show_desktop_selection, show_dm_selection, show_shell_selection
+# ---------------------------------------------------------------------------
+
+
+class TestDesktopAndShellSelectionRich:
+    """Cover the rich backend paths of the Phase 3 selection prompts."""
+
+    def test_show_desktop_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="hyprland") as mock_select:
+            result = rich_tui.show_desktop_selection()
+        assert result == "hyprland"
+        mock_select.assert_called_once()
+
+    def test_show_dm_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="sddm") as mock_select:
+            result = rich_tui.show_dm_selection(profile="hyprland")
+        assert result == "sddm"
+        mock_select.assert_called_once()
+
+    def test_show_shell_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="fish") as mock_select:
+            result = rich_tui.show_shell_selection()
+        assert result == "fish"
+        mock_select.assert_called_once()
+
+
+class TestDesktopAndShellSelectionWhiptail:
+    """Cover the whiptail backend paths of the Phase 3 selection prompts."""
+
+    def test_show_desktop_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="gnome") as mock_sel:
+            result = whiptail_tui.show_desktop_selection()
+        assert result == "gnome"
+        mock_sel.assert_called_once()
+
+    def test_show_dm_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="gdm") as mock_sel:
+            result = whiptail_tui.show_dm_selection(profile="gnome")
+        assert result == "gdm"
+        mock_sel.assert_called_once()
+
+    def test_show_shell_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="zsh") as mock_sel:
+            result = whiptail_tui.show_shell_selection()
+        assert result == "zsh"
+        mock_sel.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — show_progress (whiptail path)
+# ---------------------------------------------------------------------------
+
+
+class TestShowProgressWhiptail:
+    def test_whiptail_progress_calls_subprocess(self, whiptail_tui: TUI) -> None:
+        """Covers the whiptail branch in show_progress (lines 227) and
+        _whiptail_progress subprocess.run call (line 247)."""
+        with patch("installer.tui.subprocess.run") as mock_run, \
+             patch("installer.tui._get_whiptail_path", return_value="/usr/bin/whiptail"):
+            whiptail_tui.show_progress("Installing", "Downloading...", 50)
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args.args[0]
+        assert "--gauge" in cmd
+        assert "Installing" in cmd
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — _scan_wifi_networks (subprocess mock)
+# ---------------------------------------------------------------------------
+
+
+class TestScanWifiNetworks:
+    def test_scan_returns_empty_on_failure(self, rich_tui: TUI) -> None:
+        """Covers _scan_wifi_networks lines 793-814 (failure path)."""
+        with patch("installer.tui.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = rich_tui._scan_wifi_networks("wlan0")
+        assert result == []
+
+    def test_scan_parses_network_list(self, rich_tui: TUI) -> None:
+        """Covers _scan_wifi_networks success path with parsed output."""
+        # iwctl output: 4+ space-separated fields per network line (SSID sec signal extra)
+        fake_output = (
+            "Available networks\n"
+            "---\n"
+            "SSID            Security    Signal      Extra\n"
+            "---\n"
+            "HomeNet         psk         **          x\n"
+            "OpenNet         open        *           x\n"
+        )
+
+        def side_effect(cmd, **kwargs):
+            if "scan" in cmd:
+                return MagicMock(returncode=0, stdout="")
+            return MagicMock(returncode=0, stdout=fake_output)
+
+        with patch("installer.tui.subprocess.run", side_effect=side_effect), \
+             patch("time.sleep"):
+            result = rich_tui._scan_wifi_networks("wlan0")
+
+        # Returns a list of (ssid, security, is_open) tuples
+        assert isinstance(result, list)
+        assert any(ssid == "HomeNet" for ssid, _, _ in result)
+
+    def test_find_wifi_interface_returns_none_when_no_station(self, rich_tui: TUI) -> None:
+        """Covers _find_wifi_interface when no station is found."""
+        with patch("installer.tui.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="phy#0\n  Interface wlan0\n")
+            result = rich_tui._find_wifi_interface()
+        # No "Station" line → returns None
+        assert result is None
