@@ -344,10 +344,11 @@ if [[ -n "$P4_ISO_PATH" ]]; then
     log_ok "Using existing ISO: ${P4_ISO_PATH}"
 else
     log_info "Building ISO with Phase 4 config..."
-    mkdir -p "$P4_BUILD_WORKDIR"
+    mkdir -p "$P4_BUILD_WORKDIR" "${P4_BUILD_WORKDIR}/out"
     if ! sudo bash src/scripts/build-iso.sh \
             --clean \
             --workdir "$P4_BUILD_WORKDIR" \
+            --output "${P4_BUILD_WORKDIR}/out" \
             --e2e-config="$E2E_CONFIG" 2>&1 | tail -5; then
         log_die "ISO build failed"
     fi
