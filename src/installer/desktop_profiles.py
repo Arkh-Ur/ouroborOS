@@ -46,6 +46,23 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
     ],
 }
 
+# AUR packages per profile — installed lazily via our-aur on first boot.
+# These packages are NOT in official Arch repos and require makepkg.
+# Build happens in ouroboros-firstboot to avoid stalling the installer.
+# Empty list = no AUR packages for that profile.
+PROFILE_AUR_PACKAGES: dict[str, list[str]] = {
+    "minimal":  [],
+    "hyprland": [
+        "quickshell",    # Qt6/QML Wayland shell (hyprland-native, not in repos)
+        "hyprlock",      # Hyprland screen locker
+        "hypridle",      # Idle daemon for hyprland
+        "hyprshot",      # Screenshot tool for hyprland
+    ],
+    "niri":     [],      # niri ya está en [extra]; no AUR needed
+    "gnome":    [],
+    "kde":      [],
+}
+
 # ---------------------------------------------------------------------------
 # Display manager options (Wayland-native only)
 # ---------------------------------------------------------------------------
@@ -182,6 +199,16 @@ def packages_for(profile: str) -> list[str]:
             f"Valid profiles: {sorted(VALID_PROFILES)}"
         )
     return list(PROFILE_PACKAGES[profile])
+
+
+def aur_packages_for(profile: str) -> list[str]:
+    """Return the AUR package list for *profile* (may be empty)."""
+    if profile not in PROFILE_AUR_PACKAGES:
+        raise ValueError(
+            f"Unknown desktop profile: {profile!r}. "
+            f"Valid profiles: {sorted(VALID_PROFILES)}"
+        )
+    return list(PROFILE_AUR_PACKAGES[profile])
 
 
 def display_manager_for(profile: str) -> str:

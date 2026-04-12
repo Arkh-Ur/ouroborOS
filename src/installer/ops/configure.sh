@@ -39,6 +39,7 @@ set -euo pipefail
 : "${WIFI_PASSPHRASE:=''}"
 : "${BLUETOOTH_ENABLE:='0'}"
 : "${FIDO2_PAM:='0'}"
+: "${DESKTOP_AUR_PACKAGES:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -1024,7 +1025,8 @@ main() {
     fi
 
     # ouroboros-firstboot — one-shot service that runs on the first real boot.
-    # Handles: reflector mirror update, machine-id check, enable btrfs-scrub timer.
+    # Handles: reflector mirror update, machine-id check, enable btrfs-scrub timer,
+    #          systemd-sysext merge, and lazy AUR package install via our-aur.
     local FIRSTBOOT_SRC="/usr/local/bin/ouroboros-firstboot"
     local FIRSTBOOT_UNIT_SRC="/etc/systemd/system/ouroboros-firstboot.service"
     if [[ -f "${FIRSTBOOT_SRC}" && -f "${FIRSTBOOT_UNIT_SRC}" ]]; then
@@ -1034,6 +1036,13 @@ main() {
         cp "${FIRSTBOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-firstboot.service"
         in_chroot systemctl enable ouroboros-firstboot.service
         log_ok "ouroboros-firstboot.service installed and enabled."
+
+        # Write AUR package list for lazy firstboot install
+        if [[ -n "${DESKTOP_AUR_PACKAGES:-}" ]]; then
+            mkdir -p "${TARGET}/var/lib/ouroborOS"
+            echo "${DESKTOP_AUR_PACKAGES}" > "${TARGET}/var/lib/ouroborOS/firstboot-aur-packages.txt"
+            log_ok "AUR packages queued for firstboot install: ${DESKTOP_AUR_PACKAGES}"
+        fi
     else
         log_warn "ouroboros-firstboot not found on live ISO — skipping."
     fi

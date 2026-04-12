@@ -41,9 +41,10 @@ mapfile -t SCRIPTS < <(
         find "$WORKSPACE/tests/scripts" -maxdepth 1 -name "*.sh" -type f \
             2>/dev/null || true
 
-        # Phase 3 user-facing tools (bash, no .sh extension)
+        # Phase 3/4 user-facing tools (bash, no .sh extension)
         for tool in our-snapshot our-rollback our-wifi our-bluetooth our-fido2 \
-                    ouroboros-secureboot ouroboros-firstboot our-pac our-container; do
+                    ouroboros-secureboot ouroboros-firstboot our-pac our-container \
+                    our-aur; do
             local_path="$WORKSPACE/src/ouroborOS-profile/airootfs/usr/local/bin/${tool}"
             [[ -f "$local_path" ]] && echo "$local_path"
         done

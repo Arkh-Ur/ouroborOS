@@ -96,7 +96,25 @@ else
     _warn "systemd-sysext not available — our-aur extensions won't auto-merge on boot."
 fi
 
-# ── 4. Mark as done ──────────────────────────────────────────────────────────
+# ── 4. Install AUR packages queued by the installer ──────────────────────────
+readonly AUR_QUEUE_FILE="/var/lib/ouroborOS/firstboot-aur-packages.txt"
+if [[ -f "${AUR_QUEUE_FILE}" ]]; then
+    _log "AUR packages queued for install: $(cat "${AUR_QUEUE_FILE}")"
+    if command -v our-aur &>/dev/null; then
+        while IFS= read -r aur_pkg; do
+            [[ -z "${aur_pkg}" ]] && continue
+            _log "Installing AUR package: ${aur_pkg}"
+            our-aur -S "${aur_pkg}" 2>&1 | _log || \
+                _warn "Failed to install AUR package '${aur_pkg}' — try: sudo our-aur -S ${aur_pkg}"
+        done <<< "$(tr ' ' '\n' < "${AUR_QUEUE_FILE}")"
+        rm -f "${AUR_QUEUE_FILE}"
+        _log "AUR packages install complete."
+    else
+        _warn "our-aur not found — AUR packages not installed. Install manually: sudo our-aur -S <pkg>"
+    fi
+fi
+
+# ── 5. Mark as done ──────────────────────────────────────────────────────────
 mkdir -p "$GUARD_DIR"
 date -Iseconds > "$GUARD_FILE"
 _log "First-boot setup complete. Guard written: ${GUARD_FILE}"

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from installer.config import InstallerConfig, find_unattended_config, load_config, load_config_from_url
 from installer.desktop_profiles import (
+    aur_packages_for,
     dm_package,
     dm_service,
     packages_for,
@@ -418,6 +419,7 @@ class Installer:
             self.config.desktop.profile = profile
             dm_choice = self.tui.show_dm_selection(profile=profile)
             self.config.desktop.dm = dm_choice
+            self.config.desktop.aur_packages = aur_packages_for(profile)
         log.info(
             "Desktop profile: %s (dm: %s → %s)",
             self.config.desktop.profile,
@@ -760,6 +762,7 @@ class Installer:
                     resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
                 ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",
                 "DESKTOP_PROFILE": self.config.desktop.profile,
+                "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
                 "HOMED_STORAGE": self.config.user.homed_storage,
                 "WIFI_SSID": self.config.network.wifi_ssid,
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,

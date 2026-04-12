@@ -17,7 +17,9 @@ from pathlib import Path
 
 import yaml
 
-from installer.desktop_profiles import VALID_DMS, VALID_PROFILES, VALID_SHELLS, shell_path
+from installer.desktop_profiles import (
+    VALID_DMS, VALID_PROFILES, VALID_SHELLS, shell_path, aur_packages_for,
+)
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -67,6 +69,10 @@ class DesktopConfig:
 
     profile: str = "minimal"  # minimal | hyprland | niri | gnome | kde
     dm: str = "auto"          # auto | gdm | sddm | none
+    # AUR packages resolved from the profile at load time (not stored in YAML).
+    # Populated by load_config() / _build_config() from desktop_profiles.
+    # Passed to ouroboros-firstboot for lazy build via our-aur.
+    aur_packages: list = field(default_factory=list)
 
 
 @dataclass
@@ -346,6 +352,7 @@ def load_config(path: Path) -> InstallerConfig:
     desk = data.get("desktop", {}) or {}
     cfg.desktop.profile = str(desk.get("profile", "minimal"))
     cfg.desktop.dm = str(desk.get("dm", "auto"))
+    cfg.desktop.aur_packages = aur_packages_for(cfg.desktop.profile)
 
     # Security (optional)
     sec = data.get("security", {}) or {}
