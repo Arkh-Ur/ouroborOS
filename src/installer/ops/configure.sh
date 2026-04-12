@@ -792,6 +792,7 @@ STUB
         our-wifi
         our-bluetooth
         our-fido2
+        our-flat
         ouroboros-secureboot
     )
     for _tool in "${_p3_tools[@]}"; do

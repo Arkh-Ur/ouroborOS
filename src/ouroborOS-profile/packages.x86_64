@@ -68,3 +68,6 @@ debootstrap
 
 # Secure Boot key management (ouroboros-secureboot)
 sbctl
+
+# Flatpak (our-flat: sandboxed app delivery, Flathub opt-in)
+flatpak

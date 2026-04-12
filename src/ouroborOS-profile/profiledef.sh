@@ -22,4 +22,5 @@ file_permissions=(
   ["/usr/local/bin/ouroborOS-installer"]="0:0:755"
   ["/usr/local/bin/sshd-hostkeys"]="0:0:755"
   ["/usr/local/bin/our-aur"]="0:0:755"
+  ["/usr/local/bin/our-flat"]="0:0:755"
 )
