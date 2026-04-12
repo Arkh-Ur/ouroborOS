@@ -107,11 +107,11 @@ if [[ -f "${AUR_QUEUE_FILE}" ]]; then
             our-aur -S "${aur_pkg}" 2>&1 | _log || \
                 _warn "Failed to install AUR package '${aur_pkg}' — try: sudo our-aur -S ${aur_pkg}"
         done <<< "$(tr ' ' '\n' < "${AUR_QUEUE_FILE}")"
-        rm -f "${AUR_QUEUE_FILE}"
         _log "AUR packages install complete."
     else
         _warn "our-aur not found — AUR packages not installed. Install manually: sudo our-aur -S <pkg>"
     fi
+    rm -f "${AUR_QUEUE_FILE}"
 fi
 
 # ── 5. Mark as done ──────────────────────────────────────────────────────────
