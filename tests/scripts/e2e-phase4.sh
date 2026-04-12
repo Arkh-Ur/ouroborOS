@@ -510,8 +510,8 @@ if [[ "$HAS_INTERNET" -eq 1 ]]; then
     aur_search=$(ssh_out "our-aur -Ss hyprlock 2>&1" || true)
     assert_contains "our-aur -Ss: retorna resultados" "$aur_search" "hyprlock"
 
-    log_info "our-aur -Si hyprlock (AUR RPC info)..."
-    aur_info=$(ssh_out "our-aur -Si hyprlock 2>&1" || true)
+    log_info "our-aur -Si hyprlock-git (AUR RPC info)..."
+    aur_info=$(ssh_out "our-aur -Si hyprlock-git 2>&1" || true)
     assert_contains "our-aur -Si: tiene campo Name o Version" "$aur_info" "Name|Version|URL|hyprlock"
 
     if [[ "$P4_TEST_AUR_INSTALL" == "1" ]]; then
@@ -626,7 +626,7 @@ if [[ "$HAS_INTERNET" -eq 1 ]]; then
 
     log_info "our-flat -Ss vlc (buscar en Flathub)..."
     flat_search=$(ssh_out "our-flat -Ss vlc 2>&1" || true)
-    assert_contains "our-flat -Ss: retorna resultados" "$flat_search" "[Vv]lc\|videolan"
+    assert_contains "our-flat -Ss: retorna resultados" "$flat_search" "[Vv]lc|videolan"
 
     log_info "our-flat -Si org.videolan.VLC (info)..."
     flat_info=$(ssh_out "our-flat -Si org.videolan.VLC 2>&1" || true)
@@ -648,7 +648,7 @@ if [[ "$HAS_INTERNET" -eq 1 ]]; then
 
     log_info "our-flat -Q (después de install)..."
     flat_list_after=$(ssh_root_out "our-flat -Q 2>&1" || true)
-    assert_contains "our-flat -Q: VLC visible" "$flat_list_after" "VLC\|videolan"
+    assert_contains "our-flat -Q: VLC visible" "$flat_list_after" "VLC|videolan"
 
     log_info "our-flat -R org.videolan.VLC..."
     flat_remove=$(ssh_root_out "our-flat -R org.videolan.VLC 2>&1" || true)
