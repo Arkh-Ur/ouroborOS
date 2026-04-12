@@ -62,7 +62,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -o|--output)  OUTPUT_DIR="$2"; shift 2 ;;
         -w|--workdir) WORK_DIR="$2"; shift 2 ;;
+        --workdir=*)         WORK_DIR="${1#*=}"; shift ;;
         -p|--profile) PROFILE_DIR="$2"; shift 2 ;;
+        --profile=*)         PROFILE_DIR="${1#*=}"; shift ;;
+        --output=*)          OUTPUT_DIR="${1#*=}"; shift ;;
         -c|--clean)          CLEAN_BUILD=true; shift ;;
         -s|--sign)           SIGN_ISO=true; shift ;;
         --version=*)         VERSION="${1#*=}"; shift ;;

@@ -347,7 +347,7 @@ else
     mkdir -p "$P4_BUILD_WORKDIR"
     if ! sudo bash src/scripts/build-iso.sh \
             --clean \
-            --workdir="$P4_BUILD_WORKDIR" \
+            --workdir "$P4_BUILD_WORKDIR" \
             --e2e-config="$E2E_CONFIG" 2>&1 | tail -5; then
         log_die "ISO build failed"
     fi
