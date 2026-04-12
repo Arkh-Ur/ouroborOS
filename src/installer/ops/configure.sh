@@ -793,6 +793,7 @@ STUB
         our-bluetooth
         our-fido2
         our-flat
+        our-aur
         ouroboros-secureboot
     )
     for _tool in "${_p3_tools[@]}"; do
@@ -1047,6 +1048,12 @@ main() {
     else
         log_warn "ouroboros-firstboot not found on live ISO — skipping."
     fi
+
+    # /var/lib/extensions — required by systemd-sysext and our-aur.
+    # systemd-sysext expects this directory to exist at merge time.
+    mkdir -p "${TARGET}/var/lib/extensions"
+    chmod 0755 "${TARGET}/var/lib/extensions"
+    log_ok "/var/lib/extensions created (systemd-sysext / our-aur)."
 
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
