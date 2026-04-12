@@ -156,7 +156,7 @@ Pantalla de selección de idioma en estado INIT.
 
 ---
 
-### Milestone 4.4 — Flatpak ⬜
+### Milestone 4.4 — Flatpak ✅
 
 Integración de Flatpak como fuente complementaria para apps de escritorio.
 Sin Flathub por defecto — el usuario lo habilita explícitamente.
