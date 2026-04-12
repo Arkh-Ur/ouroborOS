@@ -1,7 +1,7 @@
 # BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Actualizado:** 2026-04-11
-**Commit:** v0.3.0 (tag)
+**Actualizado:** 2026-04-12
+**Commit:** v0.4.0 (tag)
 **Branch:** main
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
@@ -22,9 +22,9 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Repositorios:** `Arkh-Ur/ouroborOS-dev` (privado, dev) → `Arkh-Ur/ouroborOS` (público, releases). Tag push en dev dispara build + release en público.
 
-**Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11).
+**Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11), v0.4.0 (2026-04-12).
 
-**Estado actual:** Phase 3 completa — `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-fido2`, `ouroboros-secureboot`, `ouroboros-firstboot`. Ver `docs/PHASE_3_PLAN.md`.
+**Estado actual:** Phase 4 completa — `our-aur` (AUR helper containerizado), `our-flat` (Flatpak wrapper), lazy AUR queue. Ver `docs/PHASE_4_PLAN.md`.
 
 ## ESTRUCTURA
 
@@ -64,12 +64,14 @@ ouroborOS/
 | WiFi interactivo | `airootfs/usr/local/bin/our-wifi` | list/connect/status/forget/show-password |
 | Bluetooth | `airootfs/usr/local/bin/our-bluetooth` | list/pair/connect/disconnect/forget/status/on/off/le |
 | FIDO2/WebAuthn/Passkey | `airootfs/usr/local/bin/our-fido2` | list/info/pin/cred/ble/qr-ready/reset |
+| AUR helper | `airootfs/usr/local/bin/our-aur` | Containerized AUR via systemd-sysext, search/install/remove/update/info |
+| Flatpak wrapper | `airootfs/usr/local/bin/our-flat` | Flatpak con interfaz pacman: install/remove/update/search/list/info/remote |
 | Secure Boot | `airootfs/usr/local/bin/ouroboros-secureboot` | setup/status/sign-all/verify/rotate-keys |
 | First boot | `airootfs/usr/local/bin/ouroboros-firstboot` | mirrors/machine-id/timers (oneshot) |
 | BlueZ config | `airootfs/etc/bluetooth/main.conf` | Experimental + LE tuning |
 | Construir ISO | `src/scripts/build-iso.sh` | Wrapper de mkarchiso |
 | Flashear USB | `src/scripts/flash-usb.sh` | Wrapper seguro de dd |
-| Tests | `src/installer/tests/` | pytest, 323 tests, ≥93% coverage |
+| Tests | `src/installer/tests/` | pytest, 347 tests, ≥93% coverage |
 | Decisiones de arquitectura | `docs/architecture/` | overview, immutability, systemd, secure-boot, homed |
 
 ## MAPA DE CÓDIGO
@@ -98,6 +100,8 @@ ouroborOS/
 | `our-wifi` | script | `airootfs/usr/local/bin/our-wifi` | Wrapper iwctl: list/connect/status/forget/show-password |
 | `our-bluetooth` | script | `airootfs/usr/local/bin/our-bluetooth` | Wrapper bluetoothctl + le subcommand (experimental, advmon) |
 | `our-fido2` | script | `airootfs/usr/local/bin/our-fido2` | FIDO2/WebAuthn: USB + BLE GATT + Hybrid QR (CTAP2) |
+| `our-aur` | script | `airootfs/usr/local/bin/our-aur` | AUR helper containerizado: paru en nspawn efímero + systemd-sysext |
+| `our-flat` | script | `airootfs/usr/local/bin/our-flat` | Flatpak wrapper: install/remove/update/search/list/info/remote |
 | `ouroboros-secureboot` | script | `airootfs/usr/local/bin/ouroboros-secureboot` | sbctl wrapper: setup/status/sign-all/verify/rotate-keys |
 | `ouroboros-firstboot` | script | `airootfs/usr/local/bin/ouroboros-firstboot` | Oneshot: mirrors + machine-id + timers. Guard: /var/lib/ouroborOS/firstboot.done |
 
@@ -112,6 +116,8 @@ ouroborOS/
 | `our-wifi` | `our-*` | Usuario | WiFi setup interactivo |
 | `our-bluetooth` | `our-*` | Usuario | Bluetooth manager + BLE LE |
 | `our-fido2` | `our-*` | Usuario | FIDO2/WebAuthn/Passkey manager |
+| `our-aur` | `our-*` | Usuario | AUR helper containerizado (systemd-sysext) |
+| `our-flat` | `our-*` | Usuario | Flatpak wrapper (pacman-style) |
 | `ouroboros-secureboot` | `ouroboros-*` | Sistema | Secure Boot via sbctl |
 | `ouroboros-firstboot` | `ouroboros-*` | Sistema | First boot oneshot service |
 
@@ -122,7 +128,7 @@ ouroborOS/
 - **Estrategia de branches:** `main` es la rama de trabajo. PR para mergear a `master` (releases).
 - **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck` (cero warnings).
 - **Lint Python:** Ruff con E,W,F,I,UP,ANN001,ANN201,E722.
-- **Cobertura mínima de tests:** ≥93% (323 tests, 14 skipped).
+- **Cobertura mínima de tests:** ≥93% (347 tests, 14 skipped).
 - **No GRUB, no NetworkManager, no /dev/sdX, no root rw en producción.** Ver ANTIPATRONES.
 
 ## ANTIPATRONES
@@ -141,7 +147,7 @@ ouroborOS/
 | Contraseñas en texto plano en scripts/config | Hash via SHA-512 crypt; passphrase LUKS via stdin |
 | `--fastest` en reflector | Usar `--sort score` (server-side, instantáneo) |
 
-## SCHEMA YAML COMPLETO (v0.3.0)
+## SCHEMA YAML COMPLETO (v0.4.0)
 
 ```yaml
 user:
@@ -203,7 +209,7 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
   -cdrom out/ouroborOS-*.iso -boot d
 
 # Tests unitarios
-pytest src/installer/tests/ -v       # 323 tests, ≥93% coverage
+pytest src/installer/tests/ -v       # 347 tests, ≥93% coverage
 
 # Suite CI completa (Docker)
 docker-compose -f tests/docker-compose.yml run --rm full-suite
@@ -211,7 +217,7 @@ docker-compose -f tests/docker-compose.yml run --rm full-suite
 
 ## NOTAS
 
-- **FSM states (v0.3.0):** INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. SECURE_BOOT se omite si `security.secure_boot: false`.
+- **FSM states (v0.4.0):** INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. SECURE_BOOT se omite si `security.secure_boot: false`.
 - **Snapshots:** `/.snapshots/install/` es el baseline dorado (nunca purgado). Snapshots de pre-update: `YYYY-MM-DDTHHMMSS/`. Manuales: `YYYY-MM-DD_LABEL/`. Metadata JSON en `/.snapshots/.metadata/NAME.json`.
 - **Boot entries:** `rootflags=subvol=@snapshots/...` — sin `/` inicial (requisito del kernel).
 - **Secure Boot:** `sbctl` en `/var/lib/sbctl/` (subvolumen `@var`). Requiere firmware en Setup Mode. `our-pac` corre `sbctl sign-all` post-update si Secure Boot está activo.

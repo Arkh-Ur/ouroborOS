@@ -7,6 +7,37 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.4.0] — 2026-04-12
+
+### Added
+
+- **`our-aur`** — Containerized AUR helper using systemd-sysext: `search`, `install`, `remove`, `update`, `info`, `version`. Isolates AUR builds in ephemeral nspawn containers to prevent host contamination. Supports lazy install queue via `/var/lib/ouroborOS/aur-queue` processed at first boot.
+- **`our-flat`** — Flatpak wrapper with pacman-style interface: `install`, `remove`, `update`, `search`, `list`, `info`, `remote-add`, `remote-list`. Automatic appstream cache refresh after adding remotes.
+- **Lazy AUR queue** — First boot mechanism: packages queued during install via desktop profile AUR packages are installed by `ouroboros-firstboot` using `our-aur`. Queue file deleted after processing (success or failure).
+- **`/var/lib/extensions`** — systemd-sysext directory created during install. Required by our-aur for containerized AUR builds.
+
+### Changed
+
+- **`our-pacman` renamed to `our-pac`** — Shorter name for consistency with `our-*` naming convention.
+
+### Fixed
+
+- AUR RPC URL pointing to non-existent v6 — aligned to v5 (RESTful `/search/{query}` and `/info` endpoints).
+- Appstream cache not updated after Flatpak remote-add — now runs `flatpak update --appstream` automatically.
+- AUR queue file not cleaned up on failure — `ouroboros-firstboot` now deletes queue regardless of install outcome.
+- our-aur not included in installer tools copy — added to `_p3_tools` array in `configure.sh`.
+- Regex pipe escaping in E2E phase 4 tests — `\|` changed to `|` for correct `grep -E` behavior.
+
+### Deferred to Phase 5
+
+- TPM2 integration (Milestone 4.2)
+- Multi-language installer (Milestone 4.3)
+- Live USB persistence (Milestone 4.5)
+- Dual-boot support (Milestone 4.6)
+- ARM64/aarch64 support (Milestone 4.7)
+
+---
+
 ## [0.3.0] — 2026-04-11
 
 ### Added
@@ -146,5 +177,7 @@ Initial release.
 - English only — multi-language installer deferred to Phase 3.
 - No AUR helper — use `makepkg` manually.
 
+[0.4.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.0
+[0.3.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.1.0

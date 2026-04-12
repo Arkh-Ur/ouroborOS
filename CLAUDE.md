@@ -27,7 +27,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
 - **Installer:** Python state machine + Rich TUI (primary) + Bash ops
-- **Status:** Early development (v0.1 in progress)
+- **Status:** v0.4.0 released — Phase 4 complete
 
 ---
 
@@ -48,14 +48,14 @@ ouroborOS/
 │   ├── installer/               ← Python installer
 │   │   ├── config.py            ← InstallerConfig + YAML loader + DesktopConfig + remote URL loader
 │   │   ├── desktop_profiles.py  ← Desktop profile package sets (5 profiles) + DM selection (gdm/sddm/plm/none)
-│   │   ├── state_machine.py     ← FSM with checkpoints (11 states: USER + DESKTOP before PARTITION)
+│   │   ├── state_machine.py     ← FSM with checkpoints (12 states: USER + DESKTOP + SECURE_BOOT before PARTITION)
 │   │   ├── tui.py               ← Rich TUI (primary) + whiptail fallback
 │   │   ├── main.py              ← CLI entrypoint
 │   │   ├── ops/                 ← Bash operations
 │   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab, LUKS
 │   │   │   ├── snapshot.sh      ← Btrfs snapshot management
-│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed)
-│   │   └── tests/               ← pytest test suite (93% coverage)
+│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed, AUR queue)
+│   │   └── tests/               ← pytest test suite (347 tests, ≥93% coverage)
 │   └── ouroborOS-profile/       ← archiso profile
 │       ├── profiledef.sh
 │       ├── packages.x86_64
@@ -66,6 +66,7 @@ ouroborOS/
 │   └── install-config.yaml      ← Interactive/unattended install config
 ├── docs/                        ← Documentation only (no scripts)
 │   ├── PHASE_2_PLAN.md          ← Post-v0.1.0 development plan
+│   ├── PHASE_4_PLAN.md          ← Phase 4 plan (our-aur, our-flat, TPM2)
 │   ├── architecture/            ← System design decisions
 │   ├── installer/               ← Installer architecture
 │   ├── messages/                ← Project log and decisions
@@ -100,7 +101,7 @@ ouroborOS/
 |-------|-----------|
 | Base OS | ArchLinux |
 | Kernel | linux-zen |
-| Package manager | pacman (via `our-pac` wrapper for root modifications) |
+| Package manager | pacman (via `our-pac` wrapper) + `our-aur` (AUR) + `our-flat` (Flatpak) |
 | Bootloader | systemd-boot |
 | Filesystem | Btrfs (immutable subvolumes) |
 | Network | systemd-networkd + iwd |
@@ -203,7 +204,7 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
 
 ### Running installer tests
 ```bash
-pytest src/installer/tests/ -v
+pytest src/installer/tests/ -v       # 347 tests, ≥93% coverage
 ```
 
 ---
@@ -212,15 +213,9 @@ pytest src/installer/tests/ -v
 
 See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
-**Phases 1-5 complete.** Release v0.1.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.1.0
+**Phases 1-4 complete.** Release v0.4.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.0
 
-**Current phase:** Phase 2 (post-v0.1.0) — see [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md)
-- `our-pac` renamed from `ouroboros-upgrade`, `our-container` (nspawn wrapper) added
-- Desktop profile selection (minimal/hyprland/niri/gnome/kde) with decoupled DM selection (gdm/sddm/plm/none)
-- FSM reordered: USER + DESKTOP states before PARTITION (no destructive ops before human input)
-- systemd-homed default-on for per-user home encryption (non-interactive via JSON identity)
-- Remote config URL prompt in INIT state (download unattended config from GitHub raw URLs)
-- Reflector mirror selection optimized: `--sort score` (server-side) instead of `--fastest`
+**Current phase:** Phase 4 complete — `our-aur` (containerized AUR helper via systemd-sysext), `our-flat` (Flatpak wrapper), lazy AUR queue via firstboot. See [docs/PHASE_4_PLAN.md](./docs/PHASE_4_PLAN.md).
 
 ### Dual-Repo Architecture
 
@@ -238,6 +233,7 @@ When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds th
 | File | Description |
 |------|-------------|
 | `docs/PHASE_2_PLAN.md` | Post-v0.1.0 development plan (our-pac, desktop profiles, our-container) |
+| `docs/PHASE_4_PLAN.md` | Phase 4 plan (our-aur, our-flat, TPM2, multi-language) |
 | `docs/architecture/overview.md` | System architecture, layer diagram, component table |
 | `docs/architecture/immutability-strategy.md` | Btrfs layout, fstab, snapshot flow |
 | `docs/architecture/installer-phases.md` | All installer states, actions, rollback |
@@ -290,9 +286,9 @@ Full lifecycle test: build ISO → unattended install in QEMU → verify install
 - SSH on installed system only listens on AF_UNIX socket by default (networkd DHCP in SLIRP needs investigation)
 - homed-migration rollback works correctly when create fails — user stays as classic `/etc/passwd` user
 
-### Installer States (11 total)
+### Installer States (12 total)
 ```
-INIT → PREFLIGHT → LOCALE → USER → DESKTOP → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
+INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
 ```
 
 ### Password Plaintext Lifecycle
