@@ -20,7 +20,7 @@ set -euo pipefail
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 readonly PROGRAM_NAME="our-aur"
-readonly AUR_RPC="https://aur.archlinux.org/rpc/v6"
+readonly AUR_RPC="https://aur.archlinux.org/rpc/v5"
 readonly BUILD_ROOT="/var/tmp/our-aur/containers"
 readonly DATA_DIR="/var/lib/our-aur"
 readonly EXTENSIONS_DIR="/var/lib/extensions"
@@ -67,7 +67,7 @@ _aur_search() {
     encoded_query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${query}")
     local response
     response=$(curl --silent --fail --max-time 10 \
-        "${AUR_RPC}/search?v=5&type=search&arg=${encoded_query}" \
+        "${AUR_RPC}/search/${encoded_query}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
     python3 -c "
@@ -80,7 +80,7 @@ except json.JSONDecodeError:
     print('[!] Respuesta invalida de AUR RPC')
     sys.exit(1)
 
-if data.get('type') == 'error':
+if data.get('error'):
     print(f'[!] AUR error: {data.get(\"error\", \"desconocido\")}')
     sys.exit(1)
 
@@ -105,7 +105,7 @@ _aur_info() {
     local pkg="$1"
     local response
     response=$(curl --silent --fail --max-time 10 \
-        "${AUR_RPC}/info?v=5&type=info&arg%5B%5D=${pkg}" \
+        "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
     python3 -c "
@@ -147,7 +147,7 @@ if makedeps:
 _aur_version() {
     local pkg="$1"
     curl --silent --fail --max-time 10 \
-        "${AUR_RPC}/info?v=5&type=info&arg%5B%5D=${pkg}" \
+        "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
         2>/dev/null | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
