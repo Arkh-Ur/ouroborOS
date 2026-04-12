@@ -1,0 +1,673 @@
+#!/usr/bin/env bash
+# our-aur — AUR helper for ouroborOS (wrapper de paru + systemd-sysext)
+#
+# Instala paquetes AUR en extensiones sysext sin tocar el root del host.
+# Corre paru dentro de un contenedor nspawn efímero como usuario no-root.
+#
+# Flags compatibles con pacman/paru:
+#   -S  <pkg>    Instalar paquete desde AUR
+#   -Ss <query>  Buscar en AUR
+#   -Si <pkg>    Info del paquete AUR
+#   -Su          Upgrade de paquetes AUR instalados
+#   -R  <pkg>    Remover paquete AUR
+#   -Q           Listar paquetes AUR instalados
+#   -Qs <query>  Buscar en paquetes instalados
+#   --clean      Limpiar contenedores huérfanos y cache
+#
+# Nota: -Syu NO está soportado aquí — usar sudo our-pac -Syu para el sistema base.
+set -euo pipefail
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+readonly PROGRAM_NAME="our-aur"
+readonly AUR_RPC="https://aur.archlinux.org/rpc/v6"
+readonly BUILD_ROOT="/var/tmp/our-aur/containers"
+readonly DATA_DIR="/var/lib/our-aur"
+readonly EXTENSIONS_DIR="/var/lib/extensions"
+readonly SYSEXT_PREFIX="our-aur"
+readonly PARU_RELEASE_URL="https://github.com/Morganamilo/paru/releases/latest/download/paru-x86_64.pkg.tar.zst"
+readonly PARU_CACHE="${DATA_DIR}/paru-bin.pkg.tar.zst"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+_msg()  { echo "[${PROGRAM_NAME}] $*"; }
+_warn() { echo "[${PROGRAM_NAME}] WARNING: $*" >&2; }
+_err()  { echo "[${PROGRAM_NAME}] ERROR: $*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+_require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
+    fi
+}
+
+# ── Cleanup / trap ────────────────────────────────────────────────────────────
+
+_CLEANUP_CONTAINER=""
+_CLEANUP_STAGING=""
+
+_cleanup() {
+    if [[ -n "${_CLEANUP_CONTAINER}" && -d "${_CLEANUP_CONTAINER}" ]]; then
+        _msg "Limpiando contenedor efímero..."
+        rm -rf "${_CLEANUP_CONTAINER}" 2>/dev/null || true
+    fi
+    if [[ -n "${_CLEANUP_STAGING}" && -d "${_CLEANUP_STAGING}" ]]; then
+        rm -rf "${_CLEANUP_STAGING}" 2>/dev/null || true
+    fi
+    rm -f "/tmp/our-aur-baseline-$$.txt" "/tmp/our-aur-after-$$.txt" 2>/dev/null || true
+}
+
+trap '_cleanup' EXIT
+
+# ── AUR RPC API ───────────────────────────────────────────────────────────────
+
+_aur_search() {
+    local query="$1"
+    local encoded_query
+    encoded_query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${query}")
+    local response
+    response=$(curl --silent --fail --max-time 10 \
+        "${AUR_RPC}/search?v=5&type=search&arg=${encoded_query}" \
+        2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
+
+    python3 -c "
+import sys, json
+
+response = sys.argv[1]
+try:
+    data = json.loads(response)
+except json.JSONDecodeError:
+    print('[!] Respuesta invalida de AUR RPC')
+    sys.exit(1)
+
+if data.get('type') == 'error':
+    print(f'[!] AUR error: {data.get(\"error\", \"desconocido\")}')
+    sys.exit(1)
+
+results = data.get('results', [])
+if not results:
+    print('No se encontraron resultados.')
+    sys.exit(0)
+
+print(f'{\"Paquete\":<35} {\"Version\":<20} {\"Votos\":>6}  Descripcion')
+print('-' * 90)
+for pkg in sorted(results, key=lambda x: -x.get('NumVotes', 0))[:25]:
+    name  = pkg.get('Name', '')[:34]
+    ver   = pkg.get('Version', '')[:19]
+    votes = pkg.get('NumVotes', 0)
+    desc  = (pkg.get('Description') or '')[:50]
+    ood   = ' [OOD]' if pkg.get('OutOfDate') else ''
+    print(f'{name:<35} {ver:<20} {votes:>6}  {desc}{ood}')
+" "${response}"
+}
+
+_aur_info() {
+    local pkg="$1"
+    local response
+    response=$(curl --silent --fail --max-time 10 \
+        "${AUR_RPC}/info?v=5&type=info&arg%5B%5D=${pkg}" \
+        2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
+
+    python3 -c "
+import sys, json
+
+response = sys.argv[1]
+try:
+    data = json.loads(response)
+except json.JSONDecodeError:
+    print('[!] Respuesta invalida de AUR RPC')
+    sys.exit(1)
+
+results = data.get('results', [])
+if not results:
+    print('[!] Paquete no encontrado en AUR.')
+    sys.exit(1)
+
+p = results[0]
+print(f'Nombre        : {p.get(\"Name\", \"\")}')
+print(f'Version       : {p.get(\"Version\", \"\")}')
+print(f'Descripcion   : {p.get(\"Description\", \"\")}')
+print(f'URL           : {p.get(\"URL\", \"\")}')
+print(f'AUR           : https://aur.archlinux.org/packages/{p.get(\"Name\", \"\")}')
+print(f'Mantenedor    : {p.get(\"Maintainer\") or \"huerfano\"}')
+print(f'Votos         : {p.get(\"NumVotes\", 0)}')
+print(f'Popularidad   : {p.get(\"Popularity\", 0):.4f}')
+print(f'Desactualizado: {\"Si\" if p.get(\"OutOfDate\") else \"No\"}')
+deps = p.get('Depends', [])
+if deps:
+    print(f'Dependencias  : {chr(44).join(deps)}')
+makedeps = p.get('MakeDepends', [])
+if makedeps:
+    print(f'MakeDepends   : {chr(44).join(makedeps)}')
+" "${response}"
+
+}
+
+# Retorna solo la versión de un paquete AUR (para upgrade check)
+_aur_version() {
+    local pkg="$1"
+    curl --silent --fail --max-time 10 \
+        "${AUR_RPC}/info?v=5&type=info&arg%5B%5D=${pkg}" \
+        2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+results = data.get('results', [])
+if results:
+    print(results[0].get('Version', ''))
+" 2>/dev/null || echo ""
+}
+
+# ── Container lifecycle ───────────────────────────────────────────────────────
+
+_create_build_container() {
+    local name="$1"
+    local container="${BUILD_ROOT}/${name}"
+
+    mkdir -p "${BUILD_ROOT}"
+    _msg "Creando contenedor de build: ${name}"
+    _msg "Esto puede tardar unos minutos (pacstrap base + base-devel)..."
+
+    if ! pacstrap -c "${container}" base base-devel git sudo --noconfirm -q 2>/dev/null; then
+        _die "Falló pacstrap al crear el contenedor. ¿Hay conexión a Internet y espejos configurados?"
+    fi
+
+    # Crear usuario aurbuild (UID 1000, makepkg rechaza root)
+    systemd-nspawn -D "${container}" --pipe -- \
+        useradd -m -u 1000 -s /bin/bash aurbuild 2>/dev/null || true
+
+    # sudoers: aurbuild puede correr pacman como root sin password
+    echo "aurbuild ALL=(ALL) NOPASSWD: /usr/bin/pacman" \
+        > "${container}/etc/sudoers.d/aurbuild"
+    chmod 440 "${container}/etc/sudoers.d/aurbuild"
+
+    _CLEANUP_CONTAINER="${container}"
+    _msg "Contenedor listo: ${container}"
+}
+
+_bootstrap_paru() {
+    local container="${BUILD_ROOT}/$1"
+
+    # Descargar paru-bin si no está cacheado
+    if [[ ! -f "${PARU_CACHE}" ]]; then
+        _msg "Descargando paru-bin desde GitHub releases..."
+        mkdir -p "${DATA_DIR}"
+        if ! curl --silent --fail --location --max-time 120 \
+            --output "${PARU_CACHE}" "${PARU_RELEASE_URL}"; then
+            rm -f "${PARU_CACHE}"
+            _die "No se pudo descargar paru-bin. ¿Hay conexión a Internet?"
+        fi
+        _msg "paru-bin descargado y cacheado en ${PARU_CACHE}"
+    else
+        _msg "paru-bin encontrado en cache: ${PARU_CACHE}"
+    fi
+
+    # Copiar al contenedor y instalar
+    cp "${PARU_CACHE}" "${container}/tmp/paru-bin.pkg.tar.zst"
+    systemd-nspawn -D "${container}" --pipe -- \
+        pacman --noconfirm -U /tmp/paru-bin.pkg.tar.zst 2>/dev/null || \
+        _die "Falló la instalación de paru-bin en el contenedor"
+
+    rm -f "${container}/tmp/paru-bin.pkg.tar.zst"
+    _msg "paru-bin instalado en el contenedor"
+}
+
+_build_in_container() {
+    local name="$1"
+    local pkg="$2"
+    local container="${BUILD_ROOT}/${name}"
+
+    _msg "Ejecutando build: paru -S ${pkg} (como aurbuild)"
+
+    # paru necesita HOME y XDG dirs del usuario
+    systemd-nspawn -D "${container}" \
+        --user=aurbuild \
+        --setenv="HOME=/home/aurbuild" \
+        --setenv="XDG_CACHE_HOME=/home/aurbuild/.cache" \
+        --setenv="XDG_CONFIG_HOME=/home/aurbuild/.config" \
+        --setenv="PARU_CONF=/home/aurbuild/.config/paru/paru.conf" \
+        -- \
+        paru --noconfirm --noprogressbar --nocleanmenu \
+             --nodiffmenu --noeditmenu --removemake \
+             -S "${pkg}" || \
+        _die "Falló el build de '${pkg}' en el contenedor. Revisá los logs de arriba."
+
+    _msg "Build de '${pkg}' completado"
+}
+
+_destroy_build_container() {
+    local name="$1"
+    local container="${BUILD_ROOT}/${name}"
+    if [[ -d "${container}" ]]; then
+        rm -rf "${container}"
+        _CLEANUP_CONTAINER=""
+        _msg "Contenedor efímero eliminado"
+    fi
+}
+
+# ── sysext management ─────────────────────────────────────────────────────────
+
+_create_sysext() {
+    local pkg_name="$1"
+    local container_name="$2"
+    shift 2
+    local new_pkgs=("$@")
+    local container="${BUILD_ROOT}/${container_name}"
+    local sysext_name="${SYSEXT_PREFIX}-${pkg_name}"
+    local sysext_dir="${EXTENSIONS_DIR}/${sysext_name}"
+    local staging
+    staging=$(mktemp -d "/var/tmp/our-aur/staging-${pkg_name}-XXXXXX")
+    _CLEANUP_STAGING="$staging"
+
+    _msg "Creando extensión sysext: ${sysext_name}"
+
+    # Extraer archivos /usr/* de cada paquete nuevo
+    for p in "${new_pkgs[@]}"; do
+        _msg "  Extrayendo archivos de: ${p}"
+        while IFS= read -r filepath; do
+            # Solo archivos (no directorios vacíos, no links rotos)
+            if [[ "${filepath}" == /usr/* && -e "${container}${filepath}" ]]; then
+                local dest_dir
+                dest_dir="${staging}$(dirname "${filepath}")"
+                mkdir -p "${dest_dir}"
+                cp -a "${container}${filepath}" "${dest_dir}/" 2>/dev/null || true
+            fi
+        done < <(pacman --root="${container}" -Ql "${p}" 2>/dev/null | awk '{print $2}')
+    done
+
+    # Inyectar extension-release metadata (obligatorio para systemd-sysext)
+    local release_dir="${staging}/usr/lib/extension-release.d"
+    mkdir -p "${release_dir}"
+    printf 'ID=arch\nSYSEXT_LEVEL=1\n' > "${release_dir}/extension-release.${sysext_name}"
+
+    # Remover sysext anterior si existía
+    if [[ -d "${sysext_dir}" ]]; then
+        systemd-sysext unmerge 2>/dev/null || true
+        rm -rf "${sysext_dir}"
+    fi
+
+    # Mover staging a destino final
+    mv "${staging}" "${sysext_dir}"
+    _CLEANUP_STAGING=""
+
+    _msg "Extensión sysext creada: ${sysext_dir}"
+}
+
+_remove_sysext() {
+    local pkg_name="$1"
+    local sysext_dir="${EXTENSIONS_DIR}/${SYSEXT_PREFIX}-${pkg_name}"
+
+    if [[ ! -d "${sysext_dir}" ]]; then
+        _warn "No existe extensión sysext para '${pkg_name}'"
+        return 0
+    fi
+
+    _msg "Removiendo extensión sysext: ${sysext_dir}"
+    systemd-sysext unmerge 2>/dev/null || true
+    rm -rf "${sysext_dir}"
+    _sysext_refresh
+}
+
+_sysext_refresh() {
+    if command -v systemd-sysext &>/dev/null; then
+        _msg "Actualizando systemd-sysext..."
+        systemd-sysext merge 2>/dev/null || \
+            _warn "systemd-sysext merge falló. Las extensiones se activarán en el próximo reboot."
+    else
+        _warn "systemd-sysext no disponible — las extensiones no se activaron"
+    fi
+}
+
+# ── Package tracking ──────────────────────────────────────────────────────────
+
+_save_tracking() {
+    local pkg_name="$1"
+    local version="$2"
+    shift 2
+    local pkg_names=("$@")
+    local track_dir="${DATA_DIR}/packages"
+    local track_file="${track_dir}/${pkg_name}.json"
+
+    mkdir -p "${track_dir}"
+
+    python3 - "$pkg_name" "$version" "${SYSEXT_PREFIX}-${pkg_name}" "${pkg_names[@]}" <<'PYEOF'
+import sys, json, datetime
+
+name    = sys.argv[1]
+version = sys.argv[2]
+sysext  = sys.argv[3]
+pkgs    = sys.argv[4:]
+
+data = {
+    "name": name,
+    "version": version,
+    "aur_url": f"https://aur.archlinux.org/packages/{name}",
+    "installed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+    "pkg_names": pkgs,
+    "sysext_path": f"/var/lib/extensions/{sysext}"
+}
+
+track_dir = f"/var/lib/our-aur/packages"
+import os; os.makedirs(track_dir, exist_ok=True)
+with open(f"{track_dir}/{name}.json", "w") as f:
+    json.dump(data, f, indent=2)
+print(f"Tracking guardado: {track_dir}/{name}.json")
+PYEOF
+}
+
+_load_tracking() {
+    local pkg_name="$1"
+    local track_file="${DATA_DIR}/packages/${pkg_name}.json"
+    if [[ ! -f "${track_file}" ]]; then
+        echo ""
+        return 0
+    fi
+    cat "${track_file}"
+}
+
+_list_tracked() {
+    local track_dir="${DATA_DIR}/packages"
+    if [[ ! -d "${track_dir}" ]] || [[ -z "$(ls -A "${track_dir}" 2>/dev/null)" ]]; then
+        return 0
+    fi
+    for f in "${track_dir}"/*.json; do
+        [[ -f "$f" ]] || continue
+        python3 -c "
+import json, sys
+with open('$f') as fp: d = json.load(fp)
+print(d.get('name','?') + ' ' + d.get('version','?') + ' ' + d.get('installed_at','?'))
+" 2>/dev/null
+    done
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+_cmd_install() {
+    local pkg="${1:-}"
+    [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -S <paquete>"
+
+    _msg "=== Instalando '${pkg}' desde AUR ==="
+
+    # 1. Verificar que existe en AUR
+    _msg "Verificando '${pkg}' en AUR..."
+    local aur_version
+    aur_version=$(_aur_version "${pkg}")
+    [[ -n "${aur_version}" ]] || _die "Paquete '${pkg}' no encontrado en AUR"
+    _msg "Versión disponible en AUR: ${aur_version}"
+
+    # Verificar si ya está instalado
+    local track_file="${DATA_DIR}/packages/${pkg}.json"
+    if [[ -f "${track_file}" ]]; then
+        local installed_ver
+        installed_ver=$(python3 -c "import json; d=json.load(open('${track_file}')); print(d.get('version',''))" 2>/dev/null)
+        if [[ "${installed_ver}" == "${aur_version}" ]]; then
+            _msg "'${pkg}' ya está instalado en la versión ${aur_version}. Nada que hacer."
+            return 0
+        fi
+        _msg "Actualizando de ${installed_ver} → ${aur_version}"
+    fi
+
+    # 2. Crear contenedor efímero
+    local container_name="build-$$"
+    _create_build_container "${container_name}"
+
+    # 3. Bootstrap paru
+    _bootstrap_paru "${container_name}"
+
+    # 4. Registrar baseline de paquetes
+    local container="${BUILD_ROOT}/${container_name}"
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-$$.txt"
+
+    # 5. Build
+    _build_in_container "${container_name}" "${pkg}"
+
+    # 6. Detectar paquetes nuevos
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-$$.txt"
+    mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-$$.txt" "/tmp/our-aur-after-$$.txt")
+
+    if [[ ${#new_pkgs[@]} -eq 0 ]]; then
+        _warn "No se detectaron paquetes nuevos tras el build. Puede que ya estuvieran instalados."
+        _destroy_build_container "${container_name}"
+        return 0
+    fi
+
+    _msg "Paquetes nuevos detectados: ${new_pkgs[*]}"
+
+    # 7. Crear sysext
+    _create_sysext "${pkg}" "${container_name}" "${new_pkgs[@]}"
+
+    # 8. Activar sysext
+    _sysext_refresh
+
+    # 9. Guardar tracking
+    _save_tracking "${pkg}" "${aur_version}" "${new_pkgs[@]}"
+
+    # 10. Destruir contenedor
+    _destroy_build_container "${container_name}"
+
+    _msg "=== '${pkg}' instalado correctamente como extensión sysext ==="
+    _msg "Verificar con: systemd-sysext list"
+}
+
+_cmd_search() {
+    local query="${1:-}"
+    [[ -n "${query}" ]] || _die "Especificá un término de búsqueda: our-aur -Ss <query>"
+    _aur_search "${query}"
+}
+
+_cmd_info() {
+    local pkg="${1:-}"
+    [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -Si <paquete>"
+    _aur_info "${pkg}"
+}
+
+_cmd_upgrade() {
+    local track_dir="${DATA_DIR}/packages"
+
+    if [[ ! -d "${track_dir}" ]] || [[ -z "$(ls -A "${track_dir}" 2>/dev/null)" ]]; then
+        _msg "No hay paquetes AUR instalados."
+        return 0
+    fi
+
+    _msg "=== Verificando actualizaciones AUR ==="
+    local upgraded=0
+
+    for f in "${track_dir}"/*.json; do
+        [[ -f "$f" ]] || continue
+        local pkg_name installed_ver aur_ver
+        pkg_name=$(python3 -c "import json; print(json.load(open('$f')).get('name',''))" 2>/dev/null)
+        installed_ver=$(python3 -c "import json; print(json.load(open('$f')).get('version',''))" 2>/dev/null)
+        aur_ver=$(_aur_version "${pkg_name}")
+
+        if [[ -z "${aur_ver}" ]]; then
+            _warn "${pkg_name}: no encontrado en AUR (¿fue removido?)"
+            continue
+        fi
+
+        if [[ "${installed_ver}" == "${aur_ver}" ]]; then
+            _msg "${pkg_name}: ya en la versión más reciente (${installed_ver})"
+        else
+            _msg "${pkg_name}: actualizando ${installed_ver} → ${aur_ver}"
+            _cmd_install "${pkg_name}"
+            upgraded=$((upgraded + 1))
+        fi
+    done
+
+    if [[ $upgraded -eq 0 ]]; then
+        _msg "Todo actualizado. No hay nada que hacer."
+    else
+        _msg "=== ${upgraded} paquete(s) actualizado(s) ==="
+    fi
+}
+
+_cmd_remove() {
+    local pkg="${1:-}"
+    [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -R <paquete>"
+
+    local track_file="${DATA_DIR}/packages/${pkg}.json"
+    if [[ ! -f "${track_file}" ]]; then
+        _die "Paquete '${pkg}' no está instalado como extensión AUR."
+    fi
+
+    _msg "=== Removiendo '${pkg}' ==="
+    _remove_sysext "${pkg}"
+
+    rm -f "${track_file}"
+    _msg "'${pkg}' removido correctamente."
+}
+
+_cmd_list() {
+    local track_dir="${DATA_DIR}/packages"
+
+    if [[ ! -d "${track_dir}" ]] || [[ -z "$(ls -A "${track_dir}" 2>/dev/null)" ]]; then
+        _msg "No hay paquetes AUR instalados."
+        return 0
+    fi
+
+    printf "%-30s %-20s %s\n" "Paquete" "Versión" "Instalado"
+    printf "%s\n" "$(printf '%0.s-' {1..70})"
+
+    for f in "${track_dir}"/*.json; do
+        [[ -f "$f" ]] || continue
+        python3 -c "
+import json
+d = json.load(open('$f'))
+print(f\"{d.get('name','?'):<30} {d.get('version','?'):<20} {d.get('installed_at','?')}\")
+" 2>/dev/null
+    done
+}
+
+_cmd_list_search() {
+    local query="${1:-}"
+    [[ -n "${query}" ]] || _die "Especificá un término: our-aur -Qs <query>"
+
+    local track_dir="${DATA_DIR}/packages"
+    local found=0
+
+    for f in "${track_dir}"/*.json; do
+        [[ -f "$f" ]] || continue
+        local name
+        name=$(python3 -c "import json; print(json.load(open('$f')).get('name',''))" 2>/dev/null)
+        if [[ "${name}" == *"${query}"* ]]; then
+            python3 -c "
+import json
+d = json.load(open('$f'))
+print(f\"{d.get('name','?')} {d.get('version','?')}\")
+" 2>/dev/null
+            found=1
+        fi
+    done
+
+    if [[ $found -eq 0 ]]; then
+        _msg "No se encontró '${query}' en paquetes AUR instalados."
+    fi
+}
+
+_cmd_clean() {
+    _msg "=== Limpiando residuos de our-aur ==="
+
+    # Contenedores huérfanos
+    if [[ -d "${BUILD_ROOT}" ]]; then
+        local orphans=0
+        for d in "${BUILD_ROOT}"/build-*; do
+            [[ -d "$d" ]] || continue
+            _warn "Contenedor huérfano encontrado: $d — eliminando..."
+            rm -rf "$d"
+            orphans=$((orphans + 1))
+        done
+        if [[ $orphans -eq 0 ]]; then
+            _msg "No hay contenedores huérfanos."
+        fi
+    fi
+
+    # Cache de paru-bin (opcional — redownload automático)
+    if [[ -f "${PARU_CACHE}" ]]; then
+        _msg "Cache de paru-bin: ${PARU_CACHE} (conservado — borrar manualmente si lo querés actualizar)"
+    fi
+
+    # Stagings huérfanos
+    if compgen -G "/var/tmp/our-aur/staging-*" &>/dev/null; then
+        for d in /var/tmp/our-aur/staging-*; do
+            [[ -d "$d" ]] || continue
+            _warn "Staging huérfano: $d — eliminando..."
+            rm -rf "$d"
+        done
+    fi
+
+    _msg "Limpieza completada."
+}
+
+_cmd_help() {
+    cat << EOF
+
+${PROGRAM_NAME} — AUR helper para ouroborOS (paru + systemd-sysext)
+
+USO:
+  our-aur -S  <paquete>    Instalar paquete desde AUR
+  our-aur -Ss <búsqueda>   Buscar paquetes en AUR
+  our-aur -Si <paquete>    Ver información del paquete AUR
+  our-aur -Su              Actualizar paquetes AUR instalados
+  our-aur -R  <paquete>    Remover paquete AUR
+  our-aur -Q               Listar paquetes AUR instalados
+  our-aur -Qs <búsqueda>   Buscar en paquetes AUR instalados
+  our-aur --clean          Limpiar contenedores huérfanos y temporales
+  our-aur --help           Mostrar esta ayuda
+
+NOTA:
+  Para actualizar el sistema base (paquetes de repositorios oficiales):
+    sudo our-pac -Syu
+
+  Los paquetes AUR se instalan como extensiones systemd-sysext en
+  /var/lib/extensions/our-aur-<paquete>/  y se superponen sobre /usr
+  sin modificar el sistema base (que permanece inmutable).
+
+EJEMPLOS:
+  sudo our-aur -S quickshell
+  our-aur -Ss hyprlock
+  our-aur -Q
+  sudo our-aur -Su
+
+EOF
+}
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+main() {
+    local flag="${1:-}"
+
+    # Operaciones que requieren root
+    case "${flag}" in
+        -S|-Su|-R|--clean)
+            _require_root "$@"
+            ;;
+    esac
+
+    shift || true
+
+    case "${flag}" in
+        -S)           _cmd_install "$@" ;;
+        -Ss)          _cmd_search "$@" ;;
+        -Si)          _cmd_info "$@" ;;
+        -Su)          _cmd_upgrade ;;
+        -Syu|-Suy|-Syuu)
+                      _die "-Syu no soportado en our-aur. Para actualizar el sistema: sudo our-pac -Syu" ;;
+        -R)           _cmd_remove "$@" ;;
+        -Q)           _cmd_list ;;
+        -Qs)          _cmd_list_search "$@" ;;
+        --clean)      _cmd_clean ;;
+        --help|-h|"") _cmd_help; exit 0 ;;
+        -Ss*)
+                      # Soporte: our-aur -Ssquery (sin espacio)
+                      _cmd_search "${flag#-Ss}" ;;
+        -Si*)
+                      _cmd_info "${flag#-Si}" ;;
+        -Qs*)
+                      _cmd_list_search "${flag#-Qs}" ;;
+        *)
+            _err "Flag desconocido: '${flag}'"
+            _cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

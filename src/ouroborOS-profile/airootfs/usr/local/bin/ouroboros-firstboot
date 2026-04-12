@@ -88,6 +88,14 @@ else
     _warn "btrfs-scrub@-.timer not available (btrfs-progs installed?). Skipping."
 fi
 
+# systemd-sysext — merge AUR sysext extensions installed by our-aur
+# Extensions live in /var/lib/extensions/our-aur-*/
+if systemctl enable --now systemd-sysext 2>/dev/null; then
+    _log "systemd-sysext enabled and started (AUR extensions merged)."
+else
+    _warn "systemd-sysext not available — our-aur extensions won't auto-merge on boot."
+fi
+
 # ── 4. Mark as done ──────────────────────────────────────────────────────────
 mkdir -p "$GUARD_DIR"
 date -Iseconds > "$GUARD_FILE"
