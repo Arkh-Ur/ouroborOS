@@ -136,7 +136,9 @@ _cmd_remote_add() {
     _check_flatpak
     _msg "Agregando remote '${name}' (${url})..."
     flatpak remote-add --system --if-not-exists "${name}" "${url}"
-    _msg "Remote '${name}' agregado."
+    _msg "Remote '${name}' agregado. Actualizando appstream cache..."
+    flatpak update --appstream --system 2>/dev/null || true
+    _msg "Appstream cache actualizado."
 }
 
 _cmd_remote_list() {
