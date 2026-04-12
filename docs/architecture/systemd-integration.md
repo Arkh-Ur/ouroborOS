@@ -109,7 +109,7 @@ options root=UUID=XXXX rootflags=subvol=@,ro loglevel=4
 
 **Installation:** `bootctl install` during installer post-config phase.
 **UEFI NVRAM entry:** `efibootmgr` from the host (chroot cannot write real NVRAM variables).
-**Updates:** `bootctl update` via the `our-pacman` wrapper or manual execution.
+**Updates:** `bootctl update` via the `our-pac` wrapper or manual execution.
 
 ---
 
@@ -252,16 +252,16 @@ d /var/usrlocal 0755 root root -
 
 ---
 
-## Package Updates: our-pacman
+## Package Updates: our-pac
 
 **Role:** Wrapper script that replaces direct `pacman` usage. Creates a pre-upgrade Btrfs snapshot, remounts root read-write, runs pacman, then remounts read-only.
 
 ```bash
 # Full system upgrade (snapshot created automatically)
-sudo our-pacman -Syu
+sudo our-pac -Syu
 
 # Install specific packages
-sudo our-pacman -S neovim tmux
+sudo our-pac -S neovim tmux
 ```
 
 > pacman pre/post upgrade hooks were evaluated but found useless — pacman checks filesystem writability BEFORE running hooks. This wrapper approach (like MicroOS `transactional-update`) is the correct solution.

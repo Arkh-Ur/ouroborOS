@@ -14,7 +14,7 @@ All core deliverables from `docs/PHASE_2_PLAN.md` are implemented and merged to 
 | Display manager selection decoupled (gdm/sddm/plm/none) | ✅ |
 | Visual selector (↑↓ arrows) in TUI | ✅ |
 | FSM reorder: USER + DESKTOP before PARTITION | ✅ |
-| `our-pacman` (renamed from `ouroboros-upgrade`, compat symlink) | ✅ |
+| `our-pac` (renamed from `ouroboros-upgrade`, compat symlink) | ✅ |
 | `our-container` nspawn wrapper (17 commands, autostart service) | ✅ |
 | `systemd-homed` migration service (first-boot oneshot) | ✅ |
 | Remote config URL prompt in INIT state | ✅ |
@@ -70,8 +70,8 @@ Build ISO → Unattended install (11/11 states) → Boot → SSH → Verify syst
 - machine-id set (32-char hex)
 - DNSOverTLS=opportunistic in resolved.conf
 - zram swap active
-- `our-pacman` and `our-container` binaries installed
-- `ouroboros-upgrade → our-pacman` compat symlink present
+- `our-pac` and `our-container` binaries installed
+- `ouroboros-upgrade → our-pac` compat symlink present
 - User `hbuddenberg` in `wheel` group
 - EFI binary present
 

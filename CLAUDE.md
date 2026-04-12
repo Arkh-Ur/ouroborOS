@@ -54,7 +54,7 @@ ouroborOS/
 │   │   ├── ops/                 ← Bash operations
 │   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab, LUKS
 │   │   │   ├── snapshot.sh      ← Btrfs snapshot management
-│   │   │   └── configure.sh     ← Chroot post-install config (our-pacman, DM enable, homed)
+│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed)
 │   │   └── tests/               ← pytest test suite (93% coverage)
 │   └── ouroborOS-profile/       ← archiso profile
 │       ├── profiledef.sh
@@ -100,7 +100,7 @@ ouroborOS/
 |-------|-----------|
 | Base OS | ArchLinux |
 | Kernel | linux-zen |
-| Package manager | pacman (via `our-pacman` wrapper for root modifications) |
+| Package manager | pacman (via `our-pac` wrapper for root modifications) |
 | Bootloader | systemd-boot |
 | Filesystem | Btrfs (immutable subvolumes) |
 | Network | systemd-networkd + iwd |
@@ -215,7 +215,7 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 **Phases 1-5 complete.** Release v0.1.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.1.0
 
 **Current phase:** Phase 2 (post-v0.1.0) — see [docs/PHASE_2_PLAN.md](./docs/PHASE_2_PLAN.md)
-- `our-pacman` renamed from `ouroboros-upgrade`, `our-container` (nspawn wrapper) added
+- `our-pac` renamed from `ouroboros-upgrade`, `our-container` (nspawn wrapper) added
 - Desktop profile selection (minimal/hyprland/niri/gnome/kde) with decoupled DM selection (gdm/sddm/plm/none)
 - FSM reordered: USER + DESKTOP states before PARTITION (no destructive ops before human input)
 - systemd-homed default-on for per-user home encryption (non-interactive via JSON identity)
@@ -237,7 +237,7 @@ When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds th
 
 | File | Description |
 |------|-------------|
-| `docs/PHASE_2_PLAN.md` | Post-v0.1.0 development plan (our-pacman, desktop profiles, our-container) |
+| `docs/PHASE_2_PLAN.md` | Post-v0.1.0 development plan (our-pac, desktop profiles, our-container) |
 | `docs/architecture/overview.md` | System architecture, layer diagram, component table |
 | `docs/architecture/immutability-strategy.md` | Btrfs layout, fstab, snapshot flow |
 | `docs/architecture/installer-phases.md` | All installer states, actions, rollback |
@@ -263,7 +263,7 @@ When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds th
 - Do not install or configure GRUB under any circumstances
 - Do not add NetworkManager to any package list
 - Do not use `/dev/sdX` paths in any configuration (always UUID)
-- Do not mount root read-write in production (only during updates, via `our-pacman`)
+- Do not mount root read-write in production (only during updates, via `our-pac`)
 - Do not commit directly to `master`
 - Do not add packages to the ISO without justification (bloat)
 - Do not use PreTransaction pacman hooks for remounting (pacman checks writability before hooks)

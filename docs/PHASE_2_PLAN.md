@@ -61,7 +61,7 @@ The profile is consumed in `_handle_install()` by concatenating `PROFILE_PACKAGE
 #### Dependency notes
 
 - **Hyprland + aquamarine:** `aquamarine` is the Wayland compositor backend for Hyprland ≥ 0.42. It is a hard dependency of the `hyprland` package on Arch and gets auto-pulled by pacman — no need to list it explicitly in the profile.
-- **KDE package size:** `kde-applications-meta` installs **all** KDE applications (~300 packages, ~1.5 GB). Consider replacing it with a lighter set for the immutable-base philosophy: `plasma-desktop dolphin konsole kate gwenview ark ffmpegthumbs`. This would reduce the KDE profile from ~1.5 GB to ~400 MB while keeping the essentials. Decision deferred — the full meta is simpler for first-time users and `our-pacman` makes rollback trivial if they want to prune later.
+- **KDE package size:** `kde-applications-meta` installs **all** KDE applications (~300 packages, ~1.5 GB). Consider replacing it with a lighter set for the immutable-base philosophy: `plasma-desktop dolphin konsole kate gwenview ark ffmpegthumbs`. This would reduce the KDE profile from ~1.5 GB to ~400 MB while keeping the essentials. Decision deferred — the full meta is simpler for first-time users and `our-pac` makes rollback trivial if they want to prune later.
 - **niri portal:** `xdg-desktop-portal-gnome` is used because niri doesn't have its own portal. This is the recommended upstream pairing.
 
 ### 3. The `our-*` command namespace
@@ -70,12 +70,12 @@ v0.1.0 shipped a single wrapper called `ouroboros-upgrade`. It's a mouthful, it'
 
 | Command | Role | Status |
 |---------|------|--------|
-| `our-pacman` | pacman wrapper with snapshot + remount | **Renamed** from `ouroboros-upgrade` |
+| `our-pac` | pacman wrapper with snapshot + remount | **Renamed** from `ouroboros-upgrade` |
 | `our-container` | systemd-nspawn container wrapper | **New** |
 | `our-snap` | snapshot management (list, prune, rollback) | *Phase 3* |
 | `our-rollback` | quick rollback without reboot | *Phase 3* |
 
-A compatibility symlink `ouroboros-upgrade → our-pacman` ships for one release cycle, then gets removed in Phase 3. All documentation is updated in lockstep.
+A compatibility symlink `ouroboros-upgrade → our-pac` ships for one release cycle, then gets removed in Phase 3. All documentation is updated in lockstep.
 
 ---
 
@@ -191,10 +191,10 @@ Phase 2 stops there — no Wayland/PipeWire passthrough, no GUI-app launchers. T
 - [x] `src/installer/tui.py` — `show_desktop_selection()` (Rich + whiptail)
 - [x] `src/installer/state_machine.py` — new `USER` and `DESKTOP` states, reordered `_STATE_ORDER`, profile injection in `_handle_install()`, `DESKTOP_DM` exported to configure env
 - [x] `src/installer/ops/configure.sh` — conditional display manager enable, homed enable, homed registration unit
-- [x] `src/ouroborOS-profile/airootfs/usr/local/bin/our-pacman` — renamed from `ouroboros-upgrade`, with compatibility symlink
+- [x] `src/ouroborOS-profile/airootfs/usr/local/bin/our-pac` — renamed from `ouroboros-upgrade`, with compatibility symlink
 - [x] `src/ouroborOS-profile/airootfs/usr/local/bin/our-container` — new nspawn wrapper (17 commands, 1786 lines)
 - [x] `templates/install-config.yaml` — documented `desktop:` and `user.homed_storage:` sections
-- [x] `docs/user-guide.md`, `README.md`, `CLAUDE.md` — replace `ouroboros-upgrade` with `our-pacman`, document `our-container`
+- [x] `docs/user-guide.md`, `README.md`, `CLAUDE.md` — replace `ouroboros-upgrade` with `our-pac`, document `our-container`
 - [x] `src/installer/tests/` — update FSM order tests, config tests, TUI tests (280 passed, 0 failed)
 - [x] `IMPLEMENTATION_PLAN.md` — mark Phase 2 complete
 

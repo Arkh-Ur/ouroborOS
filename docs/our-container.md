@@ -65,18 +65,18 @@
 | ouroborOS installed            | `our-container` ships with the system at `/usr/local/bin/our-container`    |
 | Btrfs filesystem               | Required for snapshots. Falls back to plain directories otherwise. |
 | `systemd-machined`             | Enabled by default on ouroborOS. Run `diagnose` to verify.     |
-| `arch-install-scripts`         | Required for Arch containers (`pacstrap`). Install via `our-pacman`. |
-| `debootstrap`                  | Required for Debian/Ubuntu containers. Install via `our-pacman`.  |
+| `arch-install-scripts`         | Required for Arch containers (`pacstrap`). Install via `our-pac`. |
+| `debootstrap`                  | Required for Debian/Ubuntu containers. Install via `our-pac`.  |
 | Root access                    | `our-container` auto-prompts with `sudo` when needed.                |
 
 ### Installing Bootstrap Tools
 
 ```bash
 # For Arch containers
-sudo our-pacman -S arch-install-scripts
+sudo our-pac -S arch-install-scripts
 
 # For Debian/Ubuntu containers
-sudo our-pacman -S debootstrap
+sudo our-pac -S debootstrap
 ```
 
 ---
@@ -531,13 +531,13 @@ Snapshots require a Btrfs filesystem at `/var/lib/machines`. If you are running 
 ### "pacstrap not found"
 
 ```bash
-sudo our-pacman -S arch-install-scripts
+sudo our-pac -S arch-install-scripts
 ```
 
 ### "debootstrap not found"
 
 ```bash
-sudo our-pacman -S debootstrap
+sudo our-pac -S debootstrap
 ```
 
 ### Bind mount not appearing inside container

@@ -38,7 +38,7 @@ _require_root() {
 
 _require_sbctl() {
     command -v sbctl &>/dev/null || \
-        _die "sbctl not found. Install with: sudo our-pacman -S sbctl"
+        _die "sbctl not found. Install with: sudo our-pac -S sbctl"
 }
 
 _require_uefi() {

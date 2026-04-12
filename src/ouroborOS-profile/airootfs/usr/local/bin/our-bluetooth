@@ -42,7 +42,7 @@ _die()   { _err "$*"; exit 1; }
 
 _require_bluetoothctl() {
     command -v bluetoothctl &>/dev/null || \
-        _die "bluetoothctl not found. Install: sudo our-pacman -S bluez bluez-utils"
+        _die "bluetoothctl not found. Install: sudo our-pac -S bluez bluez-utils"
 }
 
 _require_bluetooth_service() {
@@ -211,7 +211,7 @@ cmd_le() {
             echo ""
 
             if ! command -v bluetoothctl &>/dev/null; then
-                _die "bluetoothctl not found. Install: sudo our-pacman -S bluez-utils"
+                _die "bluetoothctl not found. Install: sudo our-pac -S bluez-utils"
             fi
 
             # Adapter info
@@ -412,7 +412,7 @@ REQUIREMENTS
   - bluez and bluez-utils installed
   - bluetooth.service running (auto-started by this tool if needed)
   - libfido2 for FIDO2/passkey management (our-fido2)
-  - Install: sudo our-pacman -S bluez bluez-utils libfido2
+  - Install: sudo our-pac -S bluez bluez-utils libfido2
 
 NOTES
   - MAC address format: AA:BB:CC:DD:EE:FF

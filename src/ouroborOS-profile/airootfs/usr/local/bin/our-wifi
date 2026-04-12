@@ -30,7 +30,7 @@ _die()   { _err "$*"; exit 1; }
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 _require_iwd() {
-    command -v iwctl &>/dev/null || _die "iwctl not found. Install iwd: sudo our-pacman -S iwd"
+    command -v iwctl &>/dev/null || _die "iwctl not found. Install iwd: sudo our-pac -S iwd"
     systemctl is-active --quiet iwd.service 2>/dev/null || {
         _warn "iwd is not running. Starting it now..."
         systemctl start iwd.service || _die "Failed to start iwd.service"

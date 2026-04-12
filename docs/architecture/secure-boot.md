@@ -82,12 +82,12 @@ ouroboros-secureboot rotate-keys    # Generate new keys and re-sign everything
 
 ---
 
-## Integration with our-pacman
+## Integration with our-pac
 
-`our-pacman` calls `sbctl sign-all` after every successful update if Secure Boot is active:
+`our-pac` calls `sbctl sign-all` after every successful update if Secure Boot is active:
 
 ```bash
-# In our-pacman (post-update hook):
+# In our-pac (post-update hook):
 if command -v sbctl &>/dev/null && sbctl status 2>/dev/null | grep -q "Secure Boot.*enabled"; then
     sbctl sign-all || log_warn "sbctl sign-all failed — check unsigned binaries with: ouroboros-secureboot status"
 fi
@@ -140,7 +140,7 @@ sbctl enroll-keys -m                # Re-enroll including Microsoft keys
 
 `systemd-boot-update.service` may update the bootloader EFI binary after first boot. The
 sbctl pacman hook signs the binary during the pacman transaction, but if the service
-copies a new unsigned binary post-boot, `our-pacman` will catch it on the next update.
+copies a new unsigned binary post-boot, `our-pac` will catch it on the next update.
 Run `ouroboros-secureboot sign-all` manually if booting fails after a bootloader update.
 
 ---

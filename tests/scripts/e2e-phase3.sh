@@ -9,7 +9,7 @@ set -euo pipefail
 #   Phase 2  — Unattended install via QEMU
 #   Phase 3  — Boot installed system
 #   Phase 4  — SSH validation suite (filesystem, tools, systemd, snapshots)
-#   Phase 5  — Extended validations (our-snapshot, our-rollback, our-pacman)
+#   Phase 5  — Extended validations (our-snapshot, our-rollback, our-pac)
 #   Phase 6  — Teardown and final report
 #
 # QEMU setup:
@@ -467,7 +467,7 @@ assert_cmd_exists "our-rollback exists" "/usr/local/bin/our-rollback"
 assert_cmd_exists "our-wifi exists" "/usr/local/bin/our-wifi"
 assert_cmd_exists "our-bluetooth exists" "/usr/local/bin/our-bluetooth"
 assert_cmd_exists "our-fido2 exists" "/usr/local/bin/our-fido2"
-assert_cmd_exists "our-pacman exists" "/usr/local/bin/our-pacman"
+assert_cmd_exists "our-pac exists" "/usr/local/bin/our-pac"
 assert_cmd_exists "our-container exists" "/usr/local/bin/our-container"
 assert_cmd_exists "ouroboros-secureboot exists" "/usr/local/bin/ouroboros-secureboot"
 assert_cmd_exists "ouroboros-firstboot exists" "/usr/local/bin/ouroboros-firstboot"
@@ -551,16 +551,16 @@ assert_contains "our-rollback help: promote subcommand documented" \
     "$rollback_help" "promote|now|status"
 
 # =============================================================================
-# Phase 5d — our-pacman validation (no actual upgrade)
+# Phase 5d — our-pac validation (no actual upgrade)
 # =============================================================================
-log_section "Phase 5d: our-pacman"
+log_section "Phase 5d: our-pac"
 
-log_info "our-pacman --help..."
-pacman_help=$(ssh_root_out "our-pacman --help 2>&1 || true")
-assert_contains "our-pacman: help exits cleanly" "$pacman_help" "pacman|Syu|usage|Usage"
+log_info "our-pac --help..."
+pacman_help=$(ssh_root_out "our-pac --help 2>&1 || true")
+assert_contains "our-pac: help exits cleanly" "$pacman_help" "pacman|Syu|usage|Usage"
 
-log_info "our-pacman log directory..."
-assert_file_exists "our-pacman log dir exists" "/var/log/our-pacman"
+log_info "our-pac log directory..."
+assert_file_exists "our-pac log dir exists" "/var/log/our-pac"
 
 # =============================================================================
 # Phase 5e — our-container validation

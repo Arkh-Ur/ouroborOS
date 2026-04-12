@@ -256,8 +256,8 @@ for svc in systemd-networkd systemd-resolved systemd-timesyncd; do
   $SSH "systemctl is-active ${svc}" | grep -q "active" && echo "✓ ${svc}" || echo "✗ ${svc} not active"
 done
 
-# --- our-pacman and our-container binaries ---
-$SSH 'test -x /usr/local/bin/our-pacman' && echo "✓ our-pacman installed" || echo "✗ our-pacman missing"
+# --- our-pac and our-container binaries ---
+$SSH 'test -x /usr/local/bin/our-pac' && echo "✓ our-pac installed" || echo "✗ our-pac missing"
 $SSH 'test -x /usr/local/bin/our-container' && echo "✓ our-container installed" || echo "✗ our-container missing"
 $SSH 'test -L /usr/local/bin/ouroboros-upgrade' && echo "✗ ouroboros-upgrade symlink still present (should be gone)" || echo "✓ ouroboros-upgrade symlink removed"
 
@@ -313,7 +313,7 @@ echo "Teardown complete"
 | Verify | machine-id is 32-char hex | ✓ |
 | Verify | DNSOverTLS=opportunistic in resolved.conf | ✓ |
 | Verify | zram swap active | ✓ |
-| Verify | our-pacman + our-container present, ouroboros-upgrade symlink absent | ✓ |
+| Verify | our-pac + our-container present, ouroboros-upgrade symlink absent | ✓ |
 | Verify | User hbuddenberg in wheel group | ✓ |
 | Verify | EFI binary at /boot/EFI/systemd/ | ✓ |
 

@@ -13,7 +13,7 @@
 
 | Prefijo | Audiencia | Ejecutables |
 |---------|-----------|-------------|
-| `our-*` | Usuario final (interactivo) | `our-pacman`, `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-container` |
+| `our-*` | Usuario final (interactivo) | `our-pac`, `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-container` |
 | `ouroboros-*` | Sistema (servicios, automatización) | `ouroboros-secureboot`, `ouroboros-firstboot` |
 
 ---
@@ -30,7 +30,7 @@
 | Btrfs layout (5 subvols + `@snapshots/install`) | ✅ | `src/installer/ops/disk.sh` |
 | systemd-boot + microcode auto-detect | ✅ | `src/installer/ops/configure.sh` |
 | Desktop profiles (5 perfiles, 4 DMs) | ✅ | `src/installer/desktop_profiles.py` |
-| `our-pacman` (atomic update wrapper) | ✅ | `airootfs/usr/local/bin/our-pacman` |
+| `our-pac` (atomic update wrapper) | ✅ | `airootfs/usr/local/bin/our-pac` |
 | `our-container` (17 comandos nspawn) | ✅ | `airootfs/usr/local/bin/our-container` |
 | systemd-homed (subvolume default) | ✅ | `src/installer/ops/configure.sh` |
 | Shell selector bash/zsh/fish | ✅ | `tui.py`, `desktop_profiles.py`, `configure.sh` |
@@ -41,7 +41,7 @@
 
 | Función | Propósito |
 |---------|-----------|
-| `pre_upgrade_snapshot()` | Llamada por `our-pacman` antes de cada update |
+| `pre_upgrade_snapshot()` | Llamada por `our-pac` antes de cada update |
 | `generate_snapshot_boot_entry()` | Escribe `.conf` en `/boot/loader/entries/` |
 | `prune_snapshots()` | Limita snapshots a 5 / 30 días, nunca toca `install` |
 | `create_install_snapshot()` | Baseline post-install |
@@ -61,7 +61,7 @@
 
 ## Milestone 3.0 — Limpieza de deuda Phase 2
 
-Phase 2 prometió: "A compatibility symlink `ouroboros-upgrade → our-pacman` ships for one
+Phase 2 prometió: "A compatibility symlink `ouroboros-upgrade → our-pac` ships for one
 release cycle, then gets removed in Phase 3."
 
 - [x] Eliminar `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-upgrade` (symlink)
@@ -100,7 +100,7 @@ options root=UUID=XXX rootflags=subvol=/@snapshots/2026-04-10_manual ro loglevel
 ```
 /.snapshots/
 ├── install/                            # Golden baseline — NUNCA purgado
-├── 2026-04-10T143022/                  # Pre-update (creado por our-pacman)
+├── 2026-04-10T143022/                  # Pre-update (creado por our-pac)
 ├── 2026-04-10_manual/                  # Manual (creado con our-snapshot create)
 └── .metadata/
     └── 2026-04-10T143022.json          # { timestamp, type, description, packages_count }
@@ -314,7 +314,7 @@ ouroboros-secureboot verify         # sbctl verify
 ouroboros-secureboot rotate-keys    # backup + create-keys + sign-all
 ```
 
-**Integración `our-pacman`:**
+**Integración `our-pac`:**
 
 ```bash
 if command -v sbctl &>/dev/null && sbctl status 2>/dev/null | grep -q "Secure Boot.*enabled"; then
@@ -334,7 +334,7 @@ security:
 - [x] 3.5.1 Agregar `sbctl` a `packages.x86_64`
 - [x] 3.5.2 `ouroboros-secureboot` CLI completo
 - [x] 3.5.3 `SecurityConfig` en `config.py` + validación
-- [x] 3.5.4 `sbctl sign-all` en `our-pacman` post-update
+- [x] 3.5.4 `sbctl sign-all` en `our-pac` post-update
 - [x] 3.5.5 State `SECURE_BOOT` en FSM (entre DESKTOP y PARTITION)
 - [x] 3.5.6 `show_secure_boot_prompt()` en `tui.py` (Rich + whiptail)
 - [x] 3.5.7 `docs/architecture/secure-boot.md` — creado
@@ -353,12 +353,12 @@ security:
 
 ---
 
-## Milestone 3.6 — `our-pacman` Hardening
+## Milestone 3.6 — `our-pac` Hardening
 
 **Flujo Phase 3:**
 
 ```
-our-pacman -Syu
+our-pac -Syu
   → verificar espacio ≥ 2GB en pool Btrfs
   → snapshot pre-update + metadata JSON
   → remount @ rw (subvolid=5)
@@ -366,7 +366,7 @@ our-pacman -Syu
   → remount @ ro
   → [si sbctl activo] sbctl sign-all
   → our-snapshot boot-entries sync
-  → log JSON → /var/log/our-pacman/YYYY-MM-DD.json
+  → log JSON → /var/log/our-pac/YYYY-MM-DD.json
   → our-snapshot prune si snapshots > 10
 ```
 
@@ -375,7 +375,7 @@ our-pacman -Syu
 - [x] 3.6.2 Metadata JSON por snapshot
 - [x] 3.6.3 Integración sbctl sign-all
 - [x] 3.6.4 our-snapshot boot-entries sync automático
-- [x] 3.6.5 Logging JSON en `/var/log/our-pacman/`
+- [x] 3.6.5 Logging JSON en `/var/log/our-pac/`
 - [x] 3.6.6 Auto-prune si snapshots > 10
 
 ---
@@ -495,7 +495,7 @@ Gettext, `.po`/`.mo`, campo `locale.language`, pantalla idioma en INIT.
 | 3.3 | Shell selector | (TUI) | ✅ DONE | — | — |
 | 3.4 | WiFi + first-boot | `our-wifi` + `ouroboros-firstboot` | 🟡 | Baja | — |
 | 3.5 | Secure Boot | `ouroboros-secureboot` | 🟡 | Alta | — |
-| 3.6 | Atomic updates hardening | `our-pacman` | 🟡 | Baja | 3.1 |
+| 3.6 | Atomic updates hardening | `our-pac` | 🟡 | Baja | 3.1 |
 | 3.7 | Container networking + GUI | `our-container` | 🟢 | Media | — |
 | 3.8 | homectl decisión + fallback | — | 🟡 | Media | — |
 | 3.9 | Cobertura de tests | — | 🟡 | Media | Todos |
@@ -569,7 +569,7 @@ post_install_action: reboot
 - [x] YAML con `network.wifi.ssid` → PSK en `/var/lib/iwd/` post-install
 - [x] `ouroboros-firstboot` corre una sola vez — mirrors + timers activados
 - [x] `ouroboros-secureboot setup` firma kernel + bootloader en Setup Mode
-- [x] `our-pacman -Syu` llama sbctl sign-all si Secure Boot activo
+- [x] `our-pac -Syu` llama sbctl sign-all si Secure Boot activo
 - [x] `our-container enter <name> --isolated` usa `--network-veth`
 - [x] `our-container enter <name> --gui` bind-mount wayland + DRI
 - [x] homectl falla → fallback a classic useradd sin crash

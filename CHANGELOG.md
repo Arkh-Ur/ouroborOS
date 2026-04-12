@@ -11,7 +11,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- **`our-snapshot`** — CLI for Btrfs snapshot management: `list`, `create`, `delete`, `prune`, `info`, `boot-entries sync`, `scrub`. Exposes the internal snapshot engine from `our-pacman` to users.
+- **`our-snapshot`** — CLI for Btrfs snapshot management: `list`, `create`, `delete`, `prune`, `info`, `boot-entries sync`, `scrub`. Exposes the internal snapshot engine from `our-pac` to users.
 - **`our-rollback`** — One-command rollback: `now` (next-boot only via `bootctl set-oneshot`), `promote` (permanent atomic `@` swap), `status`, `undo`. Allows reverting a bad update without knowing Btrfs internals.
 - **Shell selector** — `bash`, `zsh`, and `fish` selectable at install time via TUI and YAML (`user.shell`). Fish and zsh are installed on-demand.
 - **`our-wifi`** — Interactive WiFi manager wrapping `iwctl`: `list`, `connect`, `status`, `forget`, `show-password`. WiFi pre-configuration from YAML (`network.wifi.ssid` + `network.wifi.passphrase`) writes an iwd PSK file and clears the passphrase from memory immediately.
@@ -32,15 +32,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **BlueZ experimental mode** — `bluetooth.service.d/experimental.conf` drop-in enables `bluetoothd --experimental`. Required for Chrome/Firefox CTAP2 hybrid QR passkey flow (AdvertisingMonitor D-Bus API).
 - **BLE LE tuning** — `/etc/bluetooth/main.conf` with `AdvMonAllowlistScanDuration=300`, `ExchangeMTU=517` (BLE 5.0 LE Data Length Extension for full FIDO2 response in one packet).
 - **FIDO2 BLE udev rules** — `71-fido2-ble.rules`: HID-over-GATT (HOGP) access for BLE FIDO2 tokens + generic HID fallback for tokens not in libfido2 vendor list.
-- **`our-pacman` hardening** — Pre-update free space check (≥2GB), structured JSON logging to `/var/log/our-pacman/`, `sbctl sign-all` post-update when Secure Boot is active, auto-prune if snapshots exceed 10.
+- **`our-pac` hardening** — Pre-update free space check (≥2GB), structured JSON logging to `/var/log/our-pac/`, `sbctl sign-all` post-update when Secure Boot is active, auto-prune if snapshots exceed 10.
 - **systemd-homed fallback** — Automatic fallback to classic `useradd` when `homectl create` fails (QEMU Btrfs subvolume conflict). Installer no longer crashes; a warning is logged.
 - **Test coverage ≥93%** — New test files for `config.py` branches (`TestValidateConfigBranches`, `TestLoadConfigBranches`, `TestFindUnattendedConfig`, `TestLoadConfigFromUrl`), `desktop_profiles.py` (100% coverage), `state_machine._handle_install` (direct handler tests), and TUI desktop/shell/progress/wifi methods.
-- **`docs/architecture/secure-boot.md`** — Architecture document for Secure Boot: sbctl flow, YAML config, our-pacman integration, known limitations (QEMU, Microsoft key inclusion).
+- **`docs/architecture/secure-boot.md`** — Architecture document for Secure Boot: sbctl flow, YAML config, our-pac integration, known limitations (QEMU, Microsoft key inclusion).
 - **`docs/architecture/systemd-homed.md`** — Architecture document for systemd-homed: known QEMU Btrfs conflict, fallback strategy, community context.
 
 ### Changed
 
-- **`ouroboros-upgrade` removed** — Compatibility symlink from Phase 2 deleted. Use `our-pacman` directly.
+- **`ouroboros-upgrade` removed** — Compatibility symlink from Phase 2 deleted. Use `our-pac` directly.
 - **`our-container` renamed** — Internal "our-box" references cleaned up (102 occurrences). External interface unchanged.
 - **Snapshot metadata JSON** — Each snapshot now writes a `.metadata/NAME.json` with `timestamp`, `type`, `description`, and `packages_count`.
 - **Boot entries** — `our-snapshot boot-entries sync` regenerates systemd-boot entries for all existing snapshots. `rootflags=subvol=@snapshots/...` (no leading `/` — kernel requirement).
@@ -66,7 +66,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - **Desktop profiles** — Five selectable profiles at install time: `minimal` (TTY only), `hyprland`, `niri`, `gnome`, `kde`. Each profile ships the right package set and display manager by default.
 - **Decoupled display manager selection** — DM can be overridden independently of the desktop profile (`none`, `gdm`, `sddm`, `plm`).
-- **`our-pacman`** — Atomic package manager wrapper: takes a read-only snapshot of `@` before each `pacman -Syu`, then remounts `rw`, runs the upgrade, and remounts `ro`. Replaces the previous `ouroboros-upgrade` script.
+- **`our-pac`** — Atomic package manager wrapper: takes a read-only snapshot of `@` before each `pacman -Syu`, then remounts `rw`, runs the upgrade, and remounts `ro`. Replaces the previous `ouroboros-upgrade` script.
 - **`our-container`** — Full `systemd-nspawn` container manager with 17 commands: lifecycle (`create`, `enter`, `start`, `stop`, `remove`), snapshots, storage management, image management, and monitoring/diagnostics.
 - **systemd-homed** — Per-user home encryption enabled by default (`subvolume` backend). First-boot migration service handles the transition non-interactively.
 - **FSM reorder** — `USER` and `DESKTOP` states now run before `PARTITION`. All user input is collected before any disk is touched. Installer can be cancelled at any point before the partition confirmation with zero disk impact.
@@ -79,13 +79,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - **Mirror selection** — `reflector` now uses `--sort score` (server-side ranking) instead of `--fastest` (local benchmark). Eliminates multi-minute mirror benchmarking during install.
 - **Pacman hook order** — Post-upgrade hook renamed to `zzz-post-upgrade.hook` to ensure correct ASCII sort order after all pacman operations complete.
-- **`our-pacman` hook** — Moved from pre-transaction (ineffective) to a wrapper approach (modelled after openSUSE MicroOS). The wrapper owns the full upgrade cycle.
+- **`our-pac` hook** — Moved from pre-transaction (ineffective) to a wrapper approach (modelled after openSUSE MicroOS). The wrapper owns the full upgrade cycle.
 - **Btrfs root ro enforcement** — Changed from `btrfs property set / ro true` to `btrfs property set <subvol-path> ro true` via a subvolid=5 mount. Direct property set on a VFS ro mount (EROFS) is rejected by the kernel.
 - **`graphical.target.wants`** — Now mirrored to the `@` subvolume during install so the display manager actually starts at boot.
 
 ### Fixed
 
-- Circular deadlock in `our-pacman` when remounting immutable root.
+- Circular deadlock in `our-pac` when remounting immutable root.
 - `homed` PAM configuration on Arch (uses `/etc/pam.d/sshd` directly, not `system-auth`).
 - SSH `UseDNS=no` to avoid reverse DNS timeout on first connect.
 - `network-online.target` blocking boot in QEMU SLIRP (added `--any --timeout=30` to `networkd-wait-online`).
@@ -119,7 +119,7 @@ Initial release.
 - **systemd-networkd + iwd** — No NetworkManager. DNS via `systemd-resolved` with DNS-over-TLS (`opportunistic`), DNSSEC enabled, upstream: Cloudflare + Quad9.
 - **zram swap** — `zram-generator` configured for `ram/2` with `zstd` compression. No swap partition.
 - **SSH host keys** — Pre-generated during install so the installed system has SSH available immediately on first boot.
-- **`ouroboros-upgrade` wrapper** — Atomic upgrade script: snapshot → remount rw → pacman → remount ro (predecessor to `our-pacman`).
+- **`ouroboros-upgrade` wrapper** — Atomic upgrade script: snapshot → remount rw → pacman → remount ro (predecessor to `our-pac`).
 - **CI/CD pipeline** — GitHub Actions: lint (shellcheck + ruff), build ISO on tag, publish release to public repo `Arkh-Ur/ouroborOS`.
 - **93% pytest coverage** — Full test suite for installer state machine, config validation, TUI, and disk operations.
 - **Developer tooling** — `src/scripts/setup-dev-env.sh`, `src/scripts/build-iso.sh`, `src/scripts/flash-usb.sh`.

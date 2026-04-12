@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
+# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
-# Full Phase 3 flow on an installed immutable system:
+# Full Phase 4 flow on an installed immutable system:
 #   1. Verify ≥ 2 GB free on Btrfs pool (abort if insufficient)
 #   2. Create timestamped snapshot + metadata JSON (pre-upgrade baseline)
 #   3. Unlock @ via subvolid=5 mount (avoids circular deadlock)
@@ -10,7 +10,7 @@
 #   6. Lock @ (Btrfs ro=true) and remount /  ro
 #   7. [if sbctl active] sbctl sign-all (post-upgrade EFI re-signing)
 #   8. Sync systemd-boot entries for all snapshots
-#   9. Write JSON upgrade log to /var/log/our-pacman/
+#   9. Write JSON upgrade log to /var/log/our-pac/
 #  10. Auto-prune snapshots if count > 10
 #
 # Why NOT exec pacman:
@@ -22,9 +22,9 @@
 #   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
-readonly PROGRAM_NAME="our-pacman"
+readonly PROGRAM_NAME="our-pac"
 readonly SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
-readonly LOG_DIR="/var/log/our-pacman"
+readonly LOG_DIR="/var/log/our-pac"
 readonly MIN_FREE_GB=2
 
 _msg()  { echo "[${PROGRAM_NAME}] $*"; }
@@ -128,7 +128,7 @@ EOF
     chmod 644 "$meta_file"
 }
 
-# Append a JSON entry to /var/log/our-pacman/YYYY-MM-DD.json
+# Append a JSON entry to /var/log/our-pac/YYYY-MM-DD.json
 write_upgrade_log() {
     local snap_name="$1"
     local pacman_exit="$2"

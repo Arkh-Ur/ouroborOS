@@ -74,12 +74,12 @@ _dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
 
 _require_libfido2() {
     command -v fido2-token &>/dev/null || \
-        _die "fido2-token not found. Install: sudo our-pacman -S libfido2"
+        _die "fido2-token not found. Install: sudo our-pac -S libfido2"
 }
 
 _require_bluetoothctl() {
     command -v bluetoothctl &>/dev/null || \
-        _die "bluetoothctl not found. Install: sudo our-pacman -S bluez-utils"
+        _die "bluetoothctl not found. Install: sudo our-pac -S bluez-utils"
 }
 
 _require_bluetooth_service() {
@@ -437,7 +437,7 @@ cmd_qr_ready() {
         _ok "  libfido2:         found"
     else
         _warn "  libfido2:         not found (USB/BLE FIDO2 management unavailable)"
-        _dim "             install: sudo our-pacman -S libfido2"
+        _dim "             install: sudo our-pac -S libfido2"
     fi
 
     # 3. bluetooth.service running?
@@ -526,7 +526,7 @@ cmd_qr_ready() {
         _ok "  USB FIDO2 udev:   installed (70-u2f.rules)"
     else
         _warn "  USB FIDO2 udev:   not found"
-        _dim "             install libfido2: sudo our-pacman -S libfido2"
+        _dim "             install libfido2: sudo our-pac -S libfido2"
     fi
 
     if $udev_ble; then
@@ -605,7 +605,7 @@ _PAM_AUTHFILE="/etc/u2f_mappings"
 
 _require_pamu2f() {
     command -v pamu2fcfg &>/dev/null || \
-        _die "pamu2fcfg not found. Install: sudo our-pacman -S pam-u2f"
+        _die "pamu2fcfg not found. Install: sudo our-pac -S pam-u2f"
 }
 
 _pam_file() {

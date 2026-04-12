@@ -375,7 +375,7 @@ EOF
 
     # Bluetooth: enable bluetooth.service + configure experimental LE for FIDO2.
     # bluez must be installed (not in the default package set — user must add it
-    # via extra_packages or our-pacman post-install).
+    # via extra_packages or our-pac post-install).
     if [[ "${BLUETOOTH_ENABLE:-0}" == "1" ]]; then
         if in_chroot pacman -Qi bluez &>/dev/null 2>&1; then
             in_chroot systemctl enable bluetooth.service
@@ -394,7 +394,7 @@ EOF
                     log_ok "libfido2 installed."
                 else
                     log_warn "Could not install libfido2 — FIDO2 management tools unavailable."
-                    log_warn "Install after first boot: sudo our-pacman -S libfido2"
+                    log_warn "Install after first boot: sudo our-pac -S libfido2"
                 fi
             fi
 
@@ -473,7 +473,7 @@ BT_CONF
 
         else
             log_warn "BLUETOOTH_ENABLE=1 but bluez is not installed — skipping."
-            log_warn "Install after first boot with: sudo our-pacman -S bluez bluez-utils libfido2"
+            log_warn "Install after first boot with: sudo our-pac -S bluez bluez-utils libfido2"
         fi
     fi
 
@@ -504,7 +504,7 @@ configure_fido2_pam() {
             log_ok "pam-u2f installed."
         else
             log_warn "Could not install pam-u2f — FIDO2 PAM integration skipped."
-            log_warn "Install after first boot: sudo our-pacman -S pam-u2f"
+            log_warn "Install after first boot: sudo our-pac -S pam-u2f"
             return 0
         fi
     fi
@@ -601,7 +601,7 @@ EOF
     # pacman hooks: only PostTransaction hooks here.
     # PreTransaction remount is NOT done via hook — pacman checks filesystem
     # writability BEFORE running any hook, making PreTransaction remount useless.
-    # Instead, our-pacman (wrapper) handles unlock + remount + snapshot before
+    # Instead, our-pac (wrapper) handles unlock + remount + snapshot before
     # invoking the real pacman binary.
     mkdir -p "${TARGET}/etc/pacman.d/hooks"
 
@@ -642,7 +642,7 @@ EOF
     # Install wrapper and helper scripts
     mkdir -p "${TARGET}/usr/local/bin"
 
-    # our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
+    # our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
     #
     # pacman checks filesystem writability before PreTransaction hooks run, so a hook
     # cannot unlock root in time. This wrapper:
@@ -656,12 +656,12 @@ EOF
     # @var/@etc/@home are mounted rw from the same device, the superblock is rw,
     # overriding the ro flag on @. btrfs property set ro=true is the real enforcement.
     #
-    # Usage: sudo our-pacman -Syu
-    #        sudo our-pacman -S <pkg>
-    #        sudo our-pacman -R <pkg>
-    cat > "${TARGET}/usr/local/bin/our-pacman" << 'SCRIPT'
+    # Usage: sudo our-pac -Syu
+    #        sudo our-pac -S <pkg>
+    #        sudo our-pac -R <pkg>
+    cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
 #!/usr/bin/env bash
-# our-pacman — the ONLY safe way to install/upgrade packages on ouroborOS.
+# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
 #
 # On the installed system:
 #   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
@@ -681,7 +681,7 @@ EOF
 #   Simply forwards to pacman (root already writable, no snapshots needed).
 set -euo pipefail
 
-readonly PROGRAM_NAME="our-pacman"
+readonly PROGRAM_NAME="our-pac"
 _msg()    { echo "[${PROGRAM_NAME}] $*"; }
 _err()    { _msg "ERROR: $*" >&2; }
 
@@ -755,8 +755,10 @@ else
     exec /usr/bin/pacman "$@"
 fi
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/our-pacman"
-    log_ok "our-pacman installed."
+    chmod 0755 "${TARGET}/usr/local/bin/our-pac"
+    # Compatibility symlink — one release cycle, then remove
+    ln -sf our-pac "${TARGET}/usr/local/bin/our-pac"
+    log_ok "our-pac installed (our-pac symlink added for compatibility)."
 
     # our-container — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
@@ -774,7 +776,7 @@ SCRIPT
 # our-container — minimal stub (full version was not available on the ISO at install time)
 set -euo pipefail
 die() { echo "our-container: $*" >&2; exit 1; }
-echo "our-container: full version not installed. Reinstall with: sudo our-pacman -S ouroboros-scripts" >&2
+echo "our-container: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
 exit 1
 STUB
         chmod 0755 "${TARGET}/usr/local/bin/our-container"

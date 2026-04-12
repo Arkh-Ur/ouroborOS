@@ -91,7 +91,7 @@ ouroborOS/
 | `main` | func | `src/installer/main.py` | Entry point CLI (--resume, --config, --validate-config) |
 | `prepare_disk` | func | `src/installer/ops/disk.sh` | Particionado→formato→subvol→mount→fstab |
 | configure steps | funcs | `src/installer/ops/configure.sh` | Chroot: locale, timezone, hostname, bootloader, network, users, immutable root, DM, homed, WiFi PSK, Bluetooth+FIDO2, firstboot |
-| `our-pacman` | script | `airootfs/usr/local/bin/our-pacman` | Wrapper pacman: snapshot pre-update + remount rw + upgrade + remount ro + sbctl sign-all + boot-entries sync + prune |
+| `our-pac` | script | `airootfs/usr/local/bin/our-pac` | Wrapper pacman: snapshot pre-update + remount rw + upgrade + remount ro + sbctl sign-all + boot-entries sync + prune |
 | `our-snapshot` | script | `airootfs/usr/local/bin/our-snapshot` | CLI para snapshots Btrfs: list/create/delete/prune/info/boot-entries sync/scrub |
 | `our-rollback` | script | `airootfs/usr/local/bin/our-rollback` | Rollback: now (bootctl set-oneshot), promote (swap atómico @), status, undo |
 | `our-container` | script | `airootfs/usr/local/bin/our-container` | Wrapper systemd-nspawn: 17 comandos, --isolated (veth), --gui (wayland+GPU+audio) |
@@ -105,7 +105,7 @@ ouroborOS/
 
 | Ejecutable | Prefijo | Audiencia | Descripción |
 |-----------|---------|-----------|-------------|
-| `our-pacman` | `our-*` | Usuario | Atomic package manager wrapper |
+| `our-pac` | `our-*` | Usuario | Atomic package manager wrapper |
 | `our-snapshot` | `our-*` | Usuario | Btrfs snapshot manager |
 | `our-rollback` | `our-*` | Usuario | System rollback en un comando |
 | `our-container` | `our-*` | Usuario | systemd-nspawn container manager |
@@ -214,7 +214,7 @@ docker-compose -f tests/docker-compose.yml run --rm full-suite
 - **FSM states (v0.3.0):** INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. SECURE_BOOT se omite si `security.secure_boot: false`.
 - **Snapshots:** `/.snapshots/install/` es el baseline dorado (nunca purgado). Snapshots de pre-update: `YYYY-MM-DDTHHMMSS/`. Manuales: `YYYY-MM-DD_LABEL/`. Metadata JSON en `/.snapshots/.metadata/NAME.json`.
 - **Boot entries:** `rootflags=subvol=@snapshots/...` — sin `/` inicial (requisito del kernel).
-- **Secure Boot:** `sbctl` en `/var/lib/sbctl/` (subvolumen `@var`). Requiere firmware en Setup Mode. `our-pacman` corre `sbctl sign-all` post-update si Secure Boot está activo.
+- **Secure Boot:** `sbctl` en `/var/lib/sbctl/` (subvolumen `@var`). Requiere firmware en Setup Mode. `our-pac` corre `sbctl sign-all` post-update si Secure Boot está activo.
 - **FIDO2/BLE:** BlueZ `--experimental` requerido para AdvertisingMonitor API (Chrome/Firefox CTAP2 hybrid QR). `our-fido2 qr-ready` verifica la stack completa. `71-fido2-ble.rules` maneja acceso a `/dev/hidraw*` para tokens BLE vía HOGP.
 - **systemd-homed:** `homectl create` falla en QEMU (subvolumen Btrfs conflict). Fallback automático a classic `useradd`. Documentado en `docs/architecture/systemd-homed.md`.
 - **WiFi PSK:** Escrito a `/var/lib/iwd/SSID.psk` (chmod 600, dir 700). SSIDs con caracteres especiales usan `=HEXSSID.psk`. La passphrase se limpia del env inmediatamente post-escritura.

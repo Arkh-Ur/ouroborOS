@@ -427,7 +427,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
   │    chmod 0755                           │
   │  else                                   │
   │    Install minimal stub                 │
-  │    (echoes error, points to our-pacman)    │
+  │    (echoes error, points to our-pac)    │
   │  fi                                     │
   └────────────────────────────────────────┘
          │
@@ -436,7 +436,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
   /usr/local/bin/our-container (full version)
 ```
 
-**Key detail:** The installer copies the script from the **live ISO's** `/usr/local/bin/our-container` (which is the full version from the archiso profile). If the ISO copy is missing, a minimal stub is installed that tells the user to reinstall via `our-pacman`.
+**Key detail:** The installer copies the script from the **live ISO's** `/usr/local/bin/our-container` (which is the full version from the archiso profile). If the ISO copy is missing, a minimal stub is installed that tells the user to reinstall via `our-pac`.
 
 ### Runtime Dependencies
 
@@ -446,7 +446,7 @@ The script lives in `airootfs/usr/local/bin/` which mirrors the live ISO filesys
 | `machinectl` | Lifecycle + state queries | `systemd` (base) |
 | `btrfs` progs | Snapshots, subvolumes, qgroup | `btrfs-progs` (base) |
 | `pacstrap` | Arch container bootstrap | `arch-install-scripts` |
-| `debootstrap` | Debian/Ubuntu bootstrap | User installs via `our-pacman` |
+| `debootstrap` | Debian/Ubuntu bootstrap | User installs via `our-pac` |
 | `journalctl` | Container log viewing | `systemd` (base) |
 | `findmnt` | Btrfs detection | `util-linux` (base) |
 
@@ -543,8 +543,8 @@ All communication happens via **SSH** (`sshpass` + `ssh`) into the QEMU VM. Seri
 | Limitation | Impact | Workaround |
 |-----------|--------|-----------|
 | **Btrfs required for snapshots** | `snapshot create/list/restore` fail on non-Btrfs | Containers still work as plain directories without snapshots |
-| **debootstrap optional** | Debian/Ubuntu containers unavailable if not installed | `sudo our-pacman -S debootstrap` |
-| **arch-install-scripts optional** | Arch containers unavailable if not installed | `sudo our-pacman -S arch-install-scripts` |
+| **debootstrap optional** | Debian/Ubuntu containers unavailable if not installed | `sudo our-pac -S debootstrap` |
+| **arch-install-scripts optional** | Arch containers unavailable if not installed | `sudo our-pac -S arch-install-scripts` |
 | **No container networking isolation** | Containers share host network by default | Configure via `.nspawn` files manually |
 | **No resource limits** | No CPU/memory/disk limits on containers | Not implemented; could use systemd resource controls |
 | **No container registry** | Images are local-only, no push/pull from remote | Manual file transfer or rebuild |
