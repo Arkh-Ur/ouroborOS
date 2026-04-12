@@ -221,7 +221,7 @@ Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
 | 4.1 | Lazy AUR install via firstboot queue | pipeline | 🔴 | Media | ✅ |
 | 4.2 | TPM2 + `systemd-cryptenroll` | `ouroboros-secureboot` | 🟡 | Alta | ⬜ |
 | 4.3 | Multi-Language TUI | TUI | 🟢 | Media | ⬜ |
-| 4.4 | Flatpak | `our-flatpak` | 🟡 | Baja | ⬜ |
+| 4.4 | Flatpak | `our-flat` | 🟡 | Baja | ✅ |
 | 4.5 | Live USB Persistence | `our-persist` | 🟢 | Alta | ⬜ |
 | 4.6 | Dual-Boot + Secure Boot | installer | 🟡 | Alta | ⬜ |
 | 4.7 | ARM / aarch64 | archiso | 🟢 | Muy Alta | ⬜ |
