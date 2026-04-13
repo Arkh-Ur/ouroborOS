@@ -1,221 +1,171 @@
 # Changelog
 
-All notable changes to ouroborOS are documented in this file.
+All notable changes to ouroborOS will be documented in this file.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
----
-
-## [0.4.3] — 2026-04-13
+## [0.4.3] - 2026-04-13
 
 ### Fixed
 
-- Display manager (SDDM/GDM/PLM) not starting automatically after install — the system booted to `multi-user.target` (Arch default) even when a DM was enabled. Added `systemctl set-default graphical.target` to the DM enable block in `configure.sh`.
-- `our-aur` and `our-flat` scripts not executable on the live ISO — both had `644` permissions (no execute bit). Fixed to `755`.
-- WiFi credentials from the live ISO not passed to the installed system — `show_wifi_connect()` now returns `{ssid, passphrase}` instead of `bool`, so `configure.sh` can write the iwd PSK file on the target.
+- Display manager (SDDM/GDM/PLM) not starting automatically after install.
+  The system booted to `multi-user.target` (Arch default) even when a DM was
+  enabled. Added `systemctl set-default graphical.target` in `configure.sh`.
+- `our-aur` and `our-flat` not executable on the live ISO (644 permissions).
+  Fixed to 755.
+- WiFi credentials from the live ISO not passed to the installed system.
+  `show_wifi_connect()` now returns `{ssid, passphrase}` so `configure.sh`
+  can write the iwd PSK file on the target.
 - Ruff lint violations (F841 unused variables, E501 line too long) in test files.
 
----
-
-## [0.4.2] — 2026-04-13
+## [0.4.2] - 2026-04-13
 
 ### Added
 
-- **WiFi TUI enhancement** — Signal bars (▓▓▓▓▓░) with real dBm values, quality labels (Excellent/Fair/Weak), pagination (10 networks/page) with `[N]ext`/`[P]rev`, `[R]`e-scan, and `[M]`anual SSID entry for hidden networks. Both Rich and Whiptail backends updated.
-- **`iw` package** added to the ISO — required by the installer's WiFi interface detection (`iw dev`).
+- WiFi TUI with signal bars, real dBm values, quality labels (Excellent/Fair/Weak),
+  pagination (10 networks/page), re-scan, and manual SSID entry for hidden networks.
+  Both Rich and Whiptail backends updated.
+- `iw` package added to the ISO for WiFi interface detection (`iw dev`).
 
 ### Fixed
 
-- WiFi interface never detected — `_find_wifi_interface()` checked for `type station` but `iw` reports `type managed` for client-mode interfaces. Also added `rfkill unblock wifi` before scanning and a retry loop for slow driver init.
-- `iwd.service` not enabled in the live ISO — WiFi was completely non-functional on boot. Added `After=iwd.service` to the installer service for correct startup ordering.
-- Boot menu showing `ouroborOS 0.1.0` instead of the current version — updated systemd-boot entries.
+- WiFi interface never detected. `_find_wifi_interface()` checked for
+  `type station` but `iw` reports `type managed`. Also added `rfkill unblock`
+  and a retry loop for slow driver init.
+- `iwd.service` not enabled in the live ISO, making WiFi non-functional on boot.
+  Added `After=iwd.service` to the installer service.
+- Boot menu showing `ouroborOS 0.1.0` instead of the current version.
 
----
-
-## [0.4.1] — 2026-04-13
+## [0.4.1] - 2026-04-13
 
 ### Fixed
 
-- GitHub Actions CI/CD pipeline — multiple fixes for the build/release workflow:
-  - `PUBLIC_REPO_TOKEN` checked at runtime instead of in YAML `if` conditions (GitHub Actions doesn't allow secret comparisons in step-level conditions).
+- GitHub Actions CI/CD pipeline:
+  - `PUBLIC_REPO_TOKEN` checked at runtime instead of in YAML `if` conditions.
   - Release job skipped on public repo where the token is absent.
-  - Release notes passed via environment variable to prevent backtick injection in markdown code blocks.
-  - Existing release deleted before recreating on hotfix re-runs (force-pushed tags).
+  - Release notes passed via environment variable to prevent backtick injection.
+  - Existing release deleted before recreating on hotfix re-runs.
   - `--force` added to tag push in build workflow.
 - Ruff lint violations (I001, ANN001, E501) caught by CI.
 
----
-
-## [0.4.0] — 2026-04-12
+## [0.4.0] - 2026-04-12
 
 ### Added
 
-- **`our-aur`** — Containerized AUR helper using systemd-sysext: `search`, `install`, `remove`, `update`, `info`, `version`. Isolates AUR builds in ephemeral nspawn containers to prevent host contamination. Supports lazy install queue via `/var/lib/ouroborOS/aur-queue` processed at first boot.
-- **`our-flat`** — Flatpak wrapper with pacman-style interface: `install`, `remove`, `update`, `search`, `list`, `info`, `remote-add`, `remote-list`. Automatic appstream cache refresh after adding remotes.
-- **Lazy AUR queue** — First boot mechanism: packages queued during install via desktop profile AUR packages are installed by `ouroboros-firstboot` using `our-aur`. Queue file deleted after processing (success or failure).
-- **`/var/lib/extensions`** — systemd-sysext directory created during install. Required by our-aur for containerized AUR builds.
+- `our-aur` — Containerized AUR helper using systemd-sysext. Isolates AUR
+  builds in ephemeral nspawn containers. Supports lazy install queue.
+- `our-flat` — Flatpak wrapper with pacman-style interface
+  (install/remove/update/search/list/info/remote).
+- Lazy AUR queue — First boot mechanism: packages queued during install are
+  installed by `ouroboros-firstboot` using `our-aur`.
+- `/var/lib/extensions` — systemd-sysext directory for containerized AUR builds.
 
 ### Changed
 
-- **`our-pacman` renamed to `our-pac`** — Shorter name for consistency with `our-*` naming convention.
+- `our-pacman` renamed to `our-pac` for consistency with `our-*` naming.
 
 ### Fixed
 
-- AUR RPC URL pointing to non-existent v6 — aligned to v5 (RESTful `/search/{query}` and `/info` endpoints).
-- Appstream cache not updated after Flatpak remote-add — now runs `flatpak update --appstream` automatically.
-- AUR queue file not cleaned up on failure — `ouroboros-firstboot` now deletes queue regardless of install outcome.
-- our-aur not included in installer tools copy — added to `_p3_tools` array in `configure.sh`.
-- Regex pipe escaping in E2E phase 4 tests — `\|` changed to `|` for correct `grep -E` behavior.
+- AUR RPC URL pointing to non-existent v6 — aligned to v5.
+- Appstream cache not updated after Flatpak remote-add.
+- AUR queue file not cleaned up on failure.
+- our-aur not included in installer tools copy.
+- Regex pipe escaping in E2E phase 4 tests.
 
-### Deferred to Phase 5
-
-- TPM2 integration (Milestone 4.2)
-- Multi-language installer (Milestone 4.3)
-- Live USB persistence (Milestone 4.5)
-- Dual-boot support (Milestone 4.6)
-- ARM64/aarch64 support (Milestone 4.7)
-
----
-
-## [0.3.0] — 2026-04-11
+## [0.3.0] - 2026-04-11
 
 ### Added
 
-- **`our-snapshot`** — CLI for Btrfs snapshot management: `list`, `create`, `delete`, `prune`, `info`, `boot-entries sync`, `scrub`. Exposes the internal snapshot engine from `our-pac` to users.
-- **`our-rollback`** — One-command rollback: `now` (next-boot only via `bootctl set-oneshot`), `promote` (permanent atomic `@` swap), `status`, `undo`. Allows reverting a bad update without knowing Btrfs internals.
-- **Shell selector** — `bash`, `zsh`, and `fish` selectable at install time via TUI and YAML (`user.shell`). Fish and zsh are installed on-demand.
-- **`our-wifi`** — Interactive WiFi manager wrapping `iwctl`: `list`, `connect`, `status`, `forget`, `show-password`. WiFi pre-configuration from YAML (`network.wifi.ssid` + `network.wifi.passphrase`) writes an iwd PSK file and clears the passphrase from memory immediately.
-- **`ouroboros-firstboot`** — Oneshot systemd service that runs once after install: updates mirrors with reflector, ensures a unique `machine-id`, enables the snapshot prune timer and Btrfs scrub timer.
-- **`our-snapshot-prune.timer`** — Weekly automatic snapshot prune (keeps last 5, never removes the `install` baseline).
-- **`ouroboros-secureboot`** — Secure Boot management via `sbctl` without shims or MOK: `setup`, `status`, `sign-all`, `verify`, `rotate-keys`. Enrolls custom PK/KEK/db into UEFI firmware.
-- **`SECURE_BOOT` FSM state** — New installer state between `DESKTOP` and `PARTITION`. Shows instructions for putting the firmware in Setup Mode when `security.secure_boot: true`.
-- **`our-container --isolated`** — `--network-veth` flag for private container networking with NAT toward the host.
-- **`our-container --gui`** — Wayland socket, DRI (GPU), and PipeWire passthrough for graphical containers (`--wayland`, `--gpu`, `--audio`, `--gui`).
-- **`our-bluetooth`** — Bluetooth manager wrapping `bluetoothctl`: `list`, `pair`, `connect`, `disconnect`, `forget`, `status`, `on`, `off`. New `le` subcommand: `le status`, `le experimental on/off`, `le advmon`.
-- **`our-fido2`** — FIDO2/WebAuthn/Passkey CLI covering all OS integration points:
-  - Token management: `list`, `info`, `pin set/verify/info`, `cred list/delete`, `reset`
-  - BLE: `ble scan/pair/list`, `qr-ready` (CTAP2 hybrid transport readiness check)
-  - PAM: `pam register [--system]`, `pam enable/disable <sudo|login|ssh|all>`, `pam status` — integrates FIDO2 into sudo, TTY login, and SSH via `pam_u2f`
-  - SSH: `ssh generate [--resident]`, `ssh list`, `ssh load-resident` — ed25519-sk keys; private key material stays on hardware token
-  - LUKS2: `luks enroll/list/unenroll <device>` — disk unlock via `systemd-cryptenroll --fido2-device=auto`
-- **`security.fido2_pam`** YAML field — when `true`, installs `pam-u2f` and creates `/etc/u2f_mappings` during install. User registers token post-install with `our-fido2 pam register --system`.
-- **BlueZ experimental mode** — `bluetooth.service.d/experimental.conf` drop-in enables `bluetoothd --experimental`. Required for Chrome/Firefox CTAP2 hybrid QR passkey flow (AdvertisingMonitor D-Bus API).
-- **BLE LE tuning** — `/etc/bluetooth/main.conf` with `AdvMonAllowlistScanDuration=300`, `ExchangeMTU=517` (BLE 5.0 LE Data Length Extension for full FIDO2 response in one packet).
-- **FIDO2 BLE udev rules** — `71-fido2-ble.rules`: HID-over-GATT (HOGP) access for BLE FIDO2 tokens + generic HID fallback for tokens not in libfido2 vendor list.
-- **`our-pac` hardening** — Pre-update free space check (≥2GB), structured JSON logging to `/var/log/our-pac/`, `sbctl sign-all` post-update when Secure Boot is active, auto-prune if snapshots exceed 10.
-- **systemd-homed fallback** — Automatic fallback to classic `useradd` when `homectl create` fails (QEMU Btrfs subvolume conflict). Installer no longer crashes; a warning is logged.
-- **Test coverage ≥93%** — New test files for `config.py` branches (`TestValidateConfigBranches`, `TestLoadConfigBranches`, `TestFindUnattendedConfig`, `TestLoadConfigFromUrl`), `desktop_profiles.py` (100% coverage), `state_machine._handle_install` (direct handler tests), and TUI desktop/shell/progress/wifi methods.
-- **`docs/architecture/secure-boot.md`** — Architecture document for Secure Boot: sbctl flow, YAML config, our-pac integration, known limitations (QEMU, Microsoft key inclusion).
-- **`docs/architecture/systemd-homed.md`** — Architecture document for systemd-homed: known QEMU Btrfs conflict, fallback strategy, community context.
+- `our-snapshot` — CLI for Btrfs snapshot management:
+  list/create/delete/prune/info/boot-entries sync/scrub.
+- `our-rollback` — One-command rollback:
+  now/promote/status/undo.
+- Shell selector — `bash`, `zsh`, `fish` selectable at install time.
+- `our-wifi` — Interactive WiFi manager wrapping `iwctl`.
+- `ouroboros-firstboot` — Oneshot service: mirrors, machine-id, timers.
+- `our-snapshot-prune.timer` — Weekly automatic snapshot prune.
+- `ouroboros-secureboot` — Secure Boot management via `sbctl`.
+- `SECURE_BOOT` FSM state — New installer state for Setup Mode guidance.
+- `our-container --isolated` — Private container networking with NAT.
+- `our-container --gui` — Wayland/GPU/audio passthrough for graphical containers.
+- `our-bluetooth` — Bluetooth manager with BLE LE support.
+- `our-fido2` — FIDO2/WebAuthn CLI: token management, BLE, PAM, SSH, LUKS2.
+- `security.fido2_pam` YAML field for PAM integration.
+- BlueZ experimental mode for CTAP2 hybrid QR passkey flow.
+- BLE LE tuning (`AdvMonAllowlistScanDuration`, `ExchangeMTU`).
+- FIDO2 BLE udev rules for HID-over-GATT access.
+- `our-pac` hardening: free space check, JSON logging, auto-prune.
+- systemd-homed fallback to classic `useradd` on failure.
+- Test coverage >= 93%.
 
 ### Changed
 
-- **`ouroboros-upgrade` removed** — Compatibility symlink from Phase 2 deleted. Use `our-pac` directly.
-- **`our-container` renamed** — Internal "our-box" references cleaned up (102 occurrences). External interface unchanged.
-- **Snapshot metadata JSON** — Each snapshot now writes a `.metadata/NAME.json` with `timestamp`, `type`, `description`, and `packages_count`.
-- **Boot entries** — `our-snapshot boot-entries sync` regenerates systemd-boot entries for all existing snapshots. `rootflags=subvol=@snapshots/...` (no leading `/` — kernel requirement).
+- `ouroboros-upgrade` removed — use `our-pac` directly.
+- `our-container` internal references cleaned up from `our-box`.
+- Snapshot metadata JSON with timestamp, type, description, packages_count.
+- Boot entries regenerated for all snapshots with correct `rootflags`.
 
 ### Fixed
 
-- `homectl create` crash in QEMU — installer now catches the error and falls back to classic user creation.
-- `our-container` help text still referencing `our-box` (102 occurrences) — renamed to `our-container` throughout.
-- `rootflags` in boot entries incorrectly prefixed with `/` — kernel silently ignores the subvolume, causing boot from `@` instead of snapshot.
-- WiFi PSK files not written with correct permissions (`chmod 600` file, `chmod 700` directory).
+- `homectl create` crash in QEMU — automatic fallback to classic user creation.
+- `our-container` help text still referencing `our-box`.
+- `rootflags` in boot entries incorrectly prefixed with `/`.
+- WiFi PSK files not written with correct permissions.
 
-### Known Issues
-
-- `homectl create` fails in QEMU (see Phase 2 Known Issues). Fallback to classic `useradd` is now automatic.
-- `bootctl set-oneshot` requires writable EFI variables. Fails in QEMU. Use `our-rollback promote` for VM rollback testing.
-- `ouroboros-secureboot setup` cannot run in QEMU (OVMF does not expose a real Secure Boot database). Test on real hardware only.
-
----
-
-## [0.2.0] — 2026-04-10
+## [0.2.0] - 2026-04-10
 
 ### Added
 
-- **Desktop profiles** — Five selectable profiles at install time: `minimal` (TTY only), `hyprland`, `niri`, `gnome`, `kde`. Each profile ships the right package set and display manager by default.
-- **Decoupled display manager selection** — DM can be overridden independently of the desktop profile (`none`, `gdm`, `sddm`, `plm`).
-- **`our-pac`** — Atomic package manager wrapper: takes a read-only snapshot of `@` before each `pacman -Syu`, then remounts `rw`, runs the upgrade, and remounts `ro`. Replaces the previous `ouroboros-upgrade` script.
-- **`our-container`** — Full `systemd-nspawn` container manager with 17 commands: lifecycle (`create`, `enter`, `start`, `stop`, `remove`), snapshots, storage management, image management, and monitoring/diagnostics.
-- **systemd-homed** — Per-user home encryption enabled by default (`subvolume` backend). First-boot migration service handles the transition non-interactively.
-- **FSM reorder** — `USER` and `DESKTOP` states now run before `PARTITION`. All user input is collected before any disk is touched. Installer can be cancelled at any point before the partition confirmation with zero disk impact.
-- **Remote config URL in INIT** — Unattended config can be fetched from a URL (e.g., a GitHub raw URL) at boot, in addition to the existing local file detection.
-- **`our-container` autostart** — Containers can be configured to start automatically at boot via a systemd service.
-- **E2E desktop profile tests** — Automated QEMU test suite validating all five profiles end-to-end.
-- **`hyprpolkitagent`** — Polkit agent for Hyprland profile (replaces `polkit-gnome`).
+- Desktop profiles — Five selectable: minimal, hyprland, niri, gnome, kde.
+- Decoupled display manager selection (none, gdm, sddm, plm).
+- `our-pac` — Atomic package manager wrapper with snapshot-based upgrades.
+- `our-container` — Full systemd-nspawn container manager (17 commands).
+- systemd-homed — Per-user home encryption (subvolume backend).
+- FSM reorder — User input collected before any disk changes.
+- Remote config URL in INIT state.
+- `our-container` autostart via systemd service.
+- E2E desktop profile tests in QEMU.
+- `hyprpolkitagent` for Hyprland profile.
 
 ### Changed
 
-- **Mirror selection** — `reflector` now uses `--sort score` (server-side ranking) instead of `--fastest` (local benchmark). Eliminates multi-minute mirror benchmarking during install.
-- **Pacman hook order** — Post-upgrade hook renamed to `zzz-post-upgrade.hook` to ensure correct ASCII sort order after all pacman operations complete.
-- **`our-pac` hook** — Moved from pre-transaction (ineffective) to a wrapper approach (modelled after openSUSE MicroOS). The wrapper owns the full upgrade cycle.
-- **Btrfs root ro enforcement** — Changed from `btrfs property set / ro true` to `btrfs property set <subvol-path> ro true` via a subvolid=5 mount. Direct property set on a VFS ro mount (EROFS) is rejected by the kernel.
-- **`graphical.target.wants`** — Now mirrored to the `@` subvolume during install so the display manager actually starts at boot.
+- Mirror selection uses `reflector --sort score` instead of `--fastest`.
+- Pacman hook renamed to `zzz-post-upgrade.hook`.
+- `our-pac` changed to wrapper approach (like openSUSE MicroOS).
+- Btrfs root ro enforcement via subvolid=5 mount.
+- `graphical.target.wants` mirrored to `@` subvolume during install.
 
 ### Fixed
 
 - Circular deadlock in `our-pac` when remounting immutable root.
-- `homed` PAM configuration on Arch (uses `/etc/pam.d/sshd` directly, not `system-auth`).
-- SSH `UseDNS=no` to avoid reverse DNS timeout on first connect.
-- `network-online.target` blocking boot in QEMU SLIRP (added `--any --timeout=30` to `networkd-wait-online`).
-- `zram-generator.conf`, `.network` files, and `resolved.conf` not mirrored to `@` subvolume — caused missing network and swap at boot.
-- Journal socket `FAILED` at boot — masked `/var/log/journal` on `@` to prevent socket conflict.
-- E2E test artifacts accidentally included in airootfs (inflated ISO size).
-- ShellCheck violations across all test scripts (SC2054, SC2329, SC2086).
-- Ruff violations: `collections.abc.Generator` (UP035), import ordering (I001), trailing whitespace (W293).
+- `homed` PAM configuration on Arch.
+- SSH `UseDNS=no` to avoid reverse DNS timeout.
+- `network-online.target` blocking boot in QEMU SLIRP.
+- Config files not mirrored to `@` subvolume.
+- Journal socket `FAILED` at boot.
+- E2E test artifacts in airootfs.
+- ShellCheck and Ruff violations.
 
-### Known Issues
-
-- `homectl create --identity=JSON` fails in QEMU with a generic error. Workaround: use `homed_storage: classic` in E2E configs. Root cause under investigation (likely a D-Bus race or subvolume conflict in the QEMU environment).
-- `bootctl set-oneshot` requires writable EFI variables. Fails in QEMU without a writable `OVMF_VARS.fd`. Works correctly on real hardware.
-
----
-
-## [0.1.0] — 2026-04-07
-
-Initial release.
+## [0.1.0] - 2026-04-07
 
 ### Added
 
-- **Bootable live ISO** — UEFI-only, built with `archiso`. Base: ArchLinux, kernel `linux-zen`, compressor `zstd -19`.
-- **Btrfs immutable layout** — Five subvolumes: `@` (root, mounted `ro`), `@var`, `@etc`, `@home`, `@snapshots`. fstab generated with UUIDs only.
-- **Interactive TUI installer** — 11-state FSM (`INIT → PREFLIGHT → LOCALE → USER → DESKTOP → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH`). Primary backend: `python-rich`. Fallback: `whiptail`.
-- **Unattended install** — YAML config auto-detected from kernel cmdline, `/tmp/`, `/run/`, or USB drive. Flag `--validate-config` for pre-flight validation.
-- **Checkpoint / resume** — Each destructive state writes a `.done` file. `--resume` flag picks up from the last completed state.
-- **systemd-boot** — UEFI bootloader with boot entries for main system and install snapshot. `editor=no` enforced.
-- **Microcode auto-detection** — Installer detects CPU vendor from `/proc/cpuinfo` and installs `intel-ucode` or `amd-ucode` automatically.
-- **Baseline snapshot** — Read-only Btrfs snapshot `@snapshots/install` created immediately after installation. Matching boot entry added to `/boot/loader/entries/`.
-- **systemd-networkd + iwd** — No NetworkManager. DNS via `systemd-resolved` with DNS-over-TLS (`opportunistic`), DNSSEC enabled, upstream: Cloudflare + Quad9.
-- **zram swap** — `zram-generator` configured for `ram/2` with `zstd` compression. No swap partition.
-- **SSH host keys** — Pre-generated during install so the installed system has SSH available immediately on first boot.
-- **`ouroboros-upgrade` wrapper** — Atomic upgrade script: snapshot → remount rw → pacman → remount ro (predecessor to `our-pac`).
-- **CI/CD pipeline** — GitHub Actions: lint (shellcheck + ruff), build ISO on tag, publish release to public repo `Arkh-Ur/ouroborOS`.
-- **93% pytest coverage** — Full test suite for installer state machine, config validation, TUI, and disk operations.
-- **Developer tooling** — `src/scripts/setup-dev-env.sh`, `src/scripts/build-iso.sh`, `src/scripts/flash-usb.sh`.
-
-### Architecture
-
-| Layer | Technology |
-|-------|-----------|
-| Base OS | ArchLinux (rolling) |
-| Kernel | linux-zen |
-| Bootloader | systemd-boot (UEFI only) |
-| Filesystem | Btrfs, root `ro` |
-| Network | systemd-networkd + iwd |
-| DNS | systemd-resolved (DoT) |
-| Swap | zram-generator |
-| Installer | Python 3 + Bash ops |
-| ISO builder | archiso (mkarchiso) |
-
-### Known Limitations (at release)
-
-- UEFI only — no BIOS/legacy support by design.
-- No GUI installer — TUI (`rich` / `whiptail`) and unattended YAML only.
-- No Secure Boot — deferred to Phase 3.
-- English only — multi-language installer deferred to Phase 3.
-- No AUR helper — use `makepkg` manually.
+- Bootable live ISO — UEFI-only, ArchLinux, kernel linux-zen, zstd -19.
+- Btrfs immutable layout — Five subvolumes: @, @var, @etc, @home, @snapshots.
+- Interactive TUI installer — 11-state FSM with Rich/whiptail backends.
+- Unattended install via YAML config.
+- Checkpoint / resume support.
+- systemd-boot with editor=no.
+- Microcode auto-detection (Intel/AMD).
+- Baseline Btrfs snapshot with boot entry.
+- systemd-networkd + iwd (no NetworkManager).
+- zram swap (ram/2, zstd).
+- SSH host keys pre-generated during install.
+- `ouroboros-upgrade` atomic upgrade script.
+- CI/CD pipeline (GitHub Actions: lint, build, release).
+- 93% pytest coverage.
+- Developer tooling scripts.
 
 [0.4.3]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.2
