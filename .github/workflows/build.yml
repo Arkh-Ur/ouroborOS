@@ -206,19 +206,28 @@ jobs:
           git push public "HEAD:refs/heads/main" --force
           git push public "${{ github.ref }}" --force
 
-      - name: Create GitHub Release in public repo
+      - name: Create or update GitHub Release in public repo
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+          NOTES="${{ steps.notes.outputs.NOTES }}"
+
+          # Delete existing release if present (supports hotfix re-runs)
+          if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
+            echo "Release $TAG already exists — deleting and recreating"
+            gh release delete "$TAG" --repo Arkh-Ur/ouroborOS --yes --cleanup-tag 2>/dev/null || true
+            # Re-push the tag since --cleanup-tag removes it
+            git push public "refs/tags/${TAG}" --force
+          fi
 
           gh release create "$TAG" \
             --repo Arkh-Ur/ouroborOS \
             --title "ouroborOS ${TAG}" \
             --target main \
-            --notes "${{ steps.notes.outputs.NOTES }}" \
+            --notes "$NOTES" \
             "$ISO" \
             "$CHECKSUM"
 
