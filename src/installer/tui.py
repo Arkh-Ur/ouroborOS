@@ -820,7 +820,11 @@ class TUI:
     # WiFi connection
     # ------------------------------------------------------------------
 
-    def show_wifi_connect(self) -> bool:
+    def show_wifi_connect(self) -> dict | None:
+        """Show WiFi connection dialog.
+
+        Returns ``{"ssid": ..., "passphrase": ...}`` on success, or ``None``.
+        """
         if self._backend == "rich":
             return self._rich_wifi_connect()
         return self._whiptail_wifi_connect()
@@ -1024,7 +1028,7 @@ class TUI:
         iface = self._find_wifi_interface()
         if iface is None:
             self._console.print("  [bold red]No WiFi interface found.[/]")
-            return False
+            return None
 
         networks: list[tuple[str, str, int]] = []
         page = 0
@@ -1043,7 +1047,7 @@ class TUI:
                         continue
                     if action == "m":
                         return self._manual_wifi_connect(iface)
-                    return False
+                    return None
                 page = 0
 
             total_pages = max(1, -(-len(networks) // PAGE_SIZE))
@@ -1083,7 +1087,7 @@ class TUI:
             ).strip().lower()
 
             if choice == "0":
-                return False
+                return None
             if choice == "r":
                 networks = []
                 continue
@@ -1104,9 +1108,9 @@ class TUI:
                 continue
 
             ssid, security, _dbm = networks[idx]
-            connected = self._attempt_wifi_connection(iface, ssid, security)
-            if connected:
-                return True
+            creds = self._attempt_wifi_connection(iface, ssid, security)
+            if creds is not None:
+                return creds
             self._console.print(
                 "  [bold yellow]Press Enter to return to network list...[/]"
             )
@@ -1125,7 +1129,7 @@ class TUI:
         ))
         ssid = Prompt.ask("  SSID", console=self._console).strip()
         if not ssid:
-            return False
+            return None
         password = Prompt.ask(
             f"  Password for '{ssid}' (leave empty for open network)",
             password=True, console=self._console,
@@ -1135,7 +1139,7 @@ class TUI:
 
     def _attempt_wifi_connection(
         self, iface: str, ssid: str, security: str, password: str | None = None,
-    ) -> bool:
+    ) -> dict | None:
         assert self._console is not None
         import time
 
@@ -1148,11 +1152,11 @@ class TUI:
                 "station", iface, "connect", ssid,
             ]
         else:
-            pw = Prompt.ask(
+            password = Prompt.ask(
                 f"  Password for '{ssid}'", password=True, console=self._console,
             )
             cmd = [
-                "iwctl", "--passphrase", pw,
+                "iwctl", "--passphrase", password,
                 "station", iface, "connect", ssid,
             ]
 
@@ -1161,7 +1165,7 @@ class TUI:
             self._console.print(
                 f"  [bold red]Connection failed: {result.stderr.strip()}[/]"
             )
-            return False
+            return None
 
         time.sleep(5)
         ping = subprocess.run(
@@ -1170,20 +1174,20 @@ class TUI:
         )
         if ping.returncode == 0:
             self._console.print("  [bold green]✅ Connected! Internet OK[/]")
-            return True
+            return {"ssid": ssid, "passphrase": password or ""}
         self._console.print("  [bold red]Connected but no internet.[/]")
-        return False
+        return None
 
-    def _whiptail_wifi_connect(self) -> bool:
+    def _whiptail_wifi_connect(self) -> dict | None:
         iface = self._find_wifi_interface()
         if iface is None:
             self.show_error("No WiFi interface found.", recoverable=False)
-            return False
+            return None
 
         networks = self._scan_wifi_networks(iface)
         if not networks:
             self.show_error("No WiFi networks found.", recoverable=False)
-            return False
+            return None
 
         items = [
             (ssid, f"{security}  {self._signal_to_bar(dbm)}  {dbm}dBm")
@@ -1194,11 +1198,11 @@ class TUI:
             "WiFi Networks", "Select a network:", items,
         )
         if ssid == "skip":
-            return False
+            return None
 
         selected = [(s, sec, dbm) for s, sec, dbm in networks if s == ssid]
         if not selected:
-            return False
+            return None
         _ssid, security, _dbm = selected[0]
 
         password = None
@@ -1216,7 +1220,7 @@ class TUI:
 
         if result.returncode != 0:
             self.show_error(f"Connection failed: {result.stderr.strip()}", recoverable=False)
-            return False
+            return None
 
         import time
         time.sleep(5)
@@ -1224,7 +1228,9 @@ class TUI:
             ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
             capture_output=True, check=False,
         )
-        return ping.returncode == 0
+        if ping.returncode == 0:
+            return {"ssid": _ssid, "passphrase": password or ""}
+        return None
 
     # ------------------------------------------------------------------
     # Summary

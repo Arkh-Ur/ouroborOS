@@ -881,8 +881,11 @@ class Installer:
         )
         if result.returncode != 0:
             if self.tui is not None:
-                connected = self.tui.show_wifi_connect()
-                if connected:
+                wifi_creds = self.tui.show_wifi_connect()
+                if wifi_creds is not None:
+                    # Store WiFi credentials for configure.sh passthrough
+                    self.config.network.wifi_ssid = wifi_creds["ssid"]
+                    self.config.network.wifi_passphrase = wifi_creds["passphrase"]
                     retry = subprocess.run(
                         ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
                         capture_output=True,

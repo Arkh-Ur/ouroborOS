@@ -508,7 +508,7 @@ class TestCheckNetwork:
     def test_with_tui_wifi_connect_success(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = True
+        mock_tui.show_wifi_connect.return_value = {"ssid": "TestNet", "passphrase": "testpass"}
         installer.tui = mock_tui
 
         ping_fail = MagicMock()
@@ -518,11 +518,13 @@ class TestCheckNetwork:
 
         with patch("subprocess.run", side_effect=[ping_fail, ping_ok]):
             installer._check_network()  # must not raise
+        assert installer.config.network.wifi_ssid == "TestNet"
+        assert installer.config.network.wifi_passphrase == "testpass"
 
     def test_with_tui_wifi_connect_then_still_no_net(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = True
+        mock_tui.show_wifi_connect.return_value = {"ssid": "TestNet", "passphrase": "testpass"}
         installer.tui = mock_tui
 
         ping_fail = MagicMock()

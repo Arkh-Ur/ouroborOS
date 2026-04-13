@@ -725,15 +725,16 @@ class TestRichSelect:
 
 class TestShowWifiConnect:
     def test_rich_backend_calls_rich_method(self, rich_tui: TUI) -> None:
-        with patch.object(rich_tui, "_rich_wifi_connect", return_value=True) as mock:
+        creds = {"ssid": "TestNet", "passphrase": "testpass"}
+        with patch.object(rich_tui, "_rich_wifi_connect", return_value=creds) as mock:
             result = rich_tui.show_wifi_connect()
-        assert result is True
+        assert result == creds
         mock.assert_called_once()
 
     def test_whiptail_backend_calls_whiptail_method(self, whiptail_tui: TUI) -> None:
-        with patch.object(whiptail_tui, "_whiptail_wifi_connect", return_value=False) as mock:
+        with patch.object(whiptail_tui, "_whiptail_wifi_connect", return_value=None) as mock:
             result = whiptail_tui.show_wifi_connect()
-        assert result is False
+        assert result is None
         mock.assert_called_once()
 
 
@@ -1153,7 +1154,7 @@ class TestRichWifiConnect:
             tui._console = mocks["Console"].return_value
             with patch.object(tui, "_find_wifi_interface", return_value=None):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_returns_false_when_no_networks(self) -> None:
         with _patch_rich() as mocks:
@@ -1163,7 +1164,7 @@ class TestRichWifiConnect:
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=[]):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_returns_false_when_user_skips(self) -> None:
         with _patch_rich() as mocks:
@@ -1174,7 +1175,7 @@ class TestRichWifiConnect:
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=networks):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_open_network_success(self) -> None:
         with _patch_rich() as mocks:
@@ -1186,10 +1187,10 @@ class TestRichWifiConnect:
             ping_ok = MagicMock(returncode=0)
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=networks), \
-                 patch.object(tui, "_attempt_wifi_connection", return_value=True), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value={"ssid": "CafeWifi", "passphrase": ""}), \
                  patch("time.sleep"):
                 result = tui._rich_wifi_connect()
-        assert result is True
+        assert result == {"ssid": "CafeWifi", "passphrase": ""}
 
     def test_wpa_network_connection_failure(self) -> None:
         with _patch_rich() as mocks:
@@ -1199,10 +1200,10 @@ class TestRichWifiConnect:
             mocks["Prompt"].ask.side_effect = ["1", "", "0"]
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", side_effect=[networks, []]), \
-                 patch.object(tui, "_attempt_wifi_connection", return_value=False), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value=None), \
                  patch("time.sleep"):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_connected_but_no_internet(self) -> None:
         with _patch_rich() as mocks:
@@ -1212,10 +1213,10 @@ class TestRichWifiConnect:
             mocks["Prompt"].ask.side_effect = ["1", "", "0"]
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", side_effect=[networks, []]), \
-                 patch.object(tui, "_attempt_wifi_connection", return_value=False), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value=None), \
                  patch("time.sleep"):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_manual_ssid_connect(self) -> None:
         with _patch_rich() as mocks:
@@ -1225,9 +1226,9 @@ class TestRichWifiConnect:
             mocks["Prompt"].ask.side_effect = ["m", "HiddenNet", "mypassword"]
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=networks), \
-                 patch.object(tui, "_manual_wifi_connect", return_value=True):
+                 patch.object(tui, "_manual_wifi_connect", return_value={"ssid": "HiddenNet", "passphrase": "mypassword"}):
                 result = tui._rich_wifi_connect()
-        assert result is True
+        assert result == {"ssid": "HiddenNet", "passphrase": "mypassword"}
 
     def test_rescan_action(self) -> None:
         with _patch_rich() as mocks:
@@ -1237,7 +1238,7 @@ class TestRichWifiConnect:
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", side_effect=[[], []]):
                 result = tui._rich_wifi_connect()
-        assert result is False
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -1250,14 +1251,14 @@ class TestWhiptailWifiConnect:
         with patch.object(whiptail_tui, "_find_wifi_interface", return_value=None), \
              patch.object(whiptail_tui, "show_error"):
             result = whiptail_tui._whiptail_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_returns_false_when_no_networks(self, whiptail_tui: TUI) -> None:
         with patch.object(whiptail_tui, "_find_wifi_interface", return_value="wlan0"), \
              patch.object(whiptail_tui, "_scan_wifi_networks", return_value=[]), \
              patch.object(whiptail_tui, "show_error"):
             result = whiptail_tui._whiptail_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_returns_false_when_user_skips(self, whiptail_tui: TUI) -> None:
         networks = [("HomeNet", "WPA2", -52)]
@@ -1265,7 +1266,7 @@ class TestWhiptailWifiConnect:
              patch.object(whiptail_tui, "_scan_wifi_networks", return_value=networks), \
              patch.object(whiptail_tui, "_select_from_list", return_value="skip"):
             result = whiptail_tui._whiptail_wifi_connect()
-        assert result is False
+        assert result is None
 
     def test_open_network_ping_success(self, whiptail_tui: TUI) -> None:
         networks = [("CafeWifi", "open", -64)]
@@ -1277,7 +1278,7 @@ class TestWhiptailWifiConnect:
              patch("installer.tui.subprocess.run", side_effect=[ok, ping_ok]), \
              patch("time.sleep"):
             result = whiptail_tui._whiptail_wifi_connect()
-        assert result is True
+        assert result == {"ssid": "CafeWifi", "passphrase": ""}
 
     def test_wpa_connection_failure(self, whiptail_tui: TUI) -> None:
         networks = [("HomeNet", "WPA2", -52)]
@@ -1287,6 +1288,7 @@ class TestWhiptailWifiConnect:
              patch.object(whiptail_tui, "_select_from_list", return_value="HomeNet"), \
              patch.object(whiptail_tui, "_password_box", return_value="wrong"), \
              patch.object(whiptail_tui, "show_error"), \
-             patch("installer.tui.subprocess.run", return_value=fail):
+             patch("installer.tui.subprocess.run", side_effect=[fail]), \
+             patch("time.sleep"):
             result = whiptail_tui._whiptail_wifi_connect()
-        assert result is False
+        assert result is None
