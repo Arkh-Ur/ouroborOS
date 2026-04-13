@@ -873,95 +873,303 @@ class TUI:
             time.sleep(2)
         return None
 
-    def _scan_wifi_networks(self, iface: str) -> list[tuple[str, str, bool]]:
+    @staticmethod
+    def _signal_to_bar(dbm: int) -> str:
+        if dbm >= -50:
+            return "▓▓▓▓▓▓"
+        if dbm >= -60:
+            return "▓▓▓▓▓░"
+        if dbm >= -70:
+            return "▓▓▓▓░░"
+        if dbm >= -80:
+            return "▓▓▓░░░"
+        if dbm >= -85:
+            return "▓▓░░░░"
+        return "▓░░░░░"
+
+    @staticmethod
+    def _signal_quality(dbm: int) -> str:
+        if dbm >= -50:
+            return "Excellent"
+        if dbm >= -60:
+            return "Good"
+        if dbm >= -70:
+            return "Fair"
+        if dbm >= -80:
+            return "Weak"
+        if dbm >= -85:
+            return "Very Weak"
+        return "Unusable"
+
+    def _scan_wifi_networks(self, iface: str) -> list[tuple[str, str, int]]:
+        """Scan WiFi networks via iwd + iw scan dump.
+
+        Returns list of ``(ssid, security, signal_dbm)`` sorted by signal
+        strength descending.  Security is ``"open"``, ``"WPA2"``, or
+        ``"WPA3"``.
+        """
+        import time
+
         subprocess.run(
             ["iwctl", "station", iface, "scan"],
             capture_output=True, text=True, check=False,
         )
-        import time
         time.sleep(5)
+
         result = subprocess.run(
-            ["iwctl", "station", iface, "get-networks", "list"],
+            ["iw", "dev", iface, "scan", "dump"],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            return self._scan_wifi_fallback(iface)
+
+        best: dict[str, tuple[str, int]] = {}
+        current_ssid: str | None = None
+        current_signal: int | None = None
+        has_rsn = False
+        has_wpa = False
+        has_privacy = False
+
+        for line in result.stdout.splitlines():
+            s = line.strip()
+            if s.startswith("BSS "):
+                if current_ssid and current_signal is not None:
+                    sec = self._classify_security(has_privacy, has_rsn, has_wpa)
+                    prev = best.get(current_ssid)
+                    if prev is None or current_signal > prev[1]:
+                        best[current_ssid] = (sec, current_signal)
+                current_ssid = None
+                current_signal = None
+                has_rsn = False
+                has_wpa = False
+                has_privacy = False
+            elif s.startswith("SSID:"):
+                current_ssid = s.split(":", 1)[1].strip()
+                if not current_ssid or current_ssid.startswith("\\x00"):
+                    current_ssid = None
+            elif s.startswith("signal:"):
+                try:
+                    current_signal = int(float(s.split(":")[1].strip().split()[0]))
+                except (ValueError, IndexError):
+                    current_signal = None
+            elif s.startswith("RSN:"):
+                has_rsn = True
+            elif s.startswith("WPA:"):
+                has_wpa = True
+            elif s.startswith("capability:") and "Privacy" in s:
+                has_privacy = True
+
+        if current_ssid and current_signal is not None:
+            sec = self._classify_security(has_privacy, has_rsn, has_wpa)
+            prev = best.get(current_ssid)
+            if prev is None or current_signal > prev[1]:
+                best[current_ssid] = (sec, current_signal)
+
+        networks = [(ssid, sec, dbm) for ssid, (sec, dbm) in best.items()]
+        networks.sort(key=lambda n: n[2], reverse=True)
+        return networks
+
+    @staticmethod
+    def _classify_security(has_privacy: bool, has_rsn: bool, has_wpa: bool) -> str:
+        if has_rsn:
+            return "WPA2"
+        if has_wpa:
+            return "WPA1"
+        if has_privacy:
+            return "WPA"
+        return "open"
+
+    def _scan_wifi_fallback(self, iface: str) -> list[tuple[str, str, int]]:
+        """Fallback: parse ``iwctl get-networks`` when ``iw scan dump`` fails."""
+        result = subprocess.run(
+            ["iwctl", "station", iface, "get-networks"],
             capture_output=True, text=True, check=False,
         )
         if result.returncode != 0:
             return []
-        networks: list[tuple[str, str, bool]] = []
-        for line in result.stdout.splitlines()[4:]:
-            parts = line.split()
-            if len(parts) >= 4:
-                ssid = parts[0]
-                security = parts[1]
-                is_open = security == "open"
-                networks.append((ssid, security, is_open))
+        networks: list[tuple[str, str, int]] = []
+        in_table = False
+        for line in result.stdout.splitlines():
+            s = line.strip()
+            if s.startswith("----"):
+                in_table = True
+                continue
+            if not in_table or not s:
+                continue
+            parts = s.split()
+            if len(parts) < 3:
+                continue
+            ssid = parts[0]
+            security = parts[1]
+            asterisks = parts[-1].count("*")
+            dbm = -40 - (6 - asterisks) * 10 if asterisks else -90
+            networks.append((ssid, security, dbm))
+        networks.sort(key=lambda n: n[2], reverse=True)
         return networks
 
     def _rich_wifi_connect(self) -> bool:
         assert self._console is not None
         self._stop_progress()
+        PAGE_SIZE = 10
 
-        self._console.print(
-            Panel(
-                Text.from_markup(
-                    "No internet connectivity detected.\n\n"
-                    "Select a WiFi network to connect to."
-                ),
-                title="[bold]Network Configuration[/]",
-                border_style="yellow",
-            )
-        )
+        self._console.print(Panel(
+            Text.from_markup(
+                "No internet connectivity detected.\n\n"
+                "Select a WiFi network to connect to."
+            ),
+            title="[bold]Network Configuration[/]",
+            border_style="yellow",
+        ))
 
         iface = self._find_wifi_interface()
         if iface is None:
             self._console.print("  [bold red]No WiFi interface found.[/]")
             return False
 
-        networks = self._scan_wifi_networks(iface)
-        if not networks:
-            self._console.print("  [bold red]No WiFi networks found.[/]")
+        networks: list[tuple[str, str, int]] = []
+        page = 0
+
+        while True:
+            if not networks:
+                self._console.print("  [dim]Scanning for networks...[/]")
+                networks = self._scan_wifi_networks(iface)
+                if not networks:
+                    self._console.print("  [bold red]No WiFi networks found.[/]")
+                    action = Prompt.ask(
+                        "  [R] Re-scan  [M] Manual SSID  [0] Skip",
+                        default="0", console=self._console,
+                    ).strip().lower()
+                    if action == "r":
+                        continue
+                    if action == "m":
+                        return self._manual_wifi_connect(iface)
+                    return False
+                page = 0
+
+            total_pages = max(1, -(-len(networks) // PAGE_SIZE))
+            start = page * PAGE_SIZE
+            end = min(start + PAGE_SIZE, len(networks))
+            page_networks = networks[start:end]
+
+            table = Table(
+                title=f"Available Networks (page {page + 1}/{total_pages})",
+                show_lines=False,
+            )
+            table.add_column("#", style="cyan bold", width=4)
+            table.add_column("SSID", style="bold", min_width=22)
+            table.add_column("Security", width=10)
+            table.add_column("Signal", min_width=20)
+            for i, (ssid, security, dbm) in enumerate(page_networks, start=start + 1):
+                bar = self._signal_to_bar(dbm)
+                quality = self._signal_quality(dbm)
+                table.add_row(
+                    str(i), ssid, security,
+                    f"{bar}  {dbm} dBm  {quality}",
+                )
+            self._console.print(table)
+
+            nav = []
+            if page > 0:
+                nav.append("[P] Prev page")
+            if page < total_pages - 1:
+                nav.append("[N] Next page")
+            nav_parts = "  ".join(nav)
+            prompt_text = (
+                f"  [{start}-{end}] Select  [R] Re-scan  [M] Manual  {nav_parts}  [0] Skip"
+            ).strip()
+
+            choice = Prompt.ask(
+                prompt_text, default="0", console=self._console,
+            ).strip().lower()
+
+            if choice == "0":
+                return False
+            if choice == "r":
+                networks = []
+                continue
+            if choice == "m":
+                return self._manual_wifi_connect(iface)
+            if choice == "n" and page < total_pages - 1:
+                page += 1
+                continue
+            if choice == "p" and page > 0:
+                page -= 1
+                continue
+
+            try:
+                idx = int(choice) - 1
+            except ValueError:
+                continue
+            if idx < 0 or idx >= len(networks):
+                continue
+
+            ssid, security, _dbm = networks[idx]
+            connected = self._attempt_wifi_connection(iface, ssid, security)
+            if connected:
+                return True
+            self._console.print(
+                "  [bold yellow]Press Enter to return to network list...[/]"
+            )
+            Prompt.ask("", console=self._console)
+            networks = []
+
+    def _manual_wifi_connect(self, iface: str) -> bool:
+        assert self._console is not None
+        self._console.print(Panel(
+            Text.from_markup(
+                "Enter the network name manually.\n"
+                "Use this for hidden / non-broadcasting SSIDs."
+            ),
+            title="[bold]Manual Connection[/]",
+            border_style="yellow",
+        ))
+        ssid = Prompt.ask("  SSID", console=self._console).strip()
+        if not ssid:
             return False
-
-        table = Table(title="Available Networks", show_lines=False)
-        table.add_column("#", style="cyan bold", width=4)
-        table.add_column("SSID", style="bold")
-        table.add_column("Security")
-        table.add_column("Signal")
-        for i, (ssid, security, _is_open) in enumerate(networks):
-            table.add_row(str(i + 1), ssid, security, "")
-        table.add_row("0", "Skip / Retry later", "", "")
-        self._console.print(table)
-
-        choice = IntPrompt.ask(
-            "  Select network [0 to skip]",
-            default=0,
-            console=self._console,
+        password = Prompt.ask(
+            f"  Password for '{ssid}' (leave empty for open network)",
+            password=True, console=self._console,
         )
-        if choice == 0 or choice > len(networks):
-            return False
+        security = "open" if not password else "WPA2"
+        return self._attempt_wifi_connection(iface, ssid, security, password or None)
 
-        ssid, _security, is_open = networks[choice - 1]
-        if is_open:
+    def _attempt_wifi_connection(
+        self, iface: str, ssid: str, security: str, password: str | None = None,
+    ) -> bool:
+        assert self._console is not None
+        import time
+
+        self._console.print(f"  Connecting to [bold]{ssid}[/]...")
+        if security == "open":
             cmd = ["iwctl", "station", iface, "connect", ssid]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        elif password:
+            cmd = [
+                "iwctl", "--passphrase", password,
+                "station", iface, "connect", ssid,
+            ]
         else:
-            password = Prompt.ask(
+            pw = Prompt.ask(
                 f"  Password for '{ssid}'", password=True, console=self._console,
             )
-            cmd = ["iwctl", "--passphrase", password, "station", iface, "connect", ssid]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            cmd = [
+                "iwctl", "--passphrase", pw,
+                "station", iface, "connect", ssid,
+            ]
 
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            self._console.print(f"  [bold red]Connection failed: {result.stderr.strip()}[/]")
+            self._console.print(
+                f"  [bold red]Connection failed: {result.stderr.strip()}[/]"
+            )
             return False
 
-        import time
         time.sleep(5)
         ping = subprocess.run(
             ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
             capture_output=True, check=False,
         )
         if ping.returncode == 0:
-            self._console.print("  [bold green]Connected![/]")
+            self._console.print("  [bold green]✅ Connected! Internet OK[/]")
             return True
         self._console.print("  [bold red]Connected but no internet.[/]")
         return False
@@ -977,7 +1185,10 @@ class TUI:
             self.show_error("No WiFi networks found.", recoverable=False)
             return False
 
-        items = [(ssid, f"{security}") for ssid, security, _ in networks]
+        items = [
+            (ssid, f"{security}  {self._signal_to_bar(dbm)}  {dbm}dBm")
+            for ssid, security, dbm in networks
+        ]
         items.append(("skip", "Skip / Retry later"))
         ssid = self._select_from_list(
             "WiFi Networks", "Select a network:", items,
@@ -985,21 +1196,23 @@ class TUI:
         if ssid == "skip":
             return False
 
-        selected = [(s, sec, op) for s, sec, op in networks if s == ssid]
+        selected = [(s, sec, dbm) for s, sec, dbm in networks if s == ssid]
         if not selected:
             return False
-        _ssid, _security, is_open = selected[0]
+        _ssid, security, _dbm = selected[0]
 
-        if is_open:
-            cmd = ["iwctl", "station", iface, "connect", _ssid]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        else:
+        password = None
+        if security != "open":
             password = self._password_box("WiFi", f"Password for '{_ssid}':")
+
+        if security == "open":
+            cmd = ["iwctl", "station", iface, "connect", _ssid]
+        else:
             cmd = [
-                "iwctl", "--passphrase", password,
+                "iwctl", "--passphrase", password or "",
                 "station", iface, "connect", _ssid,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
         if result.returncode != 0:
             self.show_error(f"Connection failed: {result.stderr.strip()}", recoverable=False)
