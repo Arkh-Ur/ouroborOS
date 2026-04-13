@@ -7,7 +7,7 @@ iso_name="ouroborOS"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
 iso_publisher="ouroborOS <https://github.com/Arkhur-Vo/ouroborOS>"
 iso_application="ouroborOS ArchLinux-based immutable Linux distribution"
-iso_version="0.4.2"
+iso_version="0.4.3"
 install_dir="arch"
 buildmodes=('iso')
 bootmodes=('uefi.systemd-boot')
