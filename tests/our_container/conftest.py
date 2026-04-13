@@ -254,7 +254,9 @@ def mock_env(
 
     # Path to the real our-container script
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    our_container_script = (
+        repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    )
 
     # Prepend mock bin to PATH
     old_path = os.environ.get("PATH", "")
@@ -298,7 +300,9 @@ def mock_env_no_btrfs(tmp_path: Path) -> Generator[tuple[Path, Path, Path], None
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    our_container_script = (
+        repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    )
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
@@ -362,7 +366,9 @@ def mock_env_fail_tools(tmp_path: Path) -> Generator[tuple[Path, Path, Path], No
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    our_container_script = (
+        repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    )
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"
@@ -404,7 +410,9 @@ def mock_env_fail_pacstrap(tmp_path: Path) -> Generator[tuple[Path, Path, Path],
     _write_date(mock_bin)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
-    our_container_script = repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    our_container_script = (
+        repo_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
+    )
 
     old_path = os.environ.get("PATH", "")
     os.environ["PATH"] = f"{mock_bin}:{old_path}"

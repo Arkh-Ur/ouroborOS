@@ -18,7 +18,11 @@ from pathlib import Path
 import yaml
 
 from installer.desktop_profiles import (
-    VALID_DMS, VALID_PROFILES, VALID_SHELLS, shell_path, aur_packages_for,
+    VALID_DMS,
+    VALID_PROFILES,
+    VALID_SHELLS,
+    aur_packages_for,
+    shell_path,
 )
 
 # ---------------------------------------------------------------------------

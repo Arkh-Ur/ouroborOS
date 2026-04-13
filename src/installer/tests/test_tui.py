@@ -1023,7 +1023,7 @@ class TestScanWifiNetworks:
             "OpenNet         open        *           x\n"
         )
 
-        def side_effect(cmd, **kwargs):
+        def side_effect(cmd: list[str], **kwargs):
             if "scan" in cmd:
                 return MagicMock(returncode=0, stdout="")
             return MagicMock(returncode=0, stdout=fake_output)

@@ -10,7 +10,6 @@ import pytest
 
 from installer.state_machine import Installer, InstallerError
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -117,7 +116,7 @@ class TestHandleInstallHappyPath:
 
         inst = _make_installer(tmp_path)
 
-        def fake_run(cmd, **kwargs):
+        def fake_run(cmd: list[str], **kwargs):
             if cmd and cmd[0] == "pacstrap":
                 call_order.append("pacstrap")
             return _success()
@@ -146,7 +145,7 @@ class TestHandleInstallRetry:
         inst = _make_installer(tmp_path)
         call_count = 0
 
-        def flaky_run(cmd, **kwargs):
+        def flaky_run(cmd: list[str], **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -185,7 +184,7 @@ class TestHandleInstallRetry:
 
         call_count = 0
 
-        def flaky_run(cmd, **kwargs):
+        def flaky_run(cmd: list[str], **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 2:
@@ -214,8 +213,11 @@ class TestHandleInstallEdgeCases:
         """Covers the stdout-logging block (lines 644-648)."""
         inst = _make_installer(tmp_path)
 
-        def run_with_stdout(cmd, **kwargs):
-            return CompletedProcess(args=cmd, returncode=0, stdout=":: Syncing package databases...\n  warning: something\n")
+        def run_with_stdout(cmd: list[str], **kwargs):
+            return CompletedProcess(
+                args=cmd, returncode=0,
+                stdout=":: Syncing package databases...\n  warning: something\n",
+            )
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
@@ -256,7 +258,7 @@ class TestRegenerateFstab:
 
         run_op_calls: list = []
 
-        def fake_run_op(args, **kwargs):
+        def fake_run_op(args: list[str], **kwargs):
             run_op_calls.append(args)
 
         with patch.object(inst, "_root_device_for_fstab", return_value="/dev/vda2"), \
