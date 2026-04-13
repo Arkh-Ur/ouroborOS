@@ -989,6 +989,8 @@ main() {
     # leave DESKTOP_DM empty and log in from tty.
     if [[ -n "${DESKTOP_DM:-}" ]]; then
         in_chroot systemctl enable "${DESKTOP_DM}.service"
+        in_chroot systemctl daemon-reload
+        in_chroot systemctl set-default graphical.target
         log_ok "Display manager enabled: ${DESKTOP_DM}."
     else
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
