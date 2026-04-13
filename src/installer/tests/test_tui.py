@@ -1224,7 +1224,10 @@ class TestRichWifiConnect:
             mocks["Prompt"].ask.side_effect = ["m", "HiddenNet", "mypassword"]
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=networks), \
-                 patch.object(tui, "_manual_wifi_connect", return_value={"ssid": "HiddenNet", "passphrase": "mypassword"}):
+                 patch.object(
+                     tui, "_manual_wifi_connect",
+                     return_value={"ssid": "HiddenNet", "passphrase": "mypassword"},
+                 ):
                 result = tui._rich_wifi_connect()
         assert result == {"ssid": "HiddenNet", "passphrase": "mypassword"}
 
