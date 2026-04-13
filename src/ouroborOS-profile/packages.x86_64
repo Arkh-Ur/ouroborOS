@@ -30,6 +30,7 @@ amd-ucode
 
 # Network (live environment)
 iwd
+iw
 wireless_tools
 dhcpcd
 openssh
