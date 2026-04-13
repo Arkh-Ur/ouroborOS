@@ -747,8 +747,22 @@ class TestFindWifiInterface:
         fail = MagicMock()
         fail.returncode = 1
         fail.stdout = ""
-        with patch("subprocess.run", return_value=fail):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=fail), \
+             patch("time.sleep"):
             assert rich_tui._find_wifi_interface() is None
+
+    def test_returns_managed_interface(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype managed\n"
+        )
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
+            assert rich_tui._find_wifi_interface() == "wlan0"
 
     def test_returns_station_interface(self, rich_tui: TUI) -> None:
         ok = MagicMock()
@@ -758,10 +772,11 @@ class TestFindWifiInterface:
             "\tInterface wlan0\n"
             "\t\ttype station\n"
         )
-        with patch("subprocess.run", return_value=ok):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
             assert rich_tui._find_wifi_interface() == "wlan0"
 
-    def test_returns_none_when_no_station(self, rich_tui: TUI) -> None:
+    def test_returns_none_when_no_managed(self, rich_tui: TUI) -> None:
         ok = MagicMock()
         ok.returncode = 0
         ok.stdout = (
@@ -769,8 +784,25 @@ class TestFindWifiInterface:
             "\tInterface wlan0\n"
             "\t\ttype AP\n"
         )
-        with patch("subprocess.run", return_value=ok):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
             assert rich_tui._find_wifi_interface() is None
+
+    def test_rfkill_unblock_called_when_available(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype managed\n"
+        )
+        with patch("installer.tui.shutil.which", return_value="/usr/bin/rfkill"), \
+             patch("installer.tui.subprocess.run", return_value=ok) as mock_run:
+            result = rich_tui._find_wifi_interface()
+        assert result == "wlan0"
+        first_call_args = mock_run.call_args_list[0][0][0]
+        assert first_call_args[0] == "/usr/bin/rfkill"
+        assert "unblock" in first_call_args
 
 
 # ---------------------------------------------------------------------------
@@ -1037,11 +1069,12 @@ class TestScanWifiNetworks:
         assert any(ssid == "HomeNet" for ssid, _, _ in result)
 
     def test_find_wifi_interface_returns_none_when_no_station(self, rich_tui: TUI) -> None:
-        """Covers _find_wifi_interface when no station is found."""
-        with patch("installer.tui.subprocess.run") as mock_run:
+        """Covers _find_wifi_interface when no managed/station type is found."""
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run") as mock_run, \
+             patch("time.sleep"):
             mock_run.return_value = MagicMock(returncode=0, stdout="phy#0\n  Interface wlan0\n")
             result = rich_tui._find_wifi_interface()
-        # No "Station" line → returns None
         assert result is None
 
 

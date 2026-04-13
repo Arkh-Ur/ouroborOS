@@ -826,27 +826,51 @@ class TUI:
         return self._whiptail_wifi_connect()
 
     def _find_wifi_interface(self) -> str | None:
-        result = subprocess.run(
-            ["iw", "dev"], capture_output=True, text=True, check=False,
-        )
-        if result.returncode != 0:
-            return None
-        iface: str | None = None
-        is_station = False
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("Interface "):
-                iface = stripped.split(maxsplit=1)[1]
-                is_station = False
-            elif stripped == "type station":
-                is_station = True
-            elif stripped.startswith("Interface ") or stripped.startswith("phy#"):
-                if is_station and iface:
-                    return iface
-                iface = None
-                is_station = False
-        if is_station and iface:
-            return iface
+        """Detect the first WiFi interface in managed (station) mode.
+
+        Uses ``iw dev`` which reports ``type managed`` for client-mode
+        interfaces (the nl80211 kernel constant is STATION but the
+        display name is "managed").  We accept both strings for safety.
+
+        A short retry loop (3 attempts × 2 s) covers the common case
+        where the WiFi driver takes a moment to load after boot.
+        """
+        import time
+
+        # Unblock WiFi if rfkill has it soft-blocked (common on laptops).
+        rfkill = shutil.which("rfkill")
+        if rfkill:
+            subprocess.run(
+                [rfkill, "unblock", "wifi"],
+                capture_output=True, text=True, check=False,
+            )
+
+        for _attempt in range(3):
+            result = subprocess.run(
+                ["iw", "dev"], capture_output=True, text=True, check=False,
+            )
+            if result.returncode != 0:
+                time.sleep(2)
+                continue
+            iface: str | None = None
+            is_managed = False
+            for line in result.stdout.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("Interface "):
+                    if is_managed and iface:
+                        return iface
+                    iface = stripped.split(maxsplit=1)[1]
+                    is_managed = False
+                elif stripped == "phy#":
+                    if is_managed and iface:
+                        return iface
+                    iface = None
+                    is_managed = False
+                elif stripped in ("type managed", "type station"):
+                    is_managed = True
+            if is_managed and iface:
+                return iface
+            time.sleep(2)
         return None
 
     def _scan_wifi_networks(self, iface: str) -> list[tuple[str, str, bool]]:

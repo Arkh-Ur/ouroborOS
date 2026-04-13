@@ -5,6 +5,7 @@ After=getty@tty1.service
 After=systemd-networkd.service
 After=systemd-networkd-wait-online.service
 After=systemd-resolved.service
+After=iwd.service
 After=sshd-setup.service
 Wants=systemd-networkd-wait-online.service
 Conflicts=getty@tty1.service
