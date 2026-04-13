@@ -1183,8 +1183,6 @@ class TestRichWifiConnect:
             tui._console = mocks["Console"].return_value
             networks = [("CafeWifi", "open", -64)]
             mocks["Prompt"].ask.return_value = "1"
-            ok = MagicMock(returncode=0)
-            ping_ok = MagicMock(returncode=0)
             with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
                  patch.object(tui, "_scan_wifi_networks", return_value=networks), \
                  patch.object(tui, "_attempt_wifi_connection", return_value={"ssid": "CafeWifi", "passphrase": ""}), \
