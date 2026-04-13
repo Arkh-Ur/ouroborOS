@@ -197,10 +197,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Push main and tag to public repo
-        if: ${{ secrets.PUBLIC_REPO_TOKEN != '' }}
         env:
           PUBLIC_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
+          if [[ -z "$PUBLIC_TOKEN" ]]; then
+            echo "PUBLIC_REPO_TOKEN not set — skipping push to public repo"
+            exit 0
+          fi
           git config --global --add safe.directory '*'
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
@@ -208,11 +211,14 @@ jobs:
           git push public "${{ github.ref }}" --force
 
       - name: Create or update GitHub Release in public repo
-        if: ${{ secrets.PUBLIC_REPO_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           RELEASE_NOTES: ${{ steps.notes.outputs.NOTES }}
         run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "PUBLIC_REPO_TOKEN not set — skipping release creation"
+            exit 0
+          fi
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
