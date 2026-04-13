@@ -7,6 +7,46 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.4.3] — 2026-04-13
+
+### Fixed
+
+- Display manager (SDDM/GDM/PLM) not starting automatically after install — the system booted to `multi-user.target` (Arch default) even when a DM was enabled. Added `systemctl set-default graphical.target` to the DM enable block in `configure.sh`.
+- `our-aur` and `our-flat` scripts not executable on the live ISO — both had `644` permissions (no execute bit). Fixed to `755`.
+- WiFi credentials from the live ISO not passed to the installed system — `show_wifi_connect()` now returns `{ssid, passphrase}` instead of `bool`, so `configure.sh` can write the iwd PSK file on the target.
+- Ruff lint violations (F841 unused variables, E501 line too long) in test files.
+
+---
+
+## [0.4.2] — 2026-04-13
+
+### Added
+
+- **WiFi TUI enhancement** — Signal bars (▓▓▓▓▓░) with real dBm values, quality labels (Excellent/Fair/Weak), pagination (10 networks/page) with `[N]ext`/`[P]rev`, `[R]`e-scan, and `[M]`anual SSID entry for hidden networks. Both Rich and Whiptail backends updated.
+- **`iw` package** added to the ISO — required by the installer's WiFi interface detection (`iw dev`).
+
+### Fixed
+
+- WiFi interface never detected — `_find_wifi_interface()` checked for `type station` but `iw` reports `type managed` for client-mode interfaces. Also added `rfkill unblock wifi` before scanning and a retry loop for slow driver init.
+- `iwd.service` not enabled in the live ISO — WiFi was completely non-functional on boot. Added `After=iwd.service` to the installer service for correct startup ordering.
+- Boot menu showing `ouroborOS 0.1.0` instead of the current version — updated systemd-boot entries.
+
+---
+
+## [0.4.1] — 2026-04-13
+
+### Fixed
+
+- GitHub Actions CI/CD pipeline — multiple fixes for the build/release workflow:
+  - `PUBLIC_REPO_TOKEN` checked at runtime instead of in YAML `if` conditions (GitHub Actions doesn't allow secret comparisons in step-level conditions).
+  - Release job skipped on public repo where the token is absent.
+  - Release notes passed via environment variable to prevent backtick injection in markdown code blocks.
+  - Existing release deleted before recreating on hotfix re-runs (force-pushed tags).
+  - `--force` added to tag push in build workflow.
+- Ruff lint violations (I001, ANN001, E501) caught by CI.
+
+---
+
 ## [0.4.0] — 2026-04-12
 
 ### Added
@@ -177,6 +217,9 @@ Initial release.
 - English only — multi-language installer deferred to Phase 3.
 - No AUR helper — use `makepkg` manually.
 
+[0.4.3]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.3
+[0.4.2]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.2
+[0.4.1]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.2.0
