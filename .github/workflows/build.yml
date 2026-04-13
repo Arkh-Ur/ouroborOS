@@ -209,11 +209,11 @@ jobs:
       - name: Create or update GitHub Release in public repo
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.NOTES }}
         run: |
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
-          NOTES="${{ steps.notes.outputs.NOTES }}"
 
           # Delete existing release if present (supports hotfix re-runs)
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
@@ -227,7 +227,7 @@ jobs:
             --repo Arkh-Ur/ouroborOS \
             --title "ouroborOS ${TAG}" \
             --target main \
-            --notes "$NOTES" \
+            --notes "$RELEASE_NOTES" \
             "$ISO" \
             "$CHECKSUM"
 
