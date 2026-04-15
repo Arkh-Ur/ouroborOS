@@ -47,7 +47,7 @@ jobs:
           /^_make_efibootimg\(\)/ { in_func=1 }
           in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
           { print }
-          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO"
+          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
 
       - name: Build ISO
         run: |
@@ -138,7 +138,7 @@ jobs:
           /^_make_efibootimg\(\)/ { in_func=1 }
           in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
           { print }
-          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO"
+          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
 
       - name: Build ISO
         run: |
