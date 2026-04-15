@@ -103,11 +103,11 @@ def _has_set_euo_pipefail(content: str) -> bool:
 class TestAirootfsScriptsExist:
     """Every expected script must exist in the airootfs profile."""
 
-    def test_airootfs_bin_dir_exists(self):
+    def test_airootfs_bin_dir_exists(self) -> None:
         assert AIROOTFS_BIN.is_dir(), f"airootfs bin dir not found: {AIROOTFS_BIN}"
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_script_exists(self, script_name: str):
+    def test_script_exists(self, script_name: str) -> None:
         path = AIROOTFS_BIN / script_name
         assert path.is_file(), f"Script not found: {path}"
 
@@ -116,7 +116,7 @@ class TestAirootfsScriptPermissions:
     """All scripts in airootfs must be executable (0755)."""
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_executable_permissions(self, script_name: str):
+    def test_executable_permissions(self, script_name: str) -> None:
         path = AIROOTFS_BIN / script_name
         mode = _get_mode(path)
         assert mode == EXPECTED_MODE, (
@@ -124,7 +124,7 @@ class TestAirootfsScriptPermissions:
         )
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_is_regular_file_not_symlink(self, script_name: str):
+    def test_is_regular_file_not_symlink(self, script_name: str) -> None:
         path = AIROOTFS_BIN / script_name
         assert path.is_file(), f"{script_name} is not a regular file"
         assert not path.is_symlink(), f"{script_name} is a symlink — expected regular file"
@@ -134,7 +134,7 @@ class TestAirootfsScriptShebangs:
     """All scripts must have a proper bash shebang."""
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_has_bash_shebang(self, script_name: str):
+    def test_has_bash_shebang(self, script_name: str) -> None:
         content = _read_script(AIROOTFS_BIN / script_name)
         assert _has_shebang_bash(content), (
             f"{script_name}: missing bash shebang (expected #!/usr/bin/env bash)"
@@ -145,7 +145,7 @@ class TestAirootfsScriptSafety:
     """All shell scripts should use 'set -euo pipefail' for safety."""
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_has_set_euo_pipefail(self, script_name: str):
+    def test_has_set_euo_pipefail(self, script_name: str) -> None:
         content = _read_script(AIROOTFS_BIN / script_name)
         assert _has_set_euo_pipefail(content), (
             f"{script_name}: missing 'set -euo pipefail'"
@@ -156,7 +156,7 @@ class TestAirootfsScriptHelpFlag:
     """Every our-*/ouroboros-* tool should respond to --help."""
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_help_does_not_crash(self, script_name: str):
+    def test_help_does_not_crash(self, script_name: str) -> None:
         """Running with --help or 'help' subcommand should exit 0, not crash."""
         path = AIROOTFS_BIN / script_name
         # Some scripts use --help, others use 'help' subcommand
@@ -181,14 +181,14 @@ class TestAirootfsScriptHelpFlag:
 class TestConfigureShInstallsAllTools:
     """configure.sh must reference every installed tool."""
 
-    def test_configure_sh_exists(self):
+    def test_configure_sh_exists(self) -> None:
         assert CONFIGURE_SH.is_file(), f"configure.sh not found: {CONFIGURE_SH}"
 
-    def test_configure_sh_content_loaded(self):
+    def test_configure_sh_content_loaded(self) -> None:
         self._content = _read_script(CONFIGURE_SH)
 
     @pytest.mark.parametrize("tool", INSTALLED_TOOLS)  # type: ignore[misc]  # noqa: F821
-    def test_phase3_tool_referenced_in_configure(self, tool: str):
+    def test_phase3_tool_referenced_in_configure(self, tool: str) -> None:
         """Each _p3_tool must appear in the tools array in configure.sh."""
         content = _read_script(CONFIGURE_SH)
         # The tool name must appear in the _p3_tools array
