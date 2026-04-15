@@ -43,23 +43,11 @@ jobs:
       - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
           MKARCHISO="$(command -v mkarchiso)"
-          python3 - "$MKARCHISO" << 'PYEOF'
-          import sys
-          path = sys.argv[1]
-          with open(path, "r") as f:
-              lines = f.readlines()
-          out = []
-          for i, line in enumerate(lines):
-              out.append(line)
-              if line.rstrip() == '    )"' and i > 0:
-                  context = "".join(lines[max(0, i - 20):i + 1])
-                  if "_make_efibootimg" in context and "imgsize_kib" in context:
-                      out[-1] = '    )" || true\n'
-                      print(f"Patched line {i + 1}: appended || true")
-          with open(path, "w") as f:
-              f.writelines(out)
-          print("mkarchiso patch applied successfully.")
-          PYEOF
+          awk '
+          /^_make_efibootimg\(\)/ { in_func=1 }
+          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          { print }
+          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO"
 
       - name: Build ISO
         run: |
@@ -146,23 +134,11 @@ jobs:
       - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
           MKARCHISO="$(command -v mkarchiso)"
-          python3 - "$MKARCHISO" << 'PYEOF'
-          import sys
-          path = sys.argv[1]
-          with open(path, "r") as f:
-              lines = f.readlines()
-          out = []
-          for i, line in enumerate(lines):
-              out.append(line)
-              if line.rstrip() == '    )"' and i > 0:
-                  context = "".join(lines[max(0, i - 20):i + 1])
-                  if "_make_efibootimg" in context and "imgsize_kib" in context:
-                      out[-1] = '    )" || true\n'
-                      print(f"Patched line {i + 1}: appended || true")
-          with open(path, "w") as f:
-              f.writelines(out)
-          print("mkarchiso patch applied successfully.")
-          PYEOF
+          awk '
+          /^_make_efibootimg\(\)/ { in_func=1 }
+          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          { print }
+          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO"
 
       - name: Build ISO
         run: |
