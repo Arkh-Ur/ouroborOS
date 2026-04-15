@@ -64,7 +64,7 @@ jobs:
 
       - name: Verify ISO size (800 MiB – 2.5 GiB)
         run: |
-          ISO=$(ls out/ouroborOS-*.iso | head-1)
+          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
           SIZE=$(stat -c%s "$ISO")
           MIN=$((800 * 1024 * 1024))
           MAX=$((2560 * 1024 * 1024))
@@ -82,7 +82,7 @@ jobs:
       - name: Write build summary
         if: always()
         run: |
-          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -1 || echo "not built")
+          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -n 1 || echo "not built")
           SIZE_MB=0
           if [[ -f "$ISO" ]]; then SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 )); fi
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
@@ -158,7 +158,7 @@ jobs:
 
       - name: Verify ISO size (800 MiB – 2.5 GiB)
         run: |
-          ISO=$(ls out/ouroborOS-*.iso | head-1)
+          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
           SIZE=$(stat -c%s "$ISO")
           MIN=$((800 * 1024 * 1024))
           MAX=$((2560 * 1024 * 1024))
@@ -234,7 +234,7 @@ jobs:
             exit 0
           fi
           TAG="${{ github.ref_name }}"
-          ISO=$(ls out/ouroborOS-*.iso | head-1)
+          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
 
           # Delete existing release if present (supports hotfix re-runs)
@@ -256,7 +256,7 @@ jobs:
       - name: Write build summary
         if: always()
         run: |
-          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -1 || echo "not built")
+          ISO=$(ls out/ouroborOS-*.iso 2>/dev/null | head -n 1 || echo "not built")
           SIZE_MB=0
           if [[ -f "$ISO" ]]; then SIZE_MB=$(( $(stat -c%s "$ISO") / 1024 / 1024 )); fi
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
