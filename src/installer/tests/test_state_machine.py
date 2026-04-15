@@ -71,7 +71,7 @@ class TestCheckpointSystem:
 class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
-            "INIT", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "INIT", "NETWORK_SETUP", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
             "SECURE_BOOT",
             "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
@@ -190,6 +190,7 @@ class TestInstallerRun:
         # Replace both the bound methods AND the handler_map entries
         state_method_pairs = [
             (State.INIT, "_handle_init"),
+            (State.NETWORK_SETUP, "_handle_network_setup"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
             (State.USER, "_handle_user"),
@@ -297,6 +298,7 @@ class TestInstallerRun:
         # Replace both bound methods and handler_map entries
         state_method_pairs = [
             (State.INIT, "_handle_init"),
+            (State.NETWORK_SETUP, "_handle_network_setup"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
             (State.USER, "_handle_user"),
@@ -318,10 +320,11 @@ class TestInstallerRun:
              patch(
                  "installer.state_machine._load_config_checkpoint", return_value=None
              ):
-            mock_done.side_effect = lambda s: s in (State.INIT, State.PREFLIGHT)
+            mock_done.side_effect = lambda s: s in (State.INIT, State.NETWORK_SETUP, State.PREFLIGHT)
             installer.run()
 
         assert "_handle_init" not in called_states
+        assert "_handle_network_setup" not in called_states
         assert "_handle_preflight" not in called_states
         assert "_handle_locale" in called_states
 
@@ -505,34 +508,60 @@ class TestCheckNetwork:
             with pytest.raises(InstallerError, match="No internet"):
                 installer._check_network()
 
-    def test_with_tui_wifi_connect_success(self) -> None:
+
+# ---------------------------------------------------------------------------
+# Installer._handle_network_setup
+# ---------------------------------------------------------------------------
+
+
+class TestHandleNetworkSetup:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst.tui = None
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_skips_wifi_when_online(self) -> None:
+        installer = self._make_installer()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
+
+    def test_no_tui_no_wifi_prompt(self) -> None:
+        installer = self._make_installer()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
+
+    def test_tui_wifi_connect_captures_credentials(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = {"ssid": "TestNet", "passphrase": "testpass"}
+        mock_tui.show_wifi_connect.return_value = {
+            "ssid": "TestNet",
+            "passphrase": "testpass",
+        }
         installer.tui = mock_tui
-
-        ping_fail = MagicMock()
-        ping_fail.returncode = 1
-        ping_ok = MagicMock()
-        ping_ok.returncode = 0
-
-        with patch("subprocess.run", side_effect=[ping_fail, ping_ok]):
-            installer._check_network()  # must not raise
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
         assert installer.config.network.wifi_ssid == "TestNet"
         assert installer.config.network.wifi_passphrase == "testpass"
 
-    def test_with_tui_wifi_connect_then_still_no_net(self) -> None:
+    def test_tui_wifi_connect_cancelled(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = {"ssid": "TestNet", "passphrase": "testpass"}
+        mock_tui.show_wifi_connect.return_value = None
         installer.tui = mock_tui
-
-        ping_fail = MagicMock()
-        ping_fail.returncode = 1
-
-        with patch("subprocess.run", return_value=ping_fail):
-            with pytest.raises(InstallerError, match="No internet"):
-                installer._check_network()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
 
 
 # ---------------------------------------------------------------------------

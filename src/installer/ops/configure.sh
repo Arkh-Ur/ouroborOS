@@ -162,6 +162,26 @@ EOF
 
     in_chroot mkinitcpio -P
 
+    # Verify both initramfs images exist on the ESP (${TARGET}/boot).
+    # The fallback image may fail silently if the ESP is too small (512 MiB
+    # can be tight with linux-firmware embedded).  Log clearly so we can
+    # diagnose missing-file issues at boot time.
+    local -A _expected_images=(
+        ["main"]="${TARGET}/boot/initramfs-linux-zen.img"
+        ["fallback"]="${TARGET}/boot/initramfs-linux-zen-fallback.img"
+    )
+    for _name in main fallback; do
+        if [[ -f "${_expected_images[$_name]}" ]]; then
+            local _size
+            _size=$(du -sh "${_expected_images[$_name]}" | cut -f1)
+            log_ok "initramfs (${_name}): ${_expected_images[$_name]} (${_size})"
+        else
+            log_warn "initramfs (${_name}) MISSING: ${_expected_images[$_name]}"
+            log_warn "If this is the fallback, the boot entry will fail. Consider increasing ESP size."
+        fi
+    done
+    unset _expected_images _name _size
+
     log_ok "Initramfs generated."
 }
 
@@ -250,12 +270,16 @@ ${ucode_initrd_lines}initrd  /initramfs-linux-zen.img
 options ${kernel_params}
 EOF
 
-    cat > "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf" << EOF
+    if [[ -f "${TARGET}/boot/initramfs-linux-zen-fallback.img" ]]; then
+        cat > "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf" << EOF
 title   ouroborOS (fallback initramfs)
 linux   /vmlinuz-linux-zen
 ${ucode_initrd_lines}initrd  /initramfs-linux-zen-fallback.img
 options ${kernel_params}
 EOF
+    else
+        log_warn "Skipping fallback boot entry — initramfs-linux-zen-fallback.img not found on ESP."
+    fi
 
     cat > "${TARGET}/boot/loader/loader.conf" << 'EOF'
 default  ouroborOS.conf
@@ -757,9 +781,7 @@ else
 fi
 SCRIPT
     chmod 0755 "${TARGET}/usr/local/bin/our-pac"
-    # Compatibility symlink — one release cycle, then remove
-    ln -sf our-pac "${TARGET}/usr/local/bin/our-pac"
-    log_ok "our-pac installed (our-pac symlink added for compatibility)."
+    log_ok "our-pac installed."
 
     # our-container — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
@@ -886,9 +908,11 @@ SCRIPT
 configure_os_release() {
     log_info "Writing os-release..."
 
-    cat > "${TARGET}/etc/os-release" << 'EOF'
+    local version="${ISO_VERSION:-rolling}"
+
+    cat > "${TARGET}/etc/os-release" << EOF
 NAME="ouroborOS"
-PRETTY_NAME="ouroborOS 0.1.0"
+PRETTY_NAME="ouroborOS ${version}"
 ID=ouroboros
 ID_LIKE=arch
 BUILD_ID=rolling
@@ -896,9 +920,9 @@ ANSI_COLOR="38;2;23;147;209"
 HOME_URL="https://github.com/Arkhur-Vo/ouroborOS"
 SUPPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
 BUG_REPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
-VERSION_ID="0.1.0"
+VERSION_ID="${version}"
 EOF
-    log_ok "os-release written."
+    log_ok "os-release written (version: ${version})."
 }
 
 # --- Step 11: systemd-homed migration setup ---------------------------------
@@ -1114,12 +1138,12 @@ main() {
     _write_etc_to_root() {
         local mnt="$1"
         mkdir -p "${mnt}/etc"
-        for f in machine-id passwd group shadow gshadow; do
+        for f in machine-id passwd group shadow gshadow crypttab; do
             if [[ -f "${TARGET}/etc/${f}" ]]; then
                 cp "${TARGET}/etc/${f}" "${mnt}/etc/${f}"
             fi
         done
-        log_ok "Critical /etc files written to @ subvolume (machine-id, passwd, group, shadow, gshadow)."
+        log_ok "Critical /etc files written to @ subvolume (machine-id, passwd, group, shadow, gshadow, crypttab)."
     }
     write_to_root_subvolume _write_etc_to_root || true
 
@@ -1189,6 +1213,16 @@ main() {
             mkdir -p "${mnt}/etc/systemd/system"
             cp "${TARGET}/etc/systemd/system/ouroboros-firstboot.service" \
                 "${mnt}/etc/systemd/system/ouroboros-firstboot.service"
+        fi
+
+        # Mirror display-manager.service alias: graphical.target wants
+        # display-manager.service, but the Alias= symlink created by
+        # `systemctl enable sddm` lives in @etc and is invisible to systemd
+        # at early boot.  Without this, SDDM/GDM never starts on the installed
+        # system because systemd cannot resolve the alias.
+        if [[ -L "${src}/display-manager.service" ]]; then
+            cp -a "${src}/display-manager.service" "${dst}/display-manager.service"
+            log_ok "display-manager.service alias mirrored to @ subvolume."
         fi
 
         # Mirror homed migration service + config: systemd-homed starts before

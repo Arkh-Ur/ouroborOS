@@ -30,7 +30,7 @@ installer/
 | CLI arguments | `main.py` | `--resume`, `--config`, `--target` |
 
 ## STATE MACHINE
-- Flow: INIT → PREFLIGHT → LOCALE → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH.
+- Flow: INIT → NETWORK_SETUP → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH.
 - Error states: ERROR_RECOVERABLE, FATAL.
 - Checkpoints: Persisted in `/tmp/ouroborOS-checkpoints/` per state.
 - Resume: `--resume` flag loads last successful checkpoint.

@@ -41,7 +41,6 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
     ],
     "kde": [
         "plasma",
-        "plasma-wayland-session",
         "kde-applications-meta",
     ],
 }

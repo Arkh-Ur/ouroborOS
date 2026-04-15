@@ -187,7 +187,14 @@ _E2E_CONFIG_DST="${PROFILE_DIR}/airootfs/etc/ouroborOS/e2e-config.yaml"
 _cleanup_e2e() {
     rm -f "$_E2E_CONFIG_DST" "${_E2E_DROPIN_DIR}/e2e-unattended.conf"
     rmdir "$_E2E_DROPIN_DIR" 2>/dev/null || true
+    rmdir "${PROFILE_DIR}/airootfs/etc/ouroborOS" 2>/dev/null || true
 }
+
+# Always clean residual E2E artifacts from previous builds BEFORE injection.
+# This prevents stale configs from a prior --e2e-config build leaking into
+# subsequent builds that use airootfs/tmp/ouroborOS-config.yaml directly.
+_cleanup_e2e
+log_info "Cleaned residual E2E artifacts (if any)"
 
 if [[ -n "$E2E_CONFIG" ]]; then
     log_section "E2E Config Injection"
@@ -219,6 +226,11 @@ if [[ -d "$INSTALLER_SRC" ]]; then
         -exec cp -t "$INSTALLER_DST/" {} +
     find "$INSTALLER_SRC/ops" -type f \( -name '*.py' -o -name '*.sh' \) \
         -exec cp -t "$INSTALLER_DST/ops/" {} +
+
+    # Copy profiledef.sh so _read_iso_version() can find it at runtime
+    if [[ -f "$PROFILE_DIR/profiledef.sh" ]]; then
+        cp "$PROFILE_DIR/profiledef.sh" "$INSTALLER_DST/profiledef.sh"
+    fi
 
     chmod 0755 "$INSTALLER_DST/ops/"*.sh
     log_ok "Installer modules synced: $(find "$INSTALLER_DST" -type f | wc -l) files"

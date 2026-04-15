@@ -5,7 +5,8 @@ Each state corresponds to one installation phase. If the installer
 is interrupted, it can resume from the last completed checkpoint.
 
 State flow:
-    INIT → PREFLIGHT → LOCALE → PARTITION → FORMAT → INSTALL
+    INIT → NETWORK_SETUP → PREFLIGHT → LOCALE → USER → DESKTOP
+         → SECURE_BOOT → PARTITION → FORMAT → INSTALL
          → CONFIGURE → SNAPSHOT → FINISH
 
 Error states:
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -53,15 +55,30 @@ logging.basicConfig(
 
 log = logging.getLogger("installer")
 
+
+def _read_iso_version() -> str:
+    """Read iso_version from the profiledef.sh installed on the live ISO."""
+    candidates = [
+        Path("/usr/lib/ouroborOS/installer/profiledef.sh"),
+        Path("/home/hbuddenberg/developments/ouroborOS/src/ouroborOS-profile/profiledef.sh"),
+    ]
+    for path in candidates:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            m = re.search(r'iso_version="([^"]+)"', text)
+            if m:
+                return m.group(1)
+    return "rolling"
+
 # ---------------------------------------------------------------------------
 # State enum
 # ---------------------------------------------------------------------------
 
 
 class State(Enum):
-    """All states of the ouroborOS installer FSM."""
 
     INIT = auto()
+    NETWORK_SETUP = auto()
     PREFLIGHT = auto()
     LOCALE = auto()
     USER = auto()
@@ -84,6 +101,7 @@ class State(Enum):
 # is wiped — we never ask the user anything after that point.
 _STATE_ORDER: list[State] = [
     State.INIT,
+    State.NETWORK_SETUP,
     State.PREFLIGHT,
     State.LOCALE,
     State.USER,
@@ -99,12 +117,13 @@ _STATE_ORDER: list[State] = [
 
 _STEP_RANGES: dict[State, tuple[int, int]] = {
     State.INIT: (0, 3),
-    State.PREFLIGHT: (3, 8),
-    State.LOCALE: (8, 13),
-    State.USER: (13, 16),
-    State.DESKTOP: (16, 20),
-    State.SECURE_BOOT: (20, 22),
-    State.PARTITION: (22, 30),
+    State.NETWORK_SETUP: (3, 6),
+    State.PREFLIGHT: (6, 10),
+    State.LOCALE: (10, 14),
+    State.USER: (14, 17),
+    State.DESKTOP: (17, 21),
+    State.SECURE_BOOT: (21, 23),
+    State.PARTITION: (23, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
     State.CONFIGURE: (70, 90),
@@ -114,6 +133,7 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
 
 _STEP_LABELS: dict[State, str] = {
     State.INIT: "Iniciando",
+    State.NETWORK_SETUP: "Conectando a la red",
     State.PREFLIGHT: "Verificando requisitos",
     State.LOCALE: "Configurando idioma",
     State.USER: "Creando usuario",
@@ -208,6 +228,7 @@ class Installer:
         self._config_path = config_path
         self._handler_map: dict[State, Callable[[], None]] = {
             State.INIT: self._handle_init,
+            State.NETWORK_SETUP: self._handle_network_setup,
             State.PREFLIGHT: self._handle_preflight,
             State.LOCALE: self._handle_locale,
             State.USER: self._handle_user,
@@ -334,6 +355,30 @@ class Installer:
                         recoverable=True,
                     )
                 # Fall through to interactive mode — TUI is still alive
+
+    def _handle_network_setup(self) -> None:
+        """NETWORK_SETUP — detect connectivity, offer WiFi if offline."""
+        self._update_progress(State.NETWORK_SETUP, 0, "Verificando conexión...")
+
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            log.info("Network already online — skipping WiFi setup")
+            self._update_progress(State.NETWORK_SETUP, 100, "Conexión establecida")
+            return
+
+        log.info("No internet connectivity detected")
+        if self.tui is not None:
+            wifi_creds = self.tui.show_wifi_connect()
+            if wifi_creds is not None:
+                self.config.network.wifi_ssid = wifi_creds["ssid"]
+                self.config.network.wifi_passphrase = wifi_creds["passphrase"]
+                log.info("WiFi credentials captured: %s", wifi_creds["ssid"])
+
+        self._update_progress(State.NETWORK_SETUP, 100, "Red configurada")
 
     def _handle_preflight(self) -> None:
         """PREFLIGHT — verify system requirements."""
@@ -768,6 +813,7 @@ class Installer:
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
                 "BLUETOOTH_ENABLE": "1" if self.config.network.bluetooth_enable else "0",
                 "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
+                "ISO_VERSION": _read_iso_version(),
             }
         )
 
@@ -880,19 +926,6 @@ class Installer:
             check=False,
         )
         if result.returncode != 0:
-            if self.tui is not None:
-                wifi_creds = self.tui.show_wifi_connect()
-                if wifi_creds is not None:
-                    # Store WiFi credentials for configure.sh passthrough
-                    self.config.network.wifi_ssid = wifi_creds["ssid"]
-                    self.config.network.wifi_passphrase = wifi_creds["passphrase"]
-                    retry = subprocess.run(
-                        ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
-                        capture_output=True,
-                        check=False,
-                    )
-                    if retry.returncode == 0:
-                        return
             raise InstallerError(
                 "No internet connectivity. Connect to a network before installing."
             )

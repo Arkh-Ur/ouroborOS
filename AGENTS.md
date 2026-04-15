@@ -79,7 +79,7 @@ ouroborOS/
 | Símbolo | Tipo | Ubicación | Rol |
 |---------|------|-----------|-----|
 | `Installer` | clase | `src/installer/state_machine.py` | Orquestador FSM principal |
-| `State` | enum | `src/installer/state_machine.py` | INIT→PREFLIGHT→LOCALE→USER→DESKTOP→**SECURE_BOOT**→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
+| `State` | enum | `src/installer/state_machine.py` | INIT→NETWORK_SETUP→PREFLIGHT→LOCALE→USER→DESKTOP→**SECURE_BOOT**→PARTITION→FORMAT→INSTALL→CONFIGURE→SNAPSHOT→FINISH |
 | `TUI` | clase | `src/installer/tui.py` | Wrapper de UI Rich (primario) + whiptail (fallback) |
 | `InstallerConfig` | dataclass | `src/installer/config.py` | Modelo único de config (disco, locale, red, usuario, desktop, security) |
 | `DesktopConfig` | dataclass | `src/installer/config.py` | Config de desktop profile y DM |
@@ -217,7 +217,7 @@ docker-compose -f tests/docker-compose.yml run --rm full-suite
 
 ## NOTAS
 
-- **FSM states (v0.4.0):** INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. SECURE_BOOT se omite si `security.secure_boot: false`.
+- **FSM states (v0.4.4):** INIT → NETWORK_SETUP → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH. NETWORK_SETUP ofrece WiFi si no hay internet. SECURE_BOOT se omite si `security.secure_boot: false`.
 - **Snapshots:** `/.snapshots/install/` es el baseline dorado (nunca purgado). Snapshots de pre-update: `YYYY-MM-DDTHHMMSS/`. Manuales: `YYYY-MM-DD_LABEL/`. Metadata JSON en `/.snapshots/.metadata/NAME.json`.
 - **Boot entries:** `rootflags=subvol=@snapshots/...` — sin `/` inicial (requisito del kernel).
 - **Secure Boot:** `sbctl` en `/var/lib/sbctl/` (subvolumen `@var`). Requiere firmware en Setup Mode. `our-pac` corre `sbctl sign-all` post-update si Secure Boot está activo.

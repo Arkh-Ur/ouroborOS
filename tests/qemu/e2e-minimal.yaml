@@ -1,0 +1,43 @@
+# ouroborOS E2E test config — Minimal profile (no GUI)
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+network:
+  hostname: ouroboros-minimal
+  enable_networkd: true
+  enable_iwd: false
+  enable_resolved: true
+
+user:
+  username: admin
+  password: changeme
+  groups:
+    - wheel
+    - audio
+    - video
+    - input
+  homed_storage: classic
+
+shell: bash
+
+desktop:
+  profile: minimal
+  dm: none
+
+security:
+  secure_boot: false
+  sbctl_include_ms_keys: false
+  fido2_pam: false
+
+extra_packages:
+  - openssh
+
+post_install_action: shutdown
