@@ -2,7 +2,7 @@ name: Build ISO
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, main]
     tags: ["v*"]
   pull_request:
     branches: [main]
@@ -39,6 +39,10 @@ jobs:
             mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
           done
           modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Patch mkarchiso for debug output
+        run: |
+          sed -i '2a set -x' "$(which mkarchiso)"
 
       - name: Build ISO
         run: |
@@ -123,6 +127,11 @@ jobs:
             mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
           done
           modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Patch mkarchiso for debug output
+        run: |
+          # Add set -x to mkarchiso so we can see exactly where it fails
+          sed -i '2a set -x' "$(which mkarchiso)"
 
       - name: Build ISO
         run: |
@@ -235,6 +244,7 @@ jobs:
             --repo Arkh-Ur/ouroborOS \
             --title "ouroborOS ${TAG}" \
             --target main \
+            --prerelease \
             --notes "$RELEASE_NOTES" \
             "$ISO" \
             "$CHECKSUM"
