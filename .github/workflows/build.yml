@@ -42,7 +42,7 @@ jobs:
 
       - name: Patch mkarchiso for debug output
         run: |
-          sed -i '2a set -x' "$(which mkarchiso)"
+          sed -i '2a set -x' "$(command -v mkarchiso)"
 
       - name: Build ISO
         run: |
@@ -131,7 +131,7 @@ jobs:
       - name: Patch mkarchiso for debug output
         run: |
           # Add set -x to mkarchiso so we can see exactly where it fails
-          sed -i '2a set -x' "$(which mkarchiso)"
+          sed -i '2a set -x' "$(command -v mkarchiso)"
 
       - name: Build ISO
         run: |
