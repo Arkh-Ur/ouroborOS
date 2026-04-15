@@ -40,6 +40,16 @@ jobs:
           done
           modprobe loop max_loop=8 2>/dev/null || true
 
+      - name: Debug mkarchiso
+        run: |
+          # Add set -x for trace, and add error trap to _make_efibootimg
+          MKARCHISO="$(command -v mkarchiso)"
+          echo "mkarchiso path: $MKARCHISO"
+          echo "=== Adding debug to mkarchiso ==="
+          sed -i '2a set -x' "$MKARCHISO"
+          # Add trap to _make_efibootimg to see the exact failure
+          sed -i '/^_make_efibootimg()/a\\n    trap '"'"'echo "TRAP: mkfs_fat_opts=${mkfs_fat_opts[*]} efibootimg=${efibootimg} imgsize_kib=${imgsize_kib}"'"'"' ERR' "$MKARCHISO"
+
       - name: Build ISO
         run: |
           bash src/scripts/build-iso.sh \
@@ -121,6 +131,12 @@ jobs:
             mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
           done
           modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Debug mkarchiso
+        run: |
+          MKARCHISO="$(command -v mkarchiso)"
+          sed -i '2a set -x' "$MKARCHISO"
+          sed -i '/^_make_efibootimg()/a\\n    trap '"'"'echo "TRAP: mkfs_fat_opts=${mkfs_fat_opts[*]} efibootimg=${efibootimg} imgsize_kib=${imgsize_kib}"'"'"' ERR' "$MKARCHISO"
 
       - name: Build ISO
         run: |
