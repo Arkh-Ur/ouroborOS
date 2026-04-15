@@ -30,6 +30,7 @@ amd-ucode
 
 # Network (live environment)
 iwd
+iw
 wireless_tools
 dhcpcd
 openssh
@@ -49,6 +50,10 @@ less
 nano
 vim
 
+# Shells (selectable at install time — bash is already in 'base')
+zsh
+fish
+
 # System tools
 htop
 rsync
@@ -59,5 +64,11 @@ git
 # Shellcheck (for dev/CI usage inside live)
 shellcheck
 
-# Container bootstrapping (our-box: Debian/Ubuntu containers)
+# Container bootstrapping (our-container: Debian/Ubuntu containers)
 debootstrap
+
+# Secure Boot key management (ouroboros-secureboot)
+sbctl
+
+# Flatpak (our-flat: sandboxed app delivery, Flathub opt-in)
+flatpak

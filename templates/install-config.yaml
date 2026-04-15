@@ -14,6 +14,16 @@ network:
   enable_networkd: true
   enable_iwd: true
   enable_resolved: true
+  # Optional: pre-configure WiFi for unattended installs.
+  # If ssid is set, passphrase is required.
+  # The passphrase is written to /var/lib/iwd/<SSID>.psk (chmod 600)
+  # and cleared from memory immediately after. Never persisted in checkpoints.
+  # wifi:
+  #   ssid: "MyNetwork"
+  #   passphrase: "my-secret-passphrase"
+  # Optional: enable bluetooth.service post-install (requires bluez package).
+  # bluetooth:
+  #   enable: false
 
 user:
   username: admin
@@ -23,10 +33,13 @@ user:
     - audio
     - video
     - input
-  shell: /bin/bash
   # systemd-homed storage backend for the home directory.
   # Options: subvolume (default, Btrfs) | luks | directory | classic
   homed_storage: subvolume
+
+# Login shell. Options: bash (default) | zsh | fish
+# zsh and fish are installed automatically if selected.
+shell: bash
 
 # Desktop profile — a starting-point package set. Optional; defaults to
 # "minimal" (no extra packages, TTY-only base) if omitted.

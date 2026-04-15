@@ -26,13 +26,13 @@ def project_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def our_box_script(project_root: Path) -> Path:
-    """Absolute path to the our-box script."""
-    return project_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+def our_container_script(project_root: Path) -> Path:
+    """Absolute path to the our-container script."""
+    return project_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
 
 # ---------------------------------------------------------------------------
-# Temporary directories that mimic our-box paths
+# Temporary directories that mimic our-container paths
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
@@ -101,11 +101,11 @@ def fake_container_with_subvol(fake_machines_root: Path) -> tuple[Path, str]:
 
 
 # ---------------------------------------------------------------------------
-# our-box command runner (subprocess wrapper)
+# our-container command runner (subprocess wrapper)
 # ---------------------------------------------------------------------------
 
 class OurBoxRunner:
-    """Thin wrapper to invoke our-box with environment overrides."""
+    """Thin wrapper to invoke our-container with environment overrides."""
 
     def __init__(
         self,
@@ -118,7 +118,7 @@ class OurBoxRunner:
         self.script = script
         self.env = dict(os.environ)
         if machines_root is not None:
-            # Override MACHINES_ROOT via wrapper env (our-box reads it from constant)
+            # Override MACHINES_ROOT via wrapper env (our-container reads it from constant)
             # We can't override the constant directly, so we use a temp wrapper
             self._machines_root = machines_root
         else:
@@ -138,7 +138,7 @@ set -euo pipefail
 readonly MACHINES_ROOT="{mr}"
 readonly SNAPSHOTS_ROOT="{mr}/.snapshots"
 readonly IMAGES_ROOT="{mr}/.images"
-readonly PROGRAM_NAME="our-box"
+readonly PROGRAM_NAME="our-container"
 '''
         # Read the original script and strip the first 3 constant lines + shebang + set
         original = self.script.read_text(encoding="utf-8")
@@ -164,7 +164,7 @@ readonly PROGRAM_NAME="our-box"
         machines_root: Path | None = None,
         timeout: int = 30,
     ) -> subprocess.CompletedProcess[str]:
-        """Run our-box with given arguments.
+        """Run our-container with given arguments.
 
         Returns the CompletedProcess. The wrapper is cleaned up after.
         """
@@ -179,7 +179,7 @@ readonly PROGRAM_NAME="our-box"
             )
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(
-                args=["our-box"] + args,
+                args=["our-container"] + args,
                 returncode=124,
                 stdout="",
                 stderr="timeout",
@@ -190,12 +190,12 @@ readonly PROGRAM_NAME="our-box"
 
 @pytest.fixture()
 def runner(
-    our_box_script: Path,
+    our_container_script: Path,
     fake_machines_root: Path,
 ) -> OurBoxRunner:
     """Create an OurBoxRunner that targets the fake machines root."""
     return OurBoxRunner(
-        script=our_box_script,
+        script=our_container_script,
         machines_root=fake_machines_root,
     )
 

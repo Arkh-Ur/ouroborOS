@@ -15,7 +15,7 @@ All core deliverables from `docs/PHASE_2_PLAN.md` are implemented and merged to 
 | Visual selector (↑↓ arrows) in TUI | ✅ |
 | FSM reorder: USER + DESKTOP before PARTITION | ✅ |
 | `our-pac` (renamed from `ouroboros-upgrade`, compat symlink) | ✅ |
-| `our-box` nspawn wrapper (17 commands, autostart service) | ✅ |
+| `our-container` nspawn wrapper (17 commands, autostart service) | ✅ |
 | `systemd-homed` migration service (first-boot oneshot) | ✅ |
 | Remote config URL prompt in INIT state | ✅ |
 | Reflector optimized: `--sort score` (server-side) | ✅ |
@@ -28,7 +28,7 @@ All core deliverables from `docs/PHASE_2_PLAN.md` are implemented and merged to 
 
 ### 1. Ruff lint errors in test files
 
-Four unused imports and one unused variable crept into the test suite via Phase 2 additions. Fixed in `src/installer/tests/conftest.py` and `src/installer/tests/test_our_box_integration.py`.
+Four unused imports and one unused variable crept into the test suite via Phase 2 additions. Fixed in `src/installer/tests/conftest.py` and `src/installer/tests/test_our_container_integration.py`.
 
 ### 2. PAM patch for Arch Linux (homed-migrate.sh)
 
@@ -70,7 +70,7 @@ Build ISO → Unattended install (11/11 states) → Boot → SSH → Verify syst
 - machine-id set (32-char hex)
 - DNSOverTLS=opportunistic in resolved.conf
 - zram swap active
-- `our-pac` and `our-box` binaries installed
+- `our-pac` and `our-container` binaries installed
 - `ouroboros-upgrade → our-pac` compat symlink present
 - User `hbuddenberg` in `wheel` group
 - EFI binary present
@@ -131,7 +131,7 @@ tail -f /tmp/ouroboros-serial-install.log
 | File | Change |
 |------|--------|
 | `src/installer/tests/conftest.py` | Remove unused imports and variable |
-| `src/installer/tests/test_our_box_integration.py` | Remove unused import |
+| `src/installer/tests/test_our_container_integration.py` | Remove unused import |
 | `src/ouroborOS-profile/airootfs/usr/local/lib/ouroboros/homed-migrate.sh` | Arch-aware PAM patch, nsswitch update, error logging |
 | `src/ouroborOS-profile/airootfs/etc/ouroborOS/e2e-config.yaml` | Removed |
 | `src/ouroborOS-profile/airootfs/etc/systemd/system/ouroborOS-installer.service.d/e2e-unattended.conf` | Removed |

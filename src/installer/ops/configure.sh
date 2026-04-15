@@ -35,6 +35,11 @@ set -euo pipefail
 : "${ENABLE_LUKS:='0'}"
 : "${HOMED_STORAGE:='subvolume'}"
 : "${ROOT_DEVICE:=''}"
+: "${WIFI_SSID:=''}"
+: "${WIFI_PASSPHRASE:=''}"
+: "${BLUETOOTH_ENABLE:='0'}"
+: "${FIDO2_PAM:='0'}"
+: "${DESKTOP_AUR_PACKAGES:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -157,6 +162,26 @@ EOF
 
     in_chroot mkinitcpio -P
 
+    # Verify both initramfs images exist on the ESP (${TARGET}/boot).
+    # The fallback image may fail silently if the ESP is too small (512 MiB
+    # can be tight with linux-firmware embedded).  Log clearly so we can
+    # diagnose missing-file issues at boot time.
+    local -A _expected_images=(
+        ["main"]="${TARGET}/boot/initramfs-linux-zen.img"
+        ["fallback"]="${TARGET}/boot/initramfs-linux-zen-fallback.img"
+    )
+    for _name in main fallback; do
+        if [[ -f "${_expected_images[$_name]}" ]]; then
+            local _size
+            _size=$(du -sh "${_expected_images[$_name]}" | cut -f1)
+            log_ok "initramfs (${_name}): ${_expected_images[$_name]} (${_size})"
+        else
+            log_warn "initramfs (${_name}) MISSING: ${_expected_images[$_name]}"
+            log_warn "If this is the fallback, the boot entry will fail. Consider increasing ESP size."
+        fi
+    done
+    unset _expected_images _name _size
+
     log_ok "Initramfs generated."
 }
 
@@ -245,12 +270,16 @@ ${ucode_initrd_lines}initrd  /initramfs-linux-zen.img
 options ${kernel_params}
 EOF
 
-    cat > "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf" << EOF
+    if [[ -f "${TARGET}/boot/initramfs-linux-zen-fallback.img" ]]; then
+        cat > "${TARGET}/boot/loader/entries/ouroborOS-fallback.conf" << EOF
 title   ouroborOS (fallback initramfs)
 linux   /vmlinuz-linux-zen
 ${ucode_initrd_lines}initrd  /initramfs-linux-zen-fallback.img
 options ${kernel_params}
 EOF
+    else
+        log_warn "Skipping fallback boot entry — initramfs-linux-zen-fallback.img not found on ESP."
+    fi
 
     cat > "${TARGET}/boot/loader/loader.conf" << 'EOF'
 default  ouroborOS.conf
@@ -336,9 +365,193 @@ EnableIPv6=true
 RoutePriorityOffset=300
 EOF
         in_chroot systemctl enable iwd.service
+
+        # Pre-configure WiFi if SSID + passphrase were provided (unattended installs).
+        # Format: /var/lib/iwd/<SSID>.psk (chmod 600, dir chmod 700).
+        # SSIDs with special characters (spaces, =, etc.) use hex-encoded filenames.
+        if [[ -n "${WIFI_SSID:-}" && -n "${WIFI_PASSPHRASE:-}" ]]; then
+            local iwd_dir="${TARGET}/var/lib/iwd"
+            mkdir -p "$iwd_dir"
+            chmod 700 "$iwd_dir"
+
+            # Determine PSK filename.
+            # SSID must be hex-encoded if it contains: =, space, or non-ASCII chars.
+            local psk_file
+            if [[ "$WIFI_SSID" =~ [^[:print:]] || "$WIFI_SSID" =~ [=\ ] ]]; then
+                # Hex-encode: iwd format is =<hex_of_ssid>.psk
+                local ssid_hex
+                ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -tx1 | tr -d ' \n')
+                psk_file="${iwd_dir}/=${ssid_hex}.psk"
+            else
+                psk_file="${iwd_dir}/${WIFI_SSID}.psk"
+            fi
+
+            cat > "$psk_file" << EOF
+[Security]
+Passphrase=${WIFI_PASSPHRASE}
+EOF
+            chmod 600 "$psk_file"
+            log_ok "WiFi pre-configured for SSID '${WIFI_SSID}' (PSK written, passphrase NOT logged)."
+
+            # Security: clear passphrase from env immediately after writing
+            WIFI_PASSPHRASE=""
+        fi
+    fi
+
+    # Bluetooth: enable bluetooth.service + configure experimental LE for FIDO2.
+    # bluez must be installed (not in the default package set — user must add it
+    # via extra_packages or our-pac post-install).
+    if [[ "${BLUETOOTH_ENABLE:-0}" == "1" ]]; then
+        if in_chroot pacman -Qi bluez &>/dev/null 2>&1; then
+            in_chroot systemctl enable bluetooth.service
+            log_ok "bluetooth.service enabled."
+
+            # Install libfido2 for FIDO2/WebAuthn/passkey support (USB + BLE).
+            # libfido2 provides:
+            #   - fido2-token, fido2-cred, fido2-assert CLI tools
+            #   - /usr/lib/udev/rules.d/70-u2f.rules (USB FIDO2 HID access rules)
+            # Required for our-fido2 and for browser WebAuthn with physical keys.
+            if in_chroot pacman -Qi libfido2 &>/dev/null 2>&1; then
+                log_ok "libfido2 already installed."
+            else
+                log_info "Installing libfido2 for FIDO2/WebAuthn support..."
+                if in_chroot pacman -S --noconfirm libfido2 2>/dev/null; then
+                    log_ok "libfido2 installed."
+                else
+                    log_warn "Could not install libfido2 — FIDO2 management tools unavailable."
+                    log_warn "Install after first boot: sudo our-pac -S libfido2"
+                fi
+            fi
+
+            # Configure BlueZ experimental LE mode.
+            # Required for CTAP2 hybrid transport (QR code passkey flow) and for
+            # the BLE AdvertisingMonitor API used by Chrome/Firefox on Linux.
+            local bt_drop_in_dir="${TARGET}/etc/systemd/system/bluetooth.service.d"
+            local bt_drop_in="${bt_drop_in_dir}/experimental.conf"
+            if [[ ! -f "$bt_drop_in" ]]; then
+                mkdir -p "$bt_drop_in_dir"
+                cat > "$bt_drop_in" << 'BT_DROPIN'
+# Installed by ouroborOS configure.sh (BLUETOOTH_ENABLE=1)
+# Enables BlueZ experimental D-Bus APIs required for:
+#   - CTAP2 hybrid transport (QR code passkey flow) via AdvertisingMonitor API
+#   - BLE FIDO2 GATT profile improvements
+[Service]
+ExecStart=
+ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+BT_DROPIN
+                log_ok "BlueZ experimental mode drop-in written."
+            fi
+
+            # Install BlueZ main.conf (experimental LE tuning for FIDO2).
+            # The source is the live ISO's own /etc/bluetooth/main.conf,
+            # which was placed there by the ouroborOS airootfs profile.
+            local bt_conf_dir="${TARGET}/etc/bluetooth"
+            if [[ ! -f "${bt_conf_dir}/main.conf" ]]; then
+                mkdir -p "$bt_conf_dir"
+                if [[ -f /etc/bluetooth/main.conf ]]; then
+                    cp /etc/bluetooth/main.conf "${bt_conf_dir}/main.conf"
+                    log_ok "/etc/bluetooth/main.conf installed (experimental LE + GATT tuning)."
+                else
+                    # Fallback: write a minimal config inline
+                    cat > "${bt_conf_dir}/main.conf" << 'BT_CONF'
+[General]
+Experimental = true
+KernelExperimental = true
+FastConnectable = true
+
+[Policy]
+AutoEnable = true
+
+[LE]
+MinConnectionInterval = 6
+MaxConnectionInterval = 9
+ConnectionLatency = 0
+ConnectionSupervisionTimeout = 100
+AdvMonAllowlistScanDuration = 300
+AdvMonNoFilterScanDuration = 10
+EnableAdvMonInterleaveScan = 1
+
+[GATT]
+Cache = yes
+KeySize = 0
+ExchangeMTU = 517
+Channels = 3
+BT_CONF
+                    log_ok "/etc/bluetooth/main.conf written (inline fallback)."
+                fi
+            fi
+
+            # Install BLE FIDO2 udev rules (supplement libfido2 USB rules with BLE HID-over-GATT).
+            # Source: live ISO's /etc/udev/rules.d/71-fido2-ble.rules (from airootfs).
+            local udev_rules_dir="${TARGET}/etc/udev/rules.d"
+            local ble_udev="${udev_rules_dir}/71-fido2-ble.rules"
+            if [[ ! -f "$ble_udev" ]]; then
+                mkdir -p "$udev_rules_dir"
+                if [[ -f /etc/udev/rules.d/71-fido2-ble.rules ]]; then
+                    cp /etc/udev/rules.d/71-fido2-ble.rules "$ble_udev"
+                    log_ok "BLE FIDO2 udev rules installed (71-fido2-ble.rules)."
+                else
+                    log_warn "71-fido2-ble.rules not found in live ISO — skipping."
+                    log_warn "Install after first boot from: our-fido2 qr-ready"
+                fi
+            fi
+
+        else
+            log_warn "BLUETOOTH_ENABLE=1 but bluez is not installed — skipping."
+            log_warn "Install after first boot with: sudo our-pac -S bluez bluez-utils libfido2"
+        fi
     fi
 
     log_ok "Network configured."
+}
+
+# --- Step 6b: FIDO2 PAM integration ----------------------------------------
+
+configure_fido2_pam() {
+    # Install pam-u2f and pre-configure PAM for FIDO2 sudo + login.
+    # The user must still register their token post-install:
+    #   our-fido2 pam register --system
+    #   our-fido2 pam enable sudo login
+    #
+    # This step only installs pam-u2f and creates the empty authfile so that
+    # the PAM module doesn't error if the file is missing.
+
+    [[ "${FIDO2_PAM:-0}" == "1" ]] || return 0
+
+    log_info "Configuring FIDO2 PAM integration (pam-u2f)..."
+
+    # Install pam-u2f (Yubico's PAM module, available in Arch official repos)
+    if in_chroot pacman -Qi pam-u2f &>/dev/null 2>&1; then
+        log_ok "pam-u2f already installed."
+    else
+        log_info "Installing pam-u2f..."
+        if in_chroot pacman -S --noconfirm pam-u2f 2>/dev/null; then
+            log_ok "pam-u2f installed."
+        else
+            log_warn "Could not install pam-u2f — FIDO2 PAM integration skipped."
+            log_warn "Install after first boot: sudo our-pac -S pam-u2f"
+            return 0
+        fi
+    fi
+
+    # Create empty system authfile so pam_u2f doesn't fail before registration
+    local authfile="${TARGET}/etc/u2f_mappings"
+    if [[ ! -f "$authfile" ]]; then
+        touch "$authfile"
+        chmod 600 "$authfile"
+        log_ok "Created empty FIDO2 authfile: /etc/u2f_mappings"
+    fi
+
+    # Note: we do NOT configure /etc/pam.d/* here — that would lock the user
+    # out before they register a token. The user runs:
+    #   our-fido2 pam register --system
+    #   our-fido2 pam enable sudo login
+    # after first boot once their token is present.
+
+    log_info "FIDO2 PAM ready. Register your token after first boot:"
+    log_info "  sudo our-fido2 pam register --system"
+    log_info "  sudo our-fido2 pam enable sudo login"
+    log_ok "FIDO2 PAM integration configured."
 }
 
 # --- Step 7: zram swap ------------------------------------------------------
@@ -363,6 +576,13 @@ EOF
 
 configure_users() {
     log_info "Creating user account: ${USERNAME}"
+
+    # Ensure the chosen shell is registered in /etc/shells inside the target.
+    # Some shells (e.g. fish) may not add themselves during pacstrap.
+    if ! grep -qx "$USER_SHELL" "${TARGET}/etc/shells" 2>/dev/null; then
+        echo "$USER_SHELL" >> "${TARGET}/etc/shells"
+        log_info "Registered shell in /etc/shells: ${USER_SHELL}"
+    fi
 
     # Create user
     in_chroot useradd \
@@ -563,43 +783,91 @@ SCRIPT
     chmod 0755 "${TARGET}/usr/local/bin/our-pac"
     log_ok "our-pac installed."
 
-    # our-box — full-featured systemd-nspawn container wrapper for ouroborOS.
+    # our-container — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
     # storage management, image management, monitoring, diagnostics, and stats).
     # Falls back to a minimal inline version if the ISO copy is missing.
-    local OUR_BOX_SRC="/usr/local/bin/our-box"
-    if [[ -f "${OUR_BOX_SRC}" && -r "${OUR_BOX_SRC}" ]]; then
-        cp "${OUR_BOX_SRC}" "${TARGET}/usr/local/bin/our-box"
-        chmod 0755 "${TARGET}/usr/local/bin/our-box"
-        log_ok "our-box installed (copied full version from live ISO)."
+    local OUR_CONTAINER_SRC="/usr/local/bin/our-container"
+    if [[ -f "${OUR_CONTAINER_SRC}" && -r "${OUR_CONTAINER_SRC}" ]]; then
+        cp "${OUR_CONTAINER_SRC}" "${TARGET}/usr/local/bin/our-container"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container"
+        log_ok "our-container installed (copied full version from live ISO)."
     else
-        log_warn "our-box not found on live ISO at ${OUR_BOX_SRC} — installing minimal stub"
-        cat > "${TARGET}/usr/local/bin/our-box" << 'STUB'
+        log_warn "our-container not found on live ISO at ${OUR_CONTAINER_SRC} — installing minimal stub"
+        cat > "${TARGET}/usr/local/bin/our-container" << 'STUB'
 #!/usr/bin/env bash
-# our-box — minimal stub (full version was not available on the ISO at install time)
+# our-container — minimal stub (full version was not available on the ISO at install time)
 set -euo pipefail
-die() { echo "our-box: $*" >&2; exit 1; }
-echo "our-box: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
+die() { echo "our-container: $*" >&2; exit 1; }
+echo "our-container: full version not installed. Reinstall with: sudo our-pac -S ouroboros-scripts" >&2
 exit 1
 STUB
-        chmod 0755 "${TARGET}/usr/local/bin/our-box"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container"
     fi
 
-    # our-box-autostart — oneshot service that starts containers listed in
-    # /etc/our-box/autostart.conf at boot.  The wrapper script reads the conf
-    # and calls `our-box start <name>` for each entry.
-    local AUTOSTART_SRC="/usr/local/bin/our-box-autostart"
+    # Phase 3 user-facing tools — copy from live ISO to installed system.
+    # These tools live in airootfs/usr/local/bin/ on the ISO and must be
+    # explicitly copied; pacstrap does not pick them up from the live environment.
+    local _p3_tools=(
+        our-snapshot
+        our-rollback
+        our-wifi
+        our-bluetooth
+        our-fido2
+        our-flat
+        our-aur
+        ouroboros-secureboot
+    )
+    for _tool in "${_p3_tools[@]}"; do
+        local _src="/usr/local/bin/${_tool}"
+        if [[ -f "${_src}" && -r "${_src}" ]]; then
+            cp "${_src}" "${TARGET}/usr/local/bin/${_tool}"
+            chmod 0755 "${TARGET}/usr/local/bin/${_tool}"
+            log_ok "${_tool} installed."
+        else
+            log_warn "${_tool} not found on live ISO at ${_src} — skipping."
+        fi
+    done
+    unset _p3_tools _tool _src
+
+    # Phase 3 Bluetooth/FIDO2 config files — copy from live ISO.
+    # /etc/bluetooth/main.conf: BLE LE tuning (MTU, AdvMon scan duration).
+    # experimental.conf drop-in: enables bluetoothd --experimental (CTAP2 hybrid QR).
+    # 71-fido2-ble.rules: udev rules for HID-over-GATT BLE FIDO2 tokens.
+    local _bt_main_src="/etc/bluetooth/main.conf"
+    if [[ -f "${_bt_main_src}" ]]; then
+        mkdir -p "${TARGET}/etc/bluetooth"
+        cp "${_bt_main_src}" "${TARGET}/etc/bluetooth/main.conf"
+        log_ok "Bluetooth main.conf installed (BLE LE tuning)."
+    fi
+    local _bt_exp_src="/etc/systemd/system/bluetooth.service.d/experimental.conf"
+    if [[ -f "${_bt_exp_src}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system/bluetooth.service.d"
+        cp "${_bt_exp_src}" "${TARGET}/etc/systemd/system/bluetooth.service.d/experimental.conf"
+        log_ok "BlueZ experimental mode drop-in installed."
+    fi
+    local _fido2_udev_src="/etc/udev/rules.d/71-fido2-ble.rules"
+    if [[ -f "${_fido2_udev_src}" ]]; then
+        mkdir -p "${TARGET}/etc/udev/rules.d"
+        cp "${_fido2_udev_src}" "${TARGET}/etc/udev/rules.d/71-fido2-ble.rules"
+        log_ok "FIDO2 BLE udev rules installed."
+    fi
+
+    # our-container-autostart — oneshot service that starts containers listed in
+    # /etc/our-container/autostart.conf at boot.  The wrapper script reads the conf
+    # and calls `our-container start <name>` for each entry.
+    local AUTOSTART_SRC="/usr/local/bin/our-container-autostart"
     if [[ -f "${AUTOSTART_SRC}" && -r "${AUTOSTART_SRC}" ]]; then
-        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-box-autostart"
-        chmod 0755 "${TARGET}/usr/local/bin/our-box-autostart"
+        cp "${AUTOSTART_SRC}" "${TARGET}/usr/local/bin/our-container-autostart"
+        chmod 0755 "${TARGET}/usr/local/bin/our-container-autostart"
     fi
 
     # Install the systemd unit file for autostart
-    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-box-autostart.service"
+    local AUTOSTART_UNIT_SRC="/etc/systemd/system/our-container-autostart.service"
     if [[ -f "${AUTOSTART_UNIT_SRC}" && -r "${AUTOSTART_UNIT_SRC}" ]]; then
         mkdir -p "${TARGET}/etc/systemd/system"
-        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-box-autostart.service"
-        log_ok "our-box-autostart.service installed."
+        cp "${AUTOSTART_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-container-autostart.service"
+        log_ok "our-container-autostart.service installed."
     fi
 
     cat > "${TARGET}/usr/local/bin/our-post-upgrade" << 'SCRIPT'
@@ -640,9 +908,11 @@ SCRIPT
 configure_os_release() {
     log_info "Writing os-release..."
 
-    cat > "${TARGET}/etc/os-release" << 'EOF'
+    local version="${ISO_VERSION:-rolling}"
+
+    cat > "${TARGET}/etc/os-release" << EOF
 NAME="ouroborOS"
-PRETTY_NAME="ouroborOS 0.1.0"
+PRETTY_NAME="ouroborOS ${version}"
 ID=ouroboros
 ID_LIKE=arch
 BUILD_ID=rolling
@@ -650,9 +920,9 @@ ANSI_COLOR="38;2;23;147;209"
 HOME_URL="https://github.com/Arkhur-Vo/ouroborOS"
 SUPPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
 BUG_REPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
-VERSION_ID="0.1.0"
+VERSION_ID="${version}"
 EOF
-    log_ok "os-release written."
+    log_ok "os-release written (version: ${version})."
 }
 
 # --- Step 11: systemd-homed migration setup ---------------------------------
@@ -722,6 +992,7 @@ main() {
     configure_initramfs
     configure_bootloader
     configure_network
+    configure_fido2_pam
     configure_zram
     configure_users
     configure_immutable_root
@@ -742,27 +1013,73 @@ main() {
     # leave DESKTOP_DM empty and log in from tty.
     if [[ -n "${DESKTOP_DM:-}" ]]; then
         in_chroot systemctl enable "${DESKTOP_DM}.service"
+        in_chroot systemctl daemon-reload
+        in_chroot systemctl set-default graphical.target
         log_ok "Display manager enabled: ${DESKTOP_DM}."
     else
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
     fi
 
-    # our-box autostart — copy default config and enable service if containers are listed.
+    # our-container autostart — copy default config and enable service if containers are listed.
     # The autostart.conf shipped in the ISO is empty (comments only); users add container
     # names post-install.  During unattended installs the config can be pre-populated.
-    local AUTOSTART_CONF_SRC="/etc/our-box/autostart.conf"
-    mkdir -p "${TARGET}/etc/our-box"
+    local AUTOSTART_CONF_SRC="/etc/our-container/autostart.conf"
+    mkdir -p "${TARGET}/etc/our-container"
     if [[ -f "${AUTOSTART_CONF_SRC}" && -r "${AUTOSTART_CONF_SRC}" ]]; then
-        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-box/autostart.conf"
+        cp "${AUTOSTART_CONF_SRC}" "${TARGET}/etc/our-container/autostart.conf"
     fi
 
     # Enable the service only if autostart.conf has at least one real entry
-    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-box/autostart.conf" 2>/dev/null; then
-        in_chroot systemctl enable our-box-autostart.service
-        log_ok "our-box-autostart.service enabled (containers found in autostart.conf)."
+    if grep -qE '^[[:space:]]*[^#[:space:]]' "${TARGET}/etc/our-container/autostart.conf" 2>/dev/null; then
+        in_chroot systemctl enable our-container-autostart.service
+        log_ok "our-container-autostart.service enabled (containers found in autostart.conf)."
     else
-        log_info "our-box-autostart.service not enabled (no containers in autostart.conf)."
+        log_info "our-container-autostart.service not enabled (no containers in autostart.conf)."
     fi
+
+    # our-snapshot-prune.timer — daily automatic snapshot rotation.
+    # Keeps at most 5 snapshots, removes snapshots older than 30 days.
+    # The timer is installed from the ISO; enable it unconditionally.
+    local PRUNE_UNIT_SRC="/etc/systemd/system/our-snapshot-prune.service"
+    local PRUNE_TIMER_SRC="/etc/systemd/system/our-snapshot-prune.timer"
+    if [[ -f "${PRUNE_UNIT_SRC}" && -f "${PRUNE_TIMER_SRC}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${PRUNE_UNIT_SRC}" "${TARGET}/etc/systemd/system/our-snapshot-prune.service"
+        cp "${PRUNE_TIMER_SRC}" "${TARGET}/etc/systemd/system/our-snapshot-prune.timer"
+        in_chroot systemctl enable our-snapshot-prune.timer
+        log_ok "our-snapshot-prune.timer enabled (daily snapshot rotation)."
+    else
+        log_warn "our-snapshot-prune units not found on live ISO — skipping."
+    fi
+
+    # ouroboros-firstboot — one-shot service that runs on the first real boot.
+    # Handles: reflector mirror update, machine-id check, enable btrfs-scrub timer,
+    #          systemd-sysext merge, and lazy AUR package install via our-aur.
+    local FIRSTBOOT_SRC="/usr/local/bin/ouroboros-firstboot"
+    local FIRSTBOOT_UNIT_SRC="/etc/systemd/system/ouroboros-firstboot.service"
+    if [[ -f "${FIRSTBOOT_SRC}" && -f "${FIRSTBOOT_UNIT_SRC}" ]]; then
+        cp "${FIRSTBOOT_SRC}" "${TARGET}/usr/local/bin/ouroboros-firstboot"
+        chmod 0755 "${TARGET}/usr/local/bin/ouroboros-firstboot"
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${FIRSTBOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-firstboot.service"
+        in_chroot systemctl enable ouroboros-firstboot.service
+        log_ok "ouroboros-firstboot.service installed and enabled."
+
+        # Write AUR package list for lazy firstboot install
+        if [[ -n "${DESKTOP_AUR_PACKAGES:-}" ]]; then
+            mkdir -p "${TARGET}/var/lib/ouroborOS"
+            echo "${DESKTOP_AUR_PACKAGES}" > "${TARGET}/var/lib/ouroborOS/firstboot-aur-packages.txt"
+            log_ok "AUR packages queued for firstboot install: ${DESKTOP_AUR_PACKAGES}"
+        fi
+    else
+        log_warn "ouroboros-firstboot not found on live ISO — skipping."
+    fi
+
+    # /var/lib/extensions — required by systemd-sysext and our-aur.
+    # systemd-sysext expects this directory to exist at merge time.
+    mkdir -p "${TARGET}/var/lib/extensions"
+    chmod 0755 "${TARGET}/var/lib/extensions"
+    log_ok "/var/lib/extensions created (systemd-sysext / our-aur)."
 
     # sshd_config: disable reverse DNS lookup.
     # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
@@ -821,12 +1138,12 @@ main() {
     _write_etc_to_root() {
         local mnt="$1"
         mkdir -p "${mnt}/etc"
-        for f in machine-id passwd group shadow gshadow; do
+        for f in machine-id passwd group shadow gshadow crypttab; do
             if [[ -f "${TARGET}/etc/${f}" ]]; then
                 cp "${TARGET}/etc/${f}" "${mnt}/etc/${f}"
             fi
         done
-        log_ok "Critical /etc files written to @ subvolume (machine-id, passwd, group, shadow, gshadow)."
+        log_ok "Critical /etc files written to @ subvolume (machine-id, passwd, group, shadow, gshadow, crypttab)."
     }
     write_to_root_subvolume _write_etc_to_root || true
 
@@ -887,6 +1204,25 @@ main() {
             mkdir -p "${mnt}/etc/systemd"
             cp "${TARGET}/etc/systemd/zram-generator.conf" "${mnt}/etc/systemd/zram-generator.conf"
             log_ok "zram-generator.conf mirrored to @ subvolume."
+        fi
+
+        # Mirror ouroboros-firstboot service: must be visible at first boot
+        # before @etc is mounted, so the unit is found when multi-user.target.wants
+        # symlink is evaluated.
+        if [[ -f "${TARGET}/etc/systemd/system/ouroboros-firstboot.service" ]]; then
+            mkdir -p "${mnt}/etc/systemd/system"
+            cp "${TARGET}/etc/systemd/system/ouroboros-firstboot.service" \
+                "${mnt}/etc/systemd/system/ouroboros-firstboot.service"
+        fi
+
+        # Mirror display-manager.service alias: graphical.target wants
+        # display-manager.service, but the Alias= symlink created by
+        # `systemctl enable sddm` lives in @etc and is invisible to systemd
+        # at early boot.  Without this, SDDM/GDM never starts on the installed
+        # system because systemd cannot resolve the alias.
+        if [[ -L "${src}/display-manager.service" ]]; then
+            cp -a "${src}/display-manager.service" "${dst}/display-manager.service"
+            log_ok "display-manager.service alias mirrored to @ subvolume."
         fi
 
         # Mirror homed migration service + config: systemd-homed starts before

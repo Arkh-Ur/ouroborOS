@@ -17,7 +17,13 @@ from pathlib import Path
 
 import yaml
 
-from installer.desktop_profiles import VALID_DMS, VALID_PROFILES
+from installer.desktop_profiles import (
+    VALID_DMS,
+    VALID_PROFILES,
+    VALID_SHELLS,
+    aur_packages_for,
+    shell_path,
+)
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -32,6 +38,16 @@ class NetworkConfig:
     enable_networkd: bool = True
     enable_iwd: bool = True
     enable_resolved: bool = True
+
+    # WiFi pre-configuration (unattended installs / first-boot).
+    # These fields are transient — written to /var/lib/iwd/*.psk (chmod 600)
+    # during CONFIGURE state, then cleared from the checkpoint.
+    # If wifi_ssid is set, wifi_passphrase is required.
+    wifi_ssid: str = ""
+    wifi_passphrase: str = ""  # Transient — cleared after iwd PSK is written
+
+    # Bluetooth: enable bluetooth.service post-install (requires bluez).
+    bluetooth_enable: bool = False
 
 
 @dataclass
@@ -57,6 +73,10 @@ class DesktopConfig:
 
     profile: str = "minimal"  # minimal | hyprland | niri | gnome | kde
     dm: str = "auto"          # auto | gdm | sddm | none
+    # AUR packages resolved from the profile at load time (not stored in YAML).
+    # Populated by load_config() / _build_config() from desktop_profiles.
+    # Passed to ouroboros-firstboot for lazy build via our-aur.
+    aur_packages: list = field(default_factory=list)
 
 
 @dataclass
@@ -80,6 +100,23 @@ class LocaleConfig:
 
 
 @dataclass
+class SecurityConfig:
+    """Security configuration: Secure Boot + FIDO2 PAM integration."""
+
+    secure_boot: bool = False
+    # Include Microsoft OEM keys when enrolling (sbctl enroll-keys -m).
+    # Required for dual-boot systems or hardware with pre-signed Option ROMs.
+    sbctl_include_ms_keys: bool = False
+
+    # FIDO2 PAM integration.
+    # When true, installs pam-u2f and configures /etc/pam.d/sudo + login
+    # to accept a FIDO2 hardware token as authentication factor (sufficient).
+    # The user must register their token post-install with:
+    #   our-fido2 pam register --system
+    fido2_pam: bool = False
+
+
+@dataclass
 class InstallerConfig:
     """Complete installation configuration.
 
@@ -92,6 +129,7 @@ class InstallerConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     user: UserConfig = field(default_factory=UserConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -166,6 +204,18 @@ def validate_config(data: dict) -> None:
         raise ConfigValidationError(
             f"network.hostname is not a valid hostname: {hostname!r}"
         )
+    wifi = network.get("wifi", {}) or {}
+    if wifi:
+        wifi_ssid = wifi.get("ssid", "")
+        wifi_pass = wifi.get("passphrase", "")
+        if wifi_ssid and not wifi_pass:
+            raise ConfigValidationError(
+                "network.wifi.passphrase is required when network.wifi.ssid is set"
+            )
+        if wifi_pass and not wifi_ssid:
+            raise ConfigValidationError(
+                "network.wifi.ssid is required when network.wifi.passphrase is set"
+            )
 
     # user section
     user = data["user"]
@@ -184,6 +234,26 @@ def validate_config(data: dict) -> None:
             f"user.homed_storage must be one of "
             f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
         )
+    # shell (top-level, optional — defaults to "bash")
+    shell = data.get("shell", "bash")
+    if shell not in VALID_SHELLS:
+        raise ConfigValidationError(
+            f"shell must be one of {sorted(VALID_SHELLS)}, got: {shell!r}"
+        )
+
+    # security section (optional — defaults to secure_boot: false)
+    security = data.get("security", {}) or {}
+    if security:
+        secure_boot = security.get("secure_boot", False)
+        if not isinstance(secure_boot, bool):
+            raise ConfigValidationError(
+                "security.secure_boot must be a boolean (true/false)"
+            )
+        fido2_pam = security.get("fido2_pam", False)
+        if not isinstance(fido2_pam, bool):
+            raise ConfigValidationError(
+                "security.fido2_pam must be a boolean (true/false)"
+            )
 
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})
@@ -256,6 +326,11 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
     cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
     cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
+    wifi_cfg = net.get("wifi", {}) or {}
+    cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
+    cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))
+    bt_cfg = net.get("bluetooth", {}) or {}
+    cfg.network.bluetooth_enable = bool(bt_cfg.get("enable", False))
 
     # User
     usr = data["user"]
@@ -274,13 +349,20 @@ def load_config(path: Path) -> InstallerConfig:
         cfg.user.password_hash = result.stdout.strip()
         cfg.user.password_plaintext = plaintext
     cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
-    cfg.user.shell = str(usr.get("shell", "/bin/bash"))
+    cfg.user.shell = shell_path(str(data.get("shell", "bash")))
     cfg.user.homed_storage = str(usr.get("homed_storage", "subvolume"))
 
     # Desktop profile (optional)
     desk = data.get("desktop", {}) or {}
     cfg.desktop.profile = str(desk.get("profile", "minimal"))
     cfg.desktop.dm = str(desk.get("dm", "auto"))
+    cfg.desktop.aur_packages = aur_packages_for(cfg.desktop.profile)
+
+    # Security (optional)
+    sec = data.get("security", {}) or {}
+    cfg.security.secure_boot = bool(sec.get("secure_boot", False))
+    cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
+    cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))

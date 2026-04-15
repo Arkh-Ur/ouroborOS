@@ -5,7 +5,8 @@ Each state corresponds to one installation phase. If the installer
 is interrupted, it can resume from the last completed checkpoint.
 
 State flow:
-    INIT → PREFLIGHT → LOCALE → PARTITION → FORMAT → INSTALL
+    INIT → NETWORK_SETUP → PREFLIGHT → LOCALE → USER → DESKTOP
+         → SECURE_BOOT → PARTITION → FORMAT → INSTALL
          → CONFIGURE → SNAPSHOT → FINISH
 
 Error states:
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -26,10 +28,13 @@ from pathlib import Path
 
 from installer.config import InstallerConfig, find_unattended_config, load_config, load_config_from_url
 from installer.desktop_profiles import (
+    aur_packages_for,
     dm_package,
     dm_service,
     packages_for,
     resolve_dm,
+    shell_package,
+    shell_path,
 )
 from installer.tui import TUI
 
@@ -50,19 +55,35 @@ logging.basicConfig(
 
 log = logging.getLogger("installer")
 
+
+def _read_iso_version() -> str:
+    """Read iso_version from the profiledef.sh installed on the live ISO."""
+    candidates = [
+        Path("/usr/lib/ouroborOS/installer/profiledef.sh"),
+        Path("/home/hbuddenberg/developments/ouroborOS/src/ouroborOS-profile/profiledef.sh"),
+    ]
+    for path in candidates:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            m = re.search(r'iso_version="([^"]+)"', text)
+            if m:
+                return m.group(1)
+    return "rolling"
+
 # ---------------------------------------------------------------------------
 # State enum
 # ---------------------------------------------------------------------------
 
 
 class State(Enum):
-    """All states of the ouroborOS installer FSM."""
 
     INIT = auto()
+    NETWORK_SETUP = auto()
     PREFLIGHT = auto()
     LOCALE = auto()
     USER = auto()
     DESKTOP = auto()
+    SECURE_BOOT = auto()
     PARTITION = auto()
     FORMAT = auto()
     INSTALL = auto()
@@ -80,10 +101,12 @@ class State(Enum):
 # is wiped — we never ask the user anything after that point.
 _STATE_ORDER: list[State] = [
     State.INIT,
+    State.NETWORK_SETUP,
     State.PREFLIGHT,
     State.LOCALE,
     State.USER,
     State.DESKTOP,
+    State.SECURE_BOOT,
     State.PARTITION,
     State.FORMAT,
     State.INSTALL,
@@ -94,11 +117,13 @@ _STATE_ORDER: list[State] = [
 
 _STEP_RANGES: dict[State, tuple[int, int]] = {
     State.INIT: (0, 3),
-    State.PREFLIGHT: (3, 8),
-    State.LOCALE: (8, 13),
-    State.USER: (13, 16),
-    State.DESKTOP: (16, 20),
-    State.PARTITION: (20, 30),
+    State.NETWORK_SETUP: (3, 6),
+    State.PREFLIGHT: (6, 10),
+    State.LOCALE: (10, 14),
+    State.USER: (14, 17),
+    State.DESKTOP: (17, 21),
+    State.SECURE_BOOT: (21, 23),
+    State.PARTITION: (23, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
     State.CONFIGURE: (70, 90),
@@ -108,10 +133,12 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
 
 _STEP_LABELS: dict[State, str] = {
     State.INIT: "Iniciando",
+    State.NETWORK_SETUP: "Conectando a la red",
     State.PREFLIGHT: "Verificando requisitos",
     State.LOCALE: "Configurando idioma",
     State.USER: "Creando usuario",
     State.DESKTOP: "Seleccionando escritorio",
+    State.SECURE_BOOT: "Configurando Secure Boot",
     State.PARTITION: "Seleccionando disco",
     State.FORMAT: "Preparando disco",
     State.INSTALL: "Instalando paquetes",
@@ -201,10 +228,12 @@ class Installer:
         self._config_path = config_path
         self._handler_map: dict[State, Callable[[], None]] = {
             State.INIT: self._handle_init,
+            State.NETWORK_SETUP: self._handle_network_setup,
             State.PREFLIGHT: self._handle_preflight,
             State.LOCALE: self._handle_locale,
             State.USER: self._handle_user,
             State.DESKTOP: self._handle_desktop,
+            State.SECURE_BOOT: self._handle_secure_boot,
             State.PARTITION: self._handle_partition,
             State.FORMAT: self._handle_format,
             State.INSTALL: self._handle_install,
@@ -327,6 +356,30 @@ class Installer:
                     )
                 # Fall through to interactive mode — TUI is still alive
 
+    def _handle_network_setup(self) -> None:
+        """NETWORK_SETUP — detect connectivity, offer WiFi if offline."""
+        self._update_progress(State.NETWORK_SETUP, 0, "Verificando conexión...")
+
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            log.info("Network already online — skipping WiFi setup")
+            self._update_progress(State.NETWORK_SETUP, 100, "Conexión establecida")
+            return
+
+        log.info("No internet connectivity detected")
+        if self.tui is not None:
+            wifi_creds = self.tui.show_wifi_connect()
+            if wifi_creds is not None:
+                self.config.network.wifi_ssid = wifi_creds["ssid"]
+                self.config.network.wifi_passphrase = wifi_creds["passphrase"]
+                log.info("WiFi credentials captured: %s", wifi_creds["ssid"])
+
+        self._update_progress(State.NETWORK_SETUP, 100, "Red configurada")
+
     def _handle_preflight(self) -> None:
         """PREFLIGHT — verify system requirements."""
         checks = [
@@ -374,7 +427,7 @@ class Installer:
         self._update_progress(State.LOCALE, 100)
 
     def _handle_user(self) -> None:
-        """USER — collect username and password BEFORE touching the disk.
+        """USER — collect username, password, and shell BEFORE touching the disk.
 
         This state used to live inside CONFIGURE (after pacstrap). It was
         moved forward so a cancelled prompt cannot waste a disk wipe.
@@ -386,7 +439,21 @@ class Installer:
             self.config.user.password_hash = user_cfg["password_hash"]
             if "password" in user_cfg:
                 self.config.user.password_plaintext = user_cfg["password"]
-        log.info("User configured: %s", self.config.user.username)
+
+            shell_name = self.tui.show_shell_selection()
+            self.config.user.shell = shell_path(shell_name)
+
+            # If the chosen shell is not part of 'base', schedule it for install
+            pkg = shell_package(shell_name)
+            if pkg and pkg not in self.config.extra_packages:
+                self.config.extra_packages.append(pkg)
+                log.info("Shell package queued: %s", pkg)
+
+        log.info(
+            "User configured: %s (shell: %s)",
+            self.config.user.username,
+            self.config.user.shell,
+        )
         self._update_progress(State.USER, 100)
 
     def _handle_desktop(self) -> None:
@@ -397,6 +464,7 @@ class Installer:
             self.config.desktop.profile = profile
             dm_choice = self.tui.show_dm_selection(profile=profile)
             self.config.desktop.dm = dm_choice
+            self.config.desktop.aur_packages = aur_packages_for(profile)
         log.info(
             "Desktop profile: %s (dm: %s → %s)",
             self.config.desktop.profile,
@@ -404,6 +472,18 @@ class Installer:
             resolve_dm(self.config.desktop.profile, self.config.desktop.dm),
         )
         self._update_progress(State.DESKTOP, 100)
+
+    def _handle_secure_boot(self) -> None:
+        """SECURE_BOOT — show Secure Boot setup instructions if enabled in config."""
+        self._update_progress(State.SECURE_BOOT, 0)
+        if not self.config.security.secure_boot:
+            log.info("Secure Boot disabled in config — skipping state.")
+            self._update_progress(State.SECURE_BOOT, 100)
+            return
+        if self.tui:
+            self.tui.show_secure_boot_prompt()
+        log.info("Secure Boot: sbctl setup will run during CONFIGURE (sbctl create-keys + enroll-keys + sign-all).")
+        self._update_progress(State.SECURE_BOOT, 100)
 
     def _handle_partition(self) -> None:
         """PARTITION — disk selection, layout preview, confirmation."""
@@ -588,8 +668,12 @@ class Installer:
             "openssh",
             "which",
             # systemd-nspawn + machinectl ship with the `systemd` package
-            # (already in base), used by `our-box` for container workflows.
+            # (already in base), used by `our-container` for container workflows.
         ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
+
+        # Add sbctl when Secure Boot is enabled
+        if self.config.security.secure_boot and "sbctl" not in packages:
+            packages.append("sbctl")
 
         # Add DM package if explicitly chosen and not already in profile packages
         resolved_dm = resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
@@ -723,14 +807,21 @@ class Installer:
                     resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
                 ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",
                 "DESKTOP_PROFILE": self.config.desktop.profile,
+                "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
                 "HOMED_STORAGE": self.config.user.homed_storage,
+                "WIFI_SSID": self.config.network.wifi_ssid,
+                "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
+                "BLUETOOTH_ENABLE": "1" if self.config.network.bluetooth_enable else "0",
+                "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
+                "ISO_VERSION": _read_iso_version(),
             }
         )
 
         result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
 
-        # Clear plaintext password after configure — no longer needed
+        # Clear transient secrets after configure — no longer needed
         self.config.user.password_plaintext = ""
+        self.config.network.wifi_passphrase = ""
 
         if result.returncode != 0:
             raise InstallerError(
@@ -835,16 +926,6 @@ class Installer:
             check=False,
         )
         if result.returncode != 0:
-            if self.tui is not None:
-                connected = self.tui.show_wifi_connect()
-                if connected:
-                    retry = subprocess.run(
-                        ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
-                        capture_output=True,
-                        check=False,
-                    )
-                    if retry.returncode == 0:
-                        return
             raise InstallerError(
                 "No internet connectivity. Connect to a network before installing."
             )

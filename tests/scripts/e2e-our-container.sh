@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# e2e-our-box.sh — Comprehensive E2E tests for our-box (systemd-nspawn wrapper)
+# e2e-our-container.sh — Comprehensive E2E tests for our-container (systemd-nspawn wrapper)
 # =============================================================================
-# Tests the full our-box lifecycle inside QEMU with an installed ouroborOS:
+# Tests the full our-container lifecycle inside QEMU with an installed ouroborOS:
 #   Phase 0  — Prerequisites
 #   Phase 1  — Build ISO
 #   Phase 2  — Unattended install in QEMU
 #   Phase 3  — Boot installed system
-#   Phase 4  — Verify our-box installation
+#   Phase 4  — Verify our-container installation
 #   Phase 5  — Container lifecycle (create/list/start/stop/remove)
 #   Phase 6  — Error handling (edge cases, invalid inputs)
 #   Phase 7  — Snapshot management (create/list/restore/verify data)
@@ -29,10 +29,10 @@ set -euo pipefail
 #   OBOX_TEST_PASSWORD   — user password for SSH (default: 7907)
 #   OBOX_TEST_USER       — username for SSH (default: hbuddenberg)
 #   OBOX_TEST_SSH_PORT   — forwarded SSH port (default: 2222)
-#   OBOX_TEST_DISK       — qcow2 disk path (default: /tmp/our-box-test.qcow2)
-#   OBOX_TEST_SERIAL     — serial log path (default: /tmp/our-box-serial.log)
+#   OBOX_TEST_DISK       — qcow2 disk path (default: /tmp/our-container-test.qcow2)
+#   OBOX_TEST_SERIAL     — serial log path (default: /tmp/our-container-serial.log)
 #   OBOX_QEMU_MEMORY     — RAM for QEMU VM in MB (default: 2048)
-#   OBOX_BUILD_WORKDIR   — ISO build workdir (default: /home/our-box-build)
+#   OBOX_BUILD_WORKDIR   — ISO build workdir (default: /home/our-container-build)
 #   OBOX_SKIP_BUILD      — set to 1 to skip ISO build (uses existing ISO)
 #   OBOX_KEEP_ARTIFACTS  — set to 1 to keep qcow2/logs after tests
 #   OBOX_CONTAINER_NAME  — test container name (default: e2e-test-container)
@@ -64,10 +64,10 @@ log_warn()    { echo -e "  ${YELLOW}!${RESET} $*"; }
 OBOX_TEST_PASSWORD="${OBOX_TEST_PASSWORD:-7907}"
 OBOX_TEST_USER="${OBOX_TEST_USER:-hbuddenberg}"
 OBOX_TEST_SSH_PORT="${OBOX_TEST_SSH_PORT:-2222}"
-OBOX_TEST_DISK="${OBOX_TEST_DISK:-/tmp/our-box-test.qcow2}"
-OBOX_TEST_SERIAL="${OBOX_TEST_SERIAL:-/tmp/our-box-serial.log}"
+OBOX_TEST_DISK="${OBOX_TEST_DISK:-/tmp/our-container-test.qcow2}"
+OBOX_TEST_SERIAL="${OBOX_TEST_SERIAL:-/tmp/our-container-serial.log}"
 OBOX_QEMU_MEMORY="${OBOX_QEMU_MEMORY:-2048}"
-OBOX_BUILD_WORKDIR="${OBOX_BUILD_WORKDIR:-/home/our-box-build}"
+OBOX_BUILD_WORKDIR="${OBOX_BUILD_WORKDIR:-/home/our-container-build}"
 OBOX_SKIP_BUILD="${OBOX_SKIP_BUILD:-0}"
 OBOX_KEEP_ARTIFACTS="${OBOX_KEEP_ARTIFACTS:-0}"
 OBOX_CONTAINER_NAME="${OBOX_CONTAINER_NAME:-e2e-test-container}"
@@ -107,16 +107,16 @@ ssh_root() {
         "echo ${OBOX_TEST_PASSWORD} | sudo -S $*"
 }
 
-# Run our-box command via SSH as root
+# Run our-container command via SSH as root
 # Usage: run_ourbox <args...>
 run_ourbox() {
-    ssh_root "our-box $*" 2>/dev/null
+    ssh_root "our-container $*" 2>/dev/null
 }
 
-# Run our-box command via SSH as root, expecting failure (non-zero exit)
+# Run our-container command via SSH as root, expecting failure (non-zero exit)
 # Returns the output regardless of exit code
 run_ourbox_fail() {
-    ssh_root "our-box $* 2>&1; true" 2>/dev/null
+    ssh_root "our-container $* 2>&1; true" 2>/dev/null
 }
 
 # Wait for SSH to become available
@@ -161,7 +161,7 @@ launch_qemu() {
         wait "$QEMU_PID" 2>/dev/null || true
     fi
 
-    local serial_log="/tmp/our-box-serial-install.log"
+    local serial_log="/tmp/our-container-serial-install.log"
     if [[ -z "$iso_path" ]]; then
         serial_log="$OBOX_TEST_SERIAL"
     fi
@@ -205,7 +205,7 @@ teardown() {
     if [[ "$OBOX_KEEP_ARTIFACTS" != "1" ]]; then
         log_info "Cleaning test artifacts..."
         rm -f "$OBOX_TEST_DISK" "$OBOX_TEST_SERIAL" \
-              /tmp/our-box-serial-install.log /tmp/our-box-serial-boot.log
+              /tmp/our-container-serial-install.log /tmp/our-container-serial-boot.log
         sudo rm -rf "$OBOX_BUILD_WORKDIR" 2>/dev/null || true
     else
         log_info "Keeping artifacts (OBOX_KEEP_ARTIFACTS=1):"
@@ -370,7 +370,7 @@ unattended_install() {
 
     # Verify install serial log
     log_info "Verifying install log..."
-    local install_log="/tmp/our-box-serial-install.log"
+    local install_log="/tmp/our-container-serial-install.log"
     local states_ok=true
 
     for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
@@ -436,23 +436,23 @@ boot_installed() {
     wait_ssh 40 || return 1
 }
 
-# ── Phase 4 — Verify our-box Installation ─────────────────────────────────────
+# ── Phase 4 — Verify our-container Installation ─────────────────────────────────────
 verify_ourbox_installed() {
-    log_section "Phase 4 — Verify our-box Installation"
+    log_section "Phase 4 — Verify our-container Installation"
 
     local result
 
-    # our-box binary exists and is executable
-    result=$(ssh_cmd "test -x /usr/local/bin/our-box && echo OK || echo FAIL" 2>/dev/null)
-    assert_contains "our-box is installed at /usr/local/bin/our-box" "$result" "OK"
+    # our-container binary exists and is executable
+    result=$(ssh_cmd "test -x /usr/local/bin/our-container && echo OK || echo FAIL" 2>/dev/null)
+    assert_contains "our-container is installed at /usr/local/bin/our-container" "$result" "OK"
 
-    # our-box --help works
-    result=$(ssh_cmd "our-box --help" 2>/dev/null)
-    assert_contains "our-box --help shows usage" "$result" "systemd-nspawn container wrapper"
+    # our-container --help works
+    result=$(ssh_cmd "our-container --help" 2>/dev/null)
+    assert_contains "our-container --help shows usage" "$result" "systemd-nspawn container wrapper"
 
-    # our-box help (alias) works
-    result=$(ssh_cmd "our-box help" 2>/dev/null)
-    assert_contains "our-box help shows USAGE" "$result" "USAGE"
+    # our-container help (alias) works
+    result=$(ssh_cmd "our-container help" 2>/dev/null)
+    assert_contains "our-container help shows USAGE" "$result" "USAGE"
 
     # /var/lib/machines exists
     result=$(ssh_root "test -d /var/lib/machines && echo OK || echo FAIL" 2>/dev/null)
@@ -462,23 +462,23 @@ verify_ourbox_installed() {
     result=$(ssh_root "systemctl is-active systemd-machined" 2>/dev/null)
     assert_contains "systemd-machined is active" "$result" "active"
 
-    # our-box is in PATH
-    result=$(ssh_cmd "command -v our-box" 2>/dev/null)
-    assert_contains "our-box is in PATH" "$result" "/usr/local/bin/our-box"
+    # our-container is in PATH
+    result=$(ssh_cmd "command -v our-container" 2>/dev/null)
+    assert_contains "our-container is in PATH" "$result" "/usr/local/bin/our-container"
 }
 
 # ── Phase 5 — Container Lifecycle ─────────────────────────────────────────────
 test_ourbox_list_empty() {
-    log_section "Phase 5.1 — our-box list (empty)"
+    log_section "Phase 5.1 — our-container list (empty)"
 
     local result
     result=$(run_ourbox "list")
-    assert_contains "our-box list shows storage path" "$result" "/var/lib/machines"
-    assert_not_contains "our-box list is empty" "$result" "$OBOX_CONTAINER_NAME"
+    assert_contains "our-container list shows storage path" "$result" "/var/lib/machines"
+    assert_not_contains "our-container list is empty" "$result" "$OBOX_CONTAINER_NAME"
 }
 
 test_ourbox_create() {
-    log_section "Phase 5.2 — our-box create"
+    log_section "Phase 5.2 — our-container create"
 
     log_info "Creating container '${OBOX_CONTAINER_NAME}' (arch, this takes a while)..."
     local result
@@ -516,7 +516,7 @@ test_ourbox_create() {
 }
 
 test_ourbox_duplicate_create() {
-    log_section "Phase 5.3 — our-box create (duplicate rejection)"
+    log_section "Phase 5.3 — our-container create (duplicate rejection)"
 
     local result
     result=$(run_ourbox_fail "create ${OBOX_CONTAINER_NAME} arch")
@@ -524,11 +524,11 @@ test_ourbox_duplicate_create() {
 }
 
 test_ourbox_start() {
-    log_section "Phase 5.4 — our-box start"
+    log_section "Phase 5.4 — our-container start"
 
     log_info "Starting container '${OBOX_CONTAINER_NAME}'..."
     # machinectl start may block briefly — run with timeout
-    ssh_root "timeout 30 our-box start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 30 our-container start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 3
 
     # Verify container is running via machinectl
@@ -538,7 +538,7 @@ test_ourbox_start() {
 }
 
 test_ourbox_start_already_running() {
-    log_section "Phase 5.5 — our-box start (already running)"
+    log_section "Phase 5.5 — our-container start (already running)"
 
     local result
     result=$(run_ourbox_fail "start ${OBOX_CONTAINER_NAME}")
@@ -546,18 +546,18 @@ test_ourbox_start_already_running() {
 }
 
 test_ourbox_list_with_container() {
-    log_section "Phase 5.6 — our-box list (with container)"
+    log_section "Phase 5.6 — our-container list (with container)"
 
     local result
     result=$(run_ourbox "list")
-    assert_contains "our-box list shows container" "$result" "$OBOX_CONTAINER_NAME"
+    assert_contains "our-container list shows container" "$result" "$OBOX_CONTAINER_NAME"
 }
 
 test_ourbox_stop() {
-    log_section "Phase 5.7 — our-box stop"
+    log_section "Phase 5.7 — our-container stop"
 
     log_info "Stopping container '${OBOX_CONTAINER_NAME}'..."
-    ssh_root "timeout 15 our-box stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 2
 
     local result
@@ -578,10 +578,10 @@ test_ourbox_stop() {
 }
 
 test_ourbox_remove() {
-    log_section "Phase 5.8 — our-box remove"
+    log_section "Phase 5.8 — our-container remove"
 
     log_info "Removing container '${OBOX_CONTAINER_NAME}'..."
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
 
     local result
     result=$(ssh_root "test -d /var/lib/machines/${OBOX_CONTAINER_NAME} && echo EXISTS || echo GONE" 2>/dev/null)
@@ -604,7 +604,7 @@ test_ourbox_remove() {
 
 # ── Phase 6 — Error Handling ──────────────────────────────────────────────────
 test_ourbox_remove_nonexistent() {
-    log_section "Phase 6.1 — our-box remove (nonexistent)"
+    log_section "Phase 6.1 — our-container remove (nonexistent)"
 
     local result
     result=$(run_ourbox_fail "remove ${OBOX_CONTAINER_NAME}")
@@ -612,15 +612,15 @@ test_ourbox_remove_nonexistent() {
 }
 
 test_ourbox_enter_nonexistent() {
-    log_section "Phase 6.2 — our-box enter (nonexistent)"
+    log_section "Phase 6.2 — our-container enter (nonexistent)"
 
     local result
-    result=$(ssh_root "timeout 5 our-box enter ${OBOX_CONTAINER_NAME} 2>&1; true" 2>/dev/null)
+    result=$(ssh_root "timeout 5 our-container enter ${OBOX_CONTAINER_NAME} 2>&1; true" 2>/dev/null)
     assert_contains "Enter nonexistent correctly rejected" "$result" "does not exist"
 }
 
 test_ourbox_stop_nonexistent() {
-    log_section "Phase 6.3 — our-box stop (nonexistent)"
+    log_section "Phase 6.3 — our-container stop (nonexistent)"
 
     local result
     result=$(run_ourbox_fail "stop ${OBOX_CONTAINER_NAME}")
@@ -628,7 +628,7 @@ test_ourbox_stop_nonexistent() {
 }
 
 test_ourbox_unknown_command() {
-    log_section "Phase 6.4 — our-box unknown command"
+    log_section "Phase 6.4 — our-container unknown command"
 
     local result
     result=$(run_ourbox_fail "foobar")
@@ -636,7 +636,7 @@ test_ourbox_unknown_command() {
 }
 
 test_ourbox_create_missing_name() {
-    log_section "Phase 6.5 — our-box create (missing name)"
+    log_section "Phase 6.5 — our-container create (missing name)"
 
     local result
     result=$(run_ourbox_fail "create")
@@ -644,7 +644,7 @@ test_ourbox_create_missing_name() {
 }
 
 test_ourbox_unsupported_distro() {
-    log_section "Phase 6.6 — our-box create (unsupported distro)"
+    log_section "Phase 6.6 — our-container create (unsupported distro)"
 
     local result
     result=$(run_ourbox_fail "create e2e-unsupported fedora")
@@ -652,7 +652,7 @@ test_ourbox_unsupported_distro() {
 }
 
 test_ourbox_invalid_container_name() {
-    log_section "Phase 6.7 — our-box create (invalid name)"
+    log_section "Phase 6.7 — our-container create (invalid name)"
 
     local result
     result=$(run_ourbox_fail "create 'bad name!'")
@@ -660,7 +660,7 @@ test_ourbox_invalid_container_name() {
 }
 
 test_ourbox_snapshot_nonexistent() {
-    log_section "Phase 6.8 — our-box snapshot create (nonexistent container)"
+    log_section "Phase 6.8 — our-container snapshot create (nonexistent container)"
 
     local result
     result=$(run_ourbox_fail "snapshot create ${OBOX_CONTAINER_NAME} test-snap")
@@ -668,7 +668,7 @@ test_ourbox_snapshot_nonexistent() {
 }
 
 test_ourbox_snapshot_restore_nonexistent() {
-    log_section "Phase 6.9 — our-box snapshot restore (nonexistent container)"
+    log_section "Phase 6.9 — our-container snapshot restore (nonexistent container)"
 
     local result
     result=$(run_ourbox_fail "snapshot restore ${OBOX_CONTAINER_NAME} test-snap")
@@ -676,7 +676,7 @@ test_ourbox_snapshot_restore_nonexistent() {
 }
 
 test_ourbox_storage_mount_nonexistent() {
-    log_section "Phase 6.10 — our-box storage mount (nonexistent container)"
+    log_section "Phase 6.10 — our-container storage mount (nonexistent container)"
 
     local result
     result=$(run_ourbox_fail "storage mount ${OBOX_CONTAINER_NAME} /tmp /opt")
@@ -684,7 +684,7 @@ test_ourbox_storage_mount_nonexistent() {
 }
 
 test_ourbox_storage_umount_nonexistent() {
-    log_section "Phase 6.11 — our-box storage umount (nonexistent container)"
+    log_section "Phase 6.11 — our-container storage umount (nonexistent container)"
 
     local result
     result=$(run_ourbox_fail "storage umount ${OBOX_CONTAINER_NAME} /opt")
@@ -692,7 +692,7 @@ test_ourbox_storage_umount_nonexistent() {
 }
 
 test_ourbox_image_remove_nonexistent() {
-    log_section "Phase 6.12 — our-box image remove (nonexistent)"
+    log_section "Phase 6.12 — our-container image remove (nonexistent)"
 
     local result
     result=$(run_ourbox_fail "image remove fedora")
@@ -700,11 +700,11 @@ test_ourbox_image_remove_nonexistent() {
 }
 
 test_ourbox_snapshot_invalid_name() {
-    log_section "Phase 6.13 — our-box snapshot create (invalid name)"
+    log_section "Phase 6.13 — our-container snapshot create (invalid name)"
 
     # First create a container for this test
     run_ourbox "create e2e-snap-name-test arch" >/dev/null || true
-    ssh_root "timeout 15 our-box remove e2e-snap-name-test 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove e2e-snap-name-test 2>&1" >/dev/null || true
 
     # Create container again
     log_info "Creating temporary container for snapshot name validation..."
@@ -718,7 +718,7 @@ test_ourbox_snapshot_invalid_name() {
     assert_contains "Invalid snapshot name rejected" "$result" "invalid snapshot name"
 
     # Cleanup
-    ssh_root "timeout 15 our-box remove e2e-snap-name-test 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove e2e-snap-name-test 2>&1" >/dev/null || true
 }
 
 # ── Phase 7 — Snapshot Management ─────────────────────────────────────────────
@@ -798,7 +798,7 @@ test_snapshot_lifecycle() {
 
     # Cleanup: remove container (which should also clean snapshots)
     log_section "Phase 7.10 — Cleanup snapshot test container"
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     result=$(ssh_root "test -d /var/lib/machines/${OBOX_CONTAINER_NAME} && echo EXISTS || echo GONE" 2>/dev/null)
     if [[ "$result" == *"GONE"* ]]; then
         log_ok "Container and snapshots cleaned up"
@@ -870,7 +870,7 @@ test_storage_lifecycle() {
     # Cleanup
     log_section "Phase 8.7 — Cleanup storage test"
     ssh_root "rm -rf /tmp/e2e-test-bind" 2>/dev/null || true
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     log_ok "Storage tests cleaned up"
     TESTS_RUN=$((TESTS_RUN + 1))
 }
@@ -890,7 +890,7 @@ test_image_lifecycle() {
     # 9.2 — image pull (arch) — this is heavy, skip if network is slow
     log_section "Phase 9.2 — image pull (arch)"
     log_info "Pulling arch base image (this takes a while)..."
-    result=$(ssh_root "timeout 300 our-box image pull arch 2>&1; true" 2>/dev/null)
+    result=$(ssh_root "timeout 300 our-container image pull arch 2>&1; true" 2>/dev/null)
     if echo "$result" | grep -q "Base image.*ready\|created\|pulled"; then
         log_ok "Arch base image pulled"
     elif echo "$result" | grep -qi "already exists"; then
@@ -913,11 +913,11 @@ test_image_lifecycle() {
     assert_contains "Image list shows arch" "$result" "arch"
 
     # Verify image metadata
-    result=$(ssh_root "cat /var/lib/machines/.images/arch/.our-box-image 2>/dev/null" 2>/dev/null)
-    assert_contains "Image metadata exists" "$result" "CREATED_BY=our-box"
+    result=$(ssh_root "cat /var/lib/machines/.images/arch/.our-container-image 2>/dev/null" 2>/dev/null)
+    assert_contains "Image metadata exists" "$result" "CREATED_BY=our-container"
 
     # Verify image has marker file
-    result=$(ssh_root "test -f /var/lib/machines/.images/arch/.our-box-image && echo OK || echo FAIL" 2>/dev/null)
+    result=$(ssh_root "test -f /var/lib/machines/.images/arch/.our-container-image && echo OK || echo FAIL" 2>/dev/null)
     assert_contains "Image marker file exists" "$result" "OK"
 
     # 9.4 — image pull duplicate
@@ -942,7 +942,7 @@ test_image_lifecycle() {
 
 # ── Phase 10 — Monitoring & Diagnostics ──────────────────────────────────────
 test_diagnose() {
-    log_section "Phase 10.1 — our-box diagnose"
+    log_section "Phase 10.1 — our-container diagnose"
 
     local result
     result=$(run_ourbox "diagnose")
@@ -952,7 +952,7 @@ test_diagnose() {
 }
 
 test_check() {
-    log_section "Phase 10.2 — our-box check"
+    log_section "Phase 10.2 — our-container check"
 
     local result
     result=$(run_ourbox "check")
@@ -963,7 +963,7 @@ test_check() {
 }
 
 test_disk_usage_empty() {
-    log_section "Phase 10.3 — our-box disk-usage (empty)"
+    log_section "Phase 10.3 — our-container disk-usage (empty)"
 
     local result
     result=$(run_ourbox "disk-usage")
@@ -971,7 +971,7 @@ test_disk_usage_empty() {
 }
 
 test_disk_usage_with_container() {
-    log_section "Phase 10.4 — our-box disk-usage (with container)"
+    log_section "Phase 10.4 — our-container disk-usage (with container)"
 
     log_info "Creating container for disk-usage test..."
     run_ourbox "create ${OBOX_CONTAINER_NAME} arch" >/dev/null 2>&1 || {
@@ -985,12 +985,12 @@ test_disk_usage_with_container() {
     assert_contains "disk-usage shows container" "$result" "$OBOX_CONTAINER_NAME"
 
     # Cleanup
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
 }
 
 # ── Phase 11 — Cleanup Command ────────────────────────────────────────────────
 test_cleanup() {
-    log_section "Phase 11 — our-box cleanup"
+    log_section "Phase 11 — our-container cleanup"
 
     # Create container + snapshot for cleanup test
     log_info "Creating container + snapshots for cleanup test..."
@@ -1009,7 +1009,7 @@ test_cleanup() {
         log_ok "Test snapshots created for cleanup test"
     else
         log_skip "Cannot create test snapshots for cleanup test"
-        ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+        ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
         TESTS_RUN=$((TESTS_RUN + 1))
         return 0
     fi
@@ -1029,12 +1029,12 @@ test_cleanup() {
     assert_contains "Invalid threshold rejected" "$result" "between 1 and 99"
 
     # Cleanup container
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
 }
 
 # ── Phase 12 — Logs Command ───────────────────────────────────────────────────
 test_logs() {
-    log_section "Phase 12 — our-box logs"
+    log_section "Phase 12 — our-container logs"
 
     log_info "Creating and starting container for logs test..."
     run_ourbox "create ${OBOX_CONTAINER_NAME} arch" >/dev/null 2>&1 || {
@@ -1043,7 +1043,7 @@ test_logs() {
         return 0
     }
 
-    ssh_root "timeout 30 our-box start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 30 our-container start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 3
 
     # Test logs command (non-follow mode)
@@ -1064,9 +1064,9 @@ test_logs() {
     log_ok "logs on nonexistent container handled"
 
     # Cleanup
-    ssh_root "timeout 15 our-box stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 1
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     TESTS_RUN=$((TESTS_RUN + 1))
 }
 
@@ -1098,13 +1098,13 @@ test_persistence() {
     result=$(ssh_root "test -f /var/lib/machines/${OBOX_CONTAINER_NAME}/tmp/persist-marker.txt && echo OK || echo FAIL" 2>/dev/null)
     if [[ "$result" != *"OK"* ]]; then
         log_fail "Pre-reboot marker not found — cannot test persistence"
-        ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+        ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
         return 1
     fi
     log_ok "Pre-reboot state verified"
 
     # Stop the container before reboot
-    ssh_root "timeout 15 our-box stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
 
     # --- Reboot ---
     log_info "Rebooting VM for persistence test..."
@@ -1147,28 +1147,28 @@ test_persistence() {
     result=$(run_ourbox "snapshot list ${OBOX_CONTAINER_NAME}")
     assert_contains "Snapshot persists after reboot" "$result" "persist-snap"
 
-    # 13.4 — our-box still works after reboot
-    log_section "Phase 13.4 — our-box functional after reboot"
+    # 13.4 — our-container still works after reboot
+    log_section "Phase 13.4 — our-container functional after reboot"
     result=$(run_ourbox "list")
-    assert_contains "our-box list works after reboot" "$result" "/var/lib/machines"
+    assert_contains "our-container list works after reboot" "$result" "/var/lib/machines"
 
     # 13.5 — Container can be started after reboot
     log_section "Phase 13.5 — Container starts after reboot"
-    ssh_root "timeout 30 our-box start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 30 our-container start ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 3
     result=$(ssh_root "machinectl list --no-pager --no-legend 2>/dev/null | grep '${OBOX_CONTAINER_NAME}'" 2>/dev/null)
     assert_contains "Container runs after reboot" "$result" "running"
 
     # Stop and clean up
-    ssh_root "timeout 15 our-box stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container stop ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     sleep 1
-    ssh_root "timeout 15 our-box remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
+    ssh_root "timeout 15 our-container remove ${OBOX_CONTAINER_NAME} 2>&1" >/dev/null || true
     log_ok "Persistence test cleanup complete"
 }
 
 # ── Phase 14 — System Integrity ──────────────────────────────────────────────
 test_system_integrity() {
-    log_section "Phase 14 — System Integrity After our-box Operations"
+    log_section "Phase 14 — System Integrity After our-container Operations"
 
     local result
 
@@ -1244,24 +1244,24 @@ test_system_integrity() {
     result=$(ssh_cmd "id ${OBOX_TEST_USER}" 2>/dev/null)
     assert_contains "User ${OBOX_TEST_USER} in wheel" "$result" "wheel"
 
-    # 14.11 — our-box check passes
-    log_section "Phase 14.11 — our-box check passes"
+    # 14.11 — our-container check passes
+    log_section "Phase 14.11 — our-container check passes"
     result=$(run_ourbox "check")
-    assert_contains "our-box check: no errors" "$result" "All integrity checks passed"
+    assert_contains "our-container check: no errors" "$result" "All integrity checks passed"
 
-    # 14.12 — our-box diagnose passes
-    log_section "Phase 14.12 — our-box diagnose passes"
+    # 14.12 — our-container diagnose passes
+    log_section "Phase 14.12 — our-container diagnose passes"
     result=$(run_ourbox "diagnose")
-    assert_contains "our-box diagnose: healthy" "$result" "All checks passed\|healthy"
+    assert_contains "our-container diagnose: healthy" "$result" "All checks passed\|healthy"
 
     # 14.13 — /var/lib/machines is clean (no leftover test containers)
     log_section "Phase 14.13 — /var/lib/machines clean"
     result=$(ssh_root "ls /var/lib/machines/ 2>/dev/null" 2>/dev/null)
     if echo "$result" | grep -q "^${OBOX_CONTAINER_NAME}$\|e2e-"; then
         log_warn "Leftover test containers found — cleaning up"
-        log_info "  $(echo "$result" | grep -E 'e2e-|our-box')"
+        log_info "  $(echo "$result" | grep -E 'e2e-|our-container')"
         # Clean up any leftover test containers
-        ssh_root "for c in \$(ls /var/lib/machines/ 2>/dev/null); do [[ \"\$c\" == .* ]] && continue; our-box remove \"\$c\" 2>/dev/null; done" 2>/dev/null || true
+        ssh_root "for c in \$(ls /var/lib/machines/ 2>/dev/null); do [[ \"\$c\" == .* ]] && continue; our-container remove \"\$c\" 2>/dev/null; done" 2>/dev/null || true
     else
         log_ok "No leftover test containers"
     fi
@@ -1272,7 +1272,7 @@ test_system_integrity() {
 print_summary() {
     echo ""
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo -e "${BOLD}              our-box E2E Test Summary                            ${RESET}"
+    echo -e "${BOLD}              our-container E2E Test Summary                            ${RESET}"
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
     echo -e "  Tests run:    ${CYAN}${TESTS_RUN}${RESET}"
@@ -1296,7 +1296,7 @@ print_summary() {
 main() {
     echo -e "${BOLD}${CYAN}"
     echo "  ╔════════════════════════════════════════════════════╗"
-    echo "  ║   our-box E2E Test Suite — ouroborOS               ║"
+    echo "  ║   our-container E2E Test Suite — ouroborOS               ║"
     echo "  ║   Comprehensive systemd-nspawn container tests     ║"
     echo "  ╚════════════════════════════════════════════════════╝"
     echo -e "${RESET}"
@@ -1323,7 +1323,7 @@ main() {
     # Phase 3: Boot
     boot_installed
 
-    # Phase 4: Verify our-box installation
+    # Phase 4: Verify our-container installation
     verify_ourbox_installed
 
     # Phase 5: Container lifecycle

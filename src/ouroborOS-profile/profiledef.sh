@@ -7,7 +7,7 @@ iso_name="ouroborOS"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
 iso_publisher="ouroborOS <https://github.com/Arkhur-Vo/ouroborOS>"
 iso_application="ouroborOS ArchLinux-based immutable Linux distribution"
-iso_version="0.1.0"
+iso_version="0.4.3"
 install_dir="arch"
 buildmodes=('iso')
 bootmodes=('uefi.systemd-boot')
@@ -21,4 +21,6 @@ file_permissions=(
   ["/etc/gshadow"]="0:0:400"
   ["/usr/local/bin/ouroborOS-installer"]="0:0:755"
   ["/usr/local/bin/sshd-hostkeys"]="0:0:755"
+  ["/usr/local/bin/our-aur"]="0:0:755"
+  ["/usr/local/bin/our-flat"]="0:0:755"
 )

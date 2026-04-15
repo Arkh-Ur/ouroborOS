@@ -6,9 +6,9 @@
 
 [![Donate](https://nowpayments.io/images/embeds/donation-button-white.svg)](https://nowpayments.io/donation/arkh_ur)
 
-An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**.
+An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**. Includes `our-aur` (containerized AUR helper) and `our-flat` (Flatpak wrapper).
 
-> **Status:** v0.1.0 — early release. Core functionality complete and tested. See [Known Limitations](#known-limitations).
+> **Status:** v0.4.0 — Phase 4 complete. AUR helper and Flatpak wrapper added. See [Known Limitations](#known-limitations).
 
 ---
 
@@ -117,6 +117,40 @@ Every upgrade creates a timestamped Btrfs snapshot with a matching boot entry. T
 
 ---
 
+## AUR packages
+
+Use `our-aur` to install packages from the Arch User Repository without touching the immutable root. Builds run inside ephemeral `systemd-nspawn` containers and install via `systemd-sysext`:
+
+```bash
+# Search AUR
+our-aur -Ss hyprlock
+
+# Install from AUR
+our-aur -S quickshell
+
+# Update installed AUR packages
+our-aur -Su
+```
+
+---
+
+## Flatpak applications
+
+Use `our-flat` for Flatpak applications with a pacman-style interface:
+
+```bash
+# Add Flathub remote (opt-in)
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Install an app
+sudo our-flat -S com.spotify.Client
+
+# Update all Flatpak apps
+sudo our-flat -Su
+```
+
+---
+
 ## Key Design Constraints
 
 - **UEFI only** — no GRUB, no Legacy BIOS
@@ -129,13 +163,12 @@ Every upgrade creates a timestamped Btrfs snapshot with a matching boot entry. T
 
 ## Known Limitations
 
-| Limitation | v0.1 status |
-|-----------|-------------|
+| Limitation | Status |
+|-----------|--------|
 | UEFI only | By design — no plans to change |
 | x86_64 only | ARM/aarch64 deferred |
 | No GUI installer | TUI + unattended YAML only |
-| No AUR helper | Use `makepkg` manually |
-| No Secure Boot | TPM2/MOK deferred to v0.2 |
+| No Secure Boot by default | TPM2/MOK deferred to Phase 5 |
 | English only | Multi-language deferred |
 
 ---

@@ -725,15 +725,16 @@ class TestRichSelect:
 
 class TestShowWifiConnect:
     def test_rich_backend_calls_rich_method(self, rich_tui: TUI) -> None:
-        with patch.object(rich_tui, "_rich_wifi_connect", return_value=True) as mock:
+        creds = {"ssid": "TestNet", "passphrase": "testpass"}
+        with patch.object(rich_tui, "_rich_wifi_connect", return_value=creds) as mock:
             result = rich_tui.show_wifi_connect()
-        assert result is True
+        assert result == creds
         mock.assert_called_once()
 
     def test_whiptail_backend_calls_whiptail_method(self, whiptail_tui: TUI) -> None:
-        with patch.object(whiptail_tui, "_whiptail_wifi_connect", return_value=False) as mock:
+        with patch.object(whiptail_tui, "_whiptail_wifi_connect", return_value=None) as mock:
             result = whiptail_tui.show_wifi_connect()
-        assert result is False
+        assert result is None
         mock.assert_called_once()
 
 
@@ -747,8 +748,22 @@ class TestFindWifiInterface:
         fail = MagicMock()
         fail.returncode = 1
         fail.stdout = ""
-        with patch("subprocess.run", return_value=fail):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=fail), \
+             patch("time.sleep"):
             assert rich_tui._find_wifi_interface() is None
+
+    def test_returns_managed_interface(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype managed\n"
+        )
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
+            assert rich_tui._find_wifi_interface() == "wlan0"
 
     def test_returns_station_interface(self, rich_tui: TUI) -> None:
         ok = MagicMock()
@@ -758,10 +773,11 @@ class TestFindWifiInterface:
             "\tInterface wlan0\n"
             "\t\ttype station\n"
         )
-        with patch("subprocess.run", return_value=ok):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
             assert rich_tui._find_wifi_interface() == "wlan0"
 
-    def test_returns_none_when_no_station(self, rich_tui: TUI) -> None:
+    def test_returns_none_when_no_managed(self, rich_tui: TUI) -> None:
         ok = MagicMock()
         ok.returncode = 0
         ok.stdout = (
@@ -769,8 +785,25 @@ class TestFindWifiInterface:
             "\tInterface wlan0\n"
             "\t\ttype AP\n"
         )
-        with patch("subprocess.run", return_value=ok):
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run", return_value=ok):
             assert rich_tui._find_wifi_interface() is None
+
+    def test_rfkill_unblock_called_when_available(self, rich_tui: TUI) -> None:
+        ok = MagicMock()
+        ok.returncode = 0
+        ok.stdout = (
+            "phy#0\n"
+            "\tInterface wlan0\n"
+            "\t\ttype managed\n"
+        )
+        with patch("installer.tui.shutil.which", return_value="/usr/bin/rfkill"), \
+             patch("installer.tui.subprocess.run", return_value=ok) as mock_run:
+            result = rich_tui._find_wifi_interface()
+        assert result == "wlan0"
+        first_call_args = mock_run.call_args_list[0][0][0]
+        assert first_call_args[0] == "/usr/bin/rfkill"
+        assert "unblock" in first_call_args
 
 
 # ---------------------------------------------------------------------------
@@ -923,3 +956,340 @@ class TestRemoteConfigPrompt:
 
             result = tui.show_remote_config_prompt()
             assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — show_desktop_selection, show_dm_selection, show_shell_selection
+# ---------------------------------------------------------------------------
+
+
+class TestDesktopAndShellSelectionRich:
+    """Cover the rich backend paths of the Phase 3 selection prompts."""
+
+    def test_show_desktop_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="hyprland") as mock_select:
+            result = rich_tui.show_desktop_selection()
+        assert result == "hyprland"
+        mock_select.assert_called_once()
+
+    def test_show_dm_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="sddm") as mock_select:
+            result = rich_tui.show_dm_selection(profile="hyprland")
+        assert result == "sddm"
+        mock_select.assert_called_once()
+
+    def test_show_shell_selection_rich_calls_rich_select(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="fish") as mock_select:
+            result = rich_tui.show_shell_selection()
+        assert result == "fish"
+        mock_select.assert_called_once()
+
+
+class TestDesktopAndShellSelectionWhiptail:
+    """Cover the whiptail backend paths of the Phase 3 selection prompts."""
+
+    def test_show_desktop_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="gnome") as mock_sel:
+            result = whiptail_tui.show_desktop_selection()
+        assert result == "gnome"
+        mock_sel.assert_called_once()
+
+    def test_show_dm_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="gdm") as mock_sel:
+            result = whiptail_tui.show_dm_selection(profile="gnome")
+        assert result == "gdm"
+        mock_sel.assert_called_once()
+
+    def test_show_shell_selection_whiptail_calls_select_from_list(
+        self, whiptail_tui: TUI
+    ) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="zsh") as mock_sel:
+            result = whiptail_tui.show_shell_selection()
+        assert result == "zsh"
+        mock_sel.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — show_progress (whiptail path)
+# ---------------------------------------------------------------------------
+
+
+class TestShowProgressWhiptail:
+    def test_whiptail_progress_calls_subprocess(self, whiptail_tui: TUI) -> None:
+        """Covers the whiptail branch in show_progress (lines 227) and
+        _whiptail_progress subprocess.run call (line 247)."""
+        with patch("installer.tui.subprocess.run") as mock_run, \
+             patch("installer.tui._get_whiptail_path", return_value="/usr/bin/whiptail"):
+            whiptail_tui.show_progress("Installing", "Downloading...", 50)
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args.args[0]
+        assert "--gauge" in cmd
+        assert "Installing" in cmd
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — _scan_wifi_networks (subprocess mock)
+# ---------------------------------------------------------------------------
+
+
+class TestScanWifiNetworks:
+    def test_scan_returns_empty_on_failure(self, rich_tui: TUI) -> None:
+        with patch("installer.tui.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = rich_tui._scan_wifi_networks("wlan0")
+        assert result == []
+
+    def test_scan_parses_iw_dump(self, rich_tui: TUI) -> None:
+        fake_iw_dump = (
+            "BSS aa:bb:cc:dd:ee:ff(on wlan0)\n"
+            "\tsignal: -52.00 dBm\n"
+            "\tcapability: ESS Privacy\n"
+            "\tSSID: HomeNet\n"
+            "\tRSN: Version: 1\n"
+            "BSS 11:22:33:44:55:66(on wlan0)\n"
+            "\tsignal: -64.00 dBm\n"
+            "\tcapability: ESS\n"
+            "\tSSID: OpenNet\n"
+        )
+
+        def side_effect(cmd: list[str], **kwargs):
+            if "scan" in cmd and "dump" not in cmd:
+                return MagicMock(returncode=0, stdout="")
+            if "dump" in cmd:
+                return MagicMock(returncode=0, stdout=fake_iw_dump)
+            return MagicMock(returncode=1, stdout="")
+
+        with patch("installer.tui.subprocess.run", side_effect=side_effect), \
+             patch("time.sleep"):
+            result = rich_tui._scan_wifi_networks("wlan0")
+
+        assert len(result) == 2
+        assert result[0][0] == "HomeNet"
+        assert result[0][1] == "WPA2"
+        assert result[0][2] == -52
+        assert result[1][0] == "OpenNet"
+        assert result[1][1] == "open"
+        assert result[1][2] == -64
+
+    def test_scan_fallback_to_iwctl(self, rich_tui: TUI) -> None:
+        fake_iwctl = (
+            "                               Available Networks\n"
+            "--------------------------------------------------------------------------------\n"
+            "  Network Name          Security             Signal\n"
+            "--------------------------------------------------------------------------------\n"
+            "  HomeNet               psk                  ****\n"
+        )
+
+        def side_effect(cmd: list[str], **kwargs):
+            if "scan" in cmd and "dump" not in cmd:
+                return MagicMock(returncode=0, stdout="")
+            if "dump" in cmd:
+                return MagicMock(returncode=1, stdout="")
+            if "get-networks" in cmd:
+                return MagicMock(returncode=0, stdout=fake_iwctl)
+            return MagicMock(returncode=1, stdout="")
+
+        with patch("installer.tui.subprocess.run", side_effect=side_effect), \
+             patch("time.sleep"):
+            result = rich_tui._scan_wifi_networks("wlan0")
+
+        assert len(result) >= 1
+        assert any(s == "HomeNet" for s, _, _ in result)
+
+    def test_find_wifi_interface_returns_none_when_no_station(self, rich_tui: TUI) -> None:
+        """Covers _find_wifi_interface when no managed/station type is found."""
+        with patch("installer.tui.shutil.which", return_value=None), \
+             patch("installer.tui.subprocess.run") as mock_run, \
+             patch("time.sleep"):
+            mock_run.return_value = MagicMock(returncode=0, stdout="phy#0\n  Interface wlan0\n")
+            result = rich_tui._find_wifi_interface()
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Secure Boot prompt
+# ---------------------------------------------------------------------------
+
+
+class TestSecureBootPrompt:
+    def test_rich_dispatches_to_rich_impl(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_secure_boot_prompt") as mock_impl:
+            rich_tui.show_secure_boot_prompt()
+        mock_impl.assert_called_once()
+
+    def test_whiptail_dispatches_to_whiptail_impl(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_whiptail_secure_boot_prompt") as mock_impl:
+            whiptail_tui.show_secure_boot_prompt()
+        mock_impl.assert_called_once()
+
+    def test_rich_secure_boot_prompt_shows_panel_and_confirm(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            tui._rich_secure_boot_prompt()
+        mocks["Console"].return_value.print.assert_called_once()
+        mocks["Confirm"].ask.assert_called_once()
+
+    def test_whiptail_secure_boot_prompt_calls_msgbox(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "")) as mock_w:
+            whiptail_tui._whiptail_secure_boot_prompt()
+        args = mock_w.call_args[0]
+        assert "--msgbox" in args
+        assert "Setup Mode" in " ".join(str(a) for a in args)
+
+
+# ---------------------------------------------------------------------------
+# Rich WiFi connect
+# ---------------------------------------------------------------------------
+
+
+class TestRichWifiConnect:
+    def test_returns_false_when_no_wifi_interface(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            with patch.object(tui, "_find_wifi_interface", return_value=None):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+    def test_returns_false_when_no_networks(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            mocks["Prompt"].ask.return_value = "0"
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", return_value=[]):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+    def test_returns_false_when_user_skips(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            networks = [("HomeNet", "WPA2", -52)]
+            mocks["Prompt"].ask.return_value = "0"
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", return_value=networks):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+    def test_open_network_success(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            networks = [("CafeWifi", "open", -64)]
+            mocks["Prompt"].ask.return_value = "1"
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", return_value=networks), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value={"ssid": "CafeWifi", "passphrase": ""}), \
+                 patch("time.sleep"):
+                result = tui._rich_wifi_connect()
+        assert result == {"ssid": "CafeWifi", "passphrase": ""}
+
+    def test_wpa_network_connection_failure(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            networks = [("HomeNet", "WPA2", -52)]
+            mocks["Prompt"].ask.side_effect = ["1", "", "0"]
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", side_effect=[networks, []]), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value=None), \
+                 patch("time.sleep"):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+    def test_connected_but_no_internet(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            networks = [("HomeNet", "WPA2", -52)]
+            mocks["Prompt"].ask.side_effect = ["1", "", "0"]
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", side_effect=[networks, []]), \
+                 patch.object(tui, "_attempt_wifi_connection", return_value=None), \
+                 patch("time.sleep"):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+    def test_manual_ssid_connect(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            networks = []
+            mocks["Prompt"].ask.side_effect = ["m", "HiddenNet", "mypassword"]
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", return_value=networks), \
+                 patch.object(
+                     tui, "_manual_wifi_connect",
+                     return_value={"ssid": "HiddenNet", "passphrase": "mypassword"},
+                 ):
+                result = tui._rich_wifi_connect()
+        assert result == {"ssid": "HiddenNet", "passphrase": "mypassword"}
+
+    def test_rescan_action(self) -> None:
+        with _patch_rich() as mocks:
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            mocks["Prompt"].ask.side_effect = ["0", "0"]
+            with patch.object(tui, "_find_wifi_interface", return_value="wlan0"), \
+                 patch.object(tui, "_scan_wifi_networks", side_effect=[[], []]):
+                result = tui._rich_wifi_connect()
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Whiptail WiFi connect
+# ---------------------------------------------------------------------------
+
+
+class TestWhiptailWifiConnect:
+    def test_returns_false_when_no_interface(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_find_wifi_interface", return_value=None), \
+             patch.object(whiptail_tui, "show_error"):
+            result = whiptail_tui._whiptail_wifi_connect()
+        assert result is None
+
+    def test_returns_false_when_no_networks(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_find_wifi_interface", return_value="wlan0"), \
+             patch.object(whiptail_tui, "_scan_wifi_networks", return_value=[]), \
+             patch.object(whiptail_tui, "show_error"):
+            result = whiptail_tui._whiptail_wifi_connect()
+        assert result is None
+
+    def test_returns_false_when_user_skips(self, whiptail_tui: TUI) -> None:
+        networks = [("HomeNet", "WPA2", -52)]
+        with patch.object(whiptail_tui, "_find_wifi_interface", return_value="wlan0"), \
+             patch.object(whiptail_tui, "_scan_wifi_networks", return_value=networks), \
+             patch.object(whiptail_tui, "_select_from_list", return_value="skip"):
+            result = whiptail_tui._whiptail_wifi_connect()
+        assert result is None
+
+    def test_open_network_ping_success(self, whiptail_tui: TUI) -> None:
+        networks = [("CafeWifi", "open", -64)]
+        ok = MagicMock(returncode=0)
+        ping_ok = MagicMock(returncode=0)
+        with patch.object(whiptail_tui, "_find_wifi_interface", return_value="wlan0"), \
+             patch.object(whiptail_tui, "_scan_wifi_networks", return_value=networks), \
+             patch.object(whiptail_tui, "_select_from_list", return_value="CafeWifi"), \
+             patch("installer.tui.subprocess.run", side_effect=[ok, ping_ok]), \
+             patch("time.sleep"):
+            result = whiptail_tui._whiptail_wifi_connect()
+        assert result == {"ssid": "CafeWifi", "passphrase": ""}
+
+    def test_wpa_connection_failure(self, whiptail_tui: TUI) -> None:
+        networks = [("HomeNet", "WPA2", -52)]
+        fail = MagicMock(returncode=1, stderr="auth failed")
+        with patch.object(whiptail_tui, "_find_wifi_interface", return_value="wlan0"), \
+             patch.object(whiptail_tui, "_scan_wifi_networks", return_value=networks), \
+             patch.object(whiptail_tui, "_select_from_list", return_value="HomeNet"), \
+             patch.object(whiptail_tui, "_password_box", return_value="wrong"), \
+             patch.object(whiptail_tui, "show_error"), \
+             patch("installer.tui.subprocess.run", side_effect=[fail]), \
+             patch("time.sleep"):
+            result = whiptail_tui._whiptail_wifi_connect()
+        assert result is None

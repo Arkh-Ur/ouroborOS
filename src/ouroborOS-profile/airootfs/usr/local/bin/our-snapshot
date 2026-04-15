@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# our-snapshot — user-facing Btrfs snapshot manager for ouroborOS
+#
+# Wraps the internal snapshot.sh library functions as a clean CLI.
+# All operations target the running installed system (/.snapshots).
+#
+# Usage:
+#   our-snapshot list
+#   our-snapshot create [NAME]
+#   our-snapshot delete <NAME>
+#   our-snapshot info <NAME>
+#   our-snapshot prune [--keep N] [--days D]
+#   our-snapshot sync-boot-entries
+#   our-snapshot help
+#
+# Requirements:
+#   - Must run as root
+#   - @snapshots subvolume must be mounted at /.snapshots
+#   - snapshot.sh library must be present at /usr/local/lib/ouroboros/snapshot.sh
+set -euo pipefail
+
+readonly PROGRAM="our-snapshot"
+readonly SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
+readonly SNAPSHOTS_DIR="/.snapshots"
+readonly ESP="/boot"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+
+_require_root() {
+    [[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+}
+
+_load_lib() {
+    [[ -r "$SNAPSHOT_LIB" ]] || _die "Snapshot library not found: ${SNAPSHOT_LIB}"
+    # shellcheck source=/dev/null
+    source "$SNAPSHOT_LIB"
+}
+
+_check_snapshots_dir() {
+    [[ -d "$SNAPSHOTS_DIR" ]] || \
+        _die "@snapshots not mounted at ${SNAPSHOTS_DIR}. Is the subvolume configured?"
+}
+
+# Validate snapshot name: alphanumeric, dashes, underscores, dots.
+# Also accept the ISO-8601 timestamp format used internally.
+_validate_name() {
+    local name="$1"
+    [[ "$name" =~ ^[a-zA-Z0-9_\.\-]+$ ]] || \
+        _die "Invalid snapshot name '${name}'. Use letters, digits, -, _ or ."
+    if [[ "$name" == "." || "$name" == ".." ]]; then
+        _die "Invalid snapshot name '${name}'."
+    fi
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    _check_snapshots_dir
+
+    local snaps=()
+    while IFS= read -r -d '' entry; do
+        snaps+=("$(basename "$entry")")
+    done < <(find "$SNAPSHOTS_DIR" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
+
+    if [[ ${#snaps[@]} -eq 0 ]]; then
+        _info "No snapshots found in ${SNAPSHOTS_DIR}."
+        return 0
+    fi
+
+    printf '%-30s  %-10s  %s\n' "NAME" "TYPE" "SIZE"
+    printf '%-30s  %-10s  %s\n' "----" "----" "----"
+    for name in "${snaps[@]}"; do
+        local path="${SNAPSHOTS_DIR}/${name}"
+        local type="rw"
+        btrfs property get "$path" ro 2>/dev/null | grep -q 'ro=true' && type="ro"
+        local size
+        size=$(btrfs filesystem du --raw -s "$path" 2>/dev/null \
+               | awk 'NR==2{printf "%.1f MiB", $1/1048576}' || echo "?")
+        printf '%-30s  %-10s  %s\n' "$name" "$type" "$size"
+    done
+}
+
+cmd_create() {
+    local name="${1:-}"
+    _load_lib
+    _check_snapshots_dir
+
+    if [[ -z "$name" ]]; then
+        name=$(date +%Y-%m-%dT%H%M%S)
+    else
+        _validate_name "$name"
+    fi
+
+    local dest="${SNAPSHOTS_DIR}/${name}"
+    if [[ -d "$dest" ]]; then
+        _die "Snapshot '${name}' already exists."
+    fi
+
+    _info "Creating snapshot '${name}'..."
+    create_snapshot "/" "$dest" --readonly
+    _info "Writing boot entry for '${name}'..."
+    generate_snapshot_boot_entry "$name" "$ESP" "quiet ro"
+    _ok "Snapshot '${name}' created."
+}
+
+cmd_delete() {
+    local name="${1:?Usage: ${PROGRAM} delete <NAME>}"
+    _validate_name "$name"
+    _load_lib
+    _check_snapshots_dir
+
+    local path="${SNAPSHOTS_DIR}/${name}"
+    [[ -d "$path" ]] || _die "Snapshot '${name}' not found."
+
+    [[ "$name" == "install" ]] && \
+        _die "The 'install' baseline snapshot cannot be deleted."
+
+    # Remove boot entry if it exists
+    local entry="${ESP}/loader/entries/ouroboros-snapshot-${name}.conf"
+    if [[ -f "$entry" ]]; then
+        rm -f "$entry"
+        _info "Removed boot entry: ${entry}"
+    fi
+
+    delete_snapshot "$path"
+    _ok "Snapshot '${name}' deleted."
+}
+
+cmd_info() {
+    local name="${1:?Usage: ${PROGRAM} info <NAME>}"
+    _validate_name "$name"
+    _check_snapshots_dir
+
+    local path="${SNAPSHOTS_DIR}/${name}"
+    [[ -d "$path" ]] || _die "Snapshot '${name}' not found."
+
+    local type="read-write"
+    btrfs property get "$path" ro 2>/dev/null | grep -q 'ro=true' && type="read-only"
+
+    local entry="${ESP}/loader/entries/ouroboros-snapshot-${name}.conf"
+    local has_boot="no"
+    [[ -f "$entry" ]] && has_boot="yes (${entry})"
+
+    printf 'Name:       %s\n'  "$name"
+    printf 'Path:       %s\n'  "$path"
+    printf 'Type:       %s\n'  "$type"
+    printf 'Boot entry: %s\n'  "$has_boot"
+
+    local size
+    size=$(btrfs filesystem du -s "$path" 2>/dev/null | tail -1 | awk '{print $1, $2}' || echo "?")
+    printf 'Size:       %s\n'  "$size"
+
+    btrfs subvolume show "$path" 2>/dev/null || true
+}
+
+cmd_prune() {
+    local keep=5
+    local days=30
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --keep) keep="${2:?--keep requires a number}"; shift 2 ;;
+            --days) days="${2:?--days requires a number}"; shift 2 ;;
+            *) _die "Unknown option: $1" ;;
+        esac
+    done
+
+    _load_lib
+    _check_snapshots_dir
+    prune_snapshots "$SNAPSHOTS_DIR" "$keep" "$days"
+}
+
+cmd_sync_boot_entries() {
+    _load_lib
+    _check_snapshots_dir
+
+    _info "Syncing boot entries for all snapshots in ${SNAPSHOTS_DIR}..."
+
+    local synced=0
+    while IFS= read -r -d '' snap; do
+        local name
+        name=$(basename "$snap")
+        local entry="${ESP}/loader/entries/ouroboros-snapshot-${name}.conf"
+        if [[ ! -f "$entry" ]]; then
+            _info "  Writing missing entry for '${name}'..."
+            generate_snapshot_boot_entry "$name" "$ESP" "quiet ro"
+            (( synced++ )) || true
+        fi
+    done < <(find "$SNAPSHOTS_DIR" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
+
+    if [[ $synced -eq 0 ]]; then
+        _ok "All boot entries are up to date."
+    else
+        _ok "Synced ${synced} missing boot entr$([ $synced -eq 1 ] && echo y || echo ies)."
+    fi
+}
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — Btrfs snapshot manager for ouroborOS
+
+USAGE
+  ${PROGRAM} <command> [options]
+
+COMMANDS
+  list                    List all snapshots with type and size
+  create [NAME]           Create a read-only snapshot (default: timestamp)
+  delete <NAME>           Delete a snapshot and its boot entry
+  info <NAME>             Show detailed info about a snapshot
+  prune [--keep N]        Remove old snapshots (default: keep 5, 30 days)
+        [--days D]
+  sync-boot-entries       Write missing systemd-boot entries for all snapshots
+  help                    Show this help
+
+EXAMPLES
+  sudo ${PROGRAM} list
+  sudo ${PROGRAM} create pre-firefox-upgrade
+  sudo ${PROGRAM} delete 2026-04-10T143200
+  sudo ${PROGRAM} prune --keep 3 --days 14
+  sudo ${PROGRAM} sync-boot-entries
+
+NOTES
+  - The 'install' baseline snapshot is protected and cannot be deleted.
+  - Boot entries use rootflags=subvol=@snapshots/NAME (no leading /).
+  - Snapshots are read-only Btrfs subvolumes in /.snapshots.
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+_require_root "$@"
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    list)               cmd_list ;;
+    create)             cmd_create "${1:-}" ;;
+    delete)             cmd_delete "${1:-}" ;;
+    info)               cmd_info "${1:-}" ;;
+    prune)              cmd_prune "$@" ;;
+    sync-boot-entries)  cmd_sync_boot_entries ;;
+    help|--help|-h)     cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

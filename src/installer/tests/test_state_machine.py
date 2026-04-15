@@ -71,7 +71,8 @@ class TestCheckpointSystem:
 class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
-            "INIT", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "INIT", "NETWORK_SETUP", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
+            "SECURE_BOOT",
             "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
         }
@@ -189,8 +190,11 @@ class TestInstallerRun:
         # Replace both the bound methods AND the handler_map entries
         state_method_pairs = [
             (State.INIT, "_handle_init"),
+            (State.NETWORK_SETUP, "_handle_network_setup"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
+            (State.USER, "_handle_user"),
+            (State.DESKTOP, "_handle_desktop"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -294,8 +298,11 @@ class TestInstallerRun:
         # Replace both bound methods and handler_map entries
         state_method_pairs = [
             (State.INIT, "_handle_init"),
+            (State.NETWORK_SETUP, "_handle_network_setup"),
             (State.PREFLIGHT, "_handle_preflight"),
             (State.LOCALE, "_handle_locale"),
+            (State.USER, "_handle_user"),
+            (State.DESKTOP, "_handle_desktop"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -313,10 +320,11 @@ class TestInstallerRun:
              patch(
                  "installer.state_machine._load_config_checkpoint", return_value=None
              ):
-            mock_done.side_effect = lambda s: s in (State.INIT, State.PREFLIGHT)
+            mock_done.side_effect = lambda s: s in (State.INIT, State.NETWORK_SETUP, State.PREFLIGHT)
             installer.run()
 
         assert "_handle_init" not in called_states
+        assert "_handle_network_setup" not in called_states
         assert "_handle_preflight" not in called_states
         assert "_handle_locale" in called_states
 
@@ -500,32 +508,60 @@ class TestCheckNetwork:
             with pytest.raises(InstallerError, match="No internet"):
                 installer._check_network()
 
-    def test_with_tui_wifi_connect_success(self) -> None:
+
+# ---------------------------------------------------------------------------
+# Installer._handle_network_setup
+# ---------------------------------------------------------------------------
+
+
+class TestHandleNetworkSetup:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst.tui = None
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_skips_wifi_when_online(self) -> None:
+        installer = self._make_installer()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
+
+    def test_no_tui_no_wifi_prompt(self) -> None:
+        installer = self._make_installer()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
+
+    def test_tui_wifi_connect_captures_credentials(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = True
+        mock_tui.show_wifi_connect.return_value = {
+            "ssid": "TestNet",
+            "passphrase": "testpass",
+        }
         installer.tui = mock_tui
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == "TestNet"
+        assert installer.config.network.wifi_passphrase == "testpass"
 
-        ping_fail = MagicMock()
-        ping_fail.returncode = 1
-        ping_ok = MagicMock()
-        ping_ok.returncode = 0
-
-        with patch("subprocess.run", side_effect=[ping_fail, ping_ok]):
-            installer._check_network()  # must not raise
-
-    def test_with_tui_wifi_connect_then_still_no_net(self) -> None:
+    def test_tui_wifi_connect_cancelled(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_wifi_connect.return_value = True
+        mock_tui.show_wifi_connect.return_value = None
         installer.tui = mock_tui
-
-        ping_fail = MagicMock()
-        ping_fail.returncode = 1
-
-        with patch("subprocess.run", return_value=ping_fail):
-            with pytest.raises(InstallerError, match="No internet"):
-                installer._check_network()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            installer._handle_network_setup()
+        assert installer.config.network.wifi_ssid == ""
 
 
 # ---------------------------------------------------------------------------
@@ -840,10 +876,12 @@ class TestHandleConfigure:
             "username": "testuser",
             "password_hash": "$6$xxx",
         }
+        mock_tui.show_shell_selection.return_value = "bash"
         installer.tui = mock_tui
         installer._handle_user()
         assert installer.config.user.username == "testuser"
         assert installer.config.user.password_hash == "$6$xxx"
+        assert installer.config.user.shell == "/bin/bash"
 
     def test_handle_desktop_sets_profile(self) -> None:
         """Phase 2: _handle_desktop stores the selected profile and DM."""
@@ -1000,3 +1038,116 @@ class TestInstallerRunWithTUI:
         with patch("installer.state_machine._save_checkpoint"):
             result = installer.run()
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# _handle_user — password_plaintext + shell package
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUser:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_password_plaintext_set_from_tui(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+            "password": "plaintext123",
+        }
+        mock_tui.show_shell_selection.return_value = "bash"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert installer.config.user.password_plaintext == "plaintext123"
+
+    def test_non_base_shell_queued_as_extra_package(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+        }
+        mock_tui.show_shell_selection.return_value = "fish"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert "fish" in installer.config.extra_packages
+
+    def test_extra_package_not_duplicated(self) -> None:
+        installer = self._make_installer()
+        installer.config.extra_packages = ["fish"]
+        mock_tui = MagicMock()
+        mock_tui.show_user_creation.return_value = {
+            "username": "alice",
+            "password_hash": "$6$hash",
+        }
+        mock_tui.show_shell_selection.return_value = "fish"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert installer.config.extra_packages.count("fish") == 1
+
+
+# ---------------------------------------------------------------------------
+# _handle_secure_boot — enabled branch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleSecureBoot:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_skipped_when_disabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = False
+        installer.tui = MagicMock()
+        installer._handle_secure_boot()
+        installer.tui.show_secure_boot_prompt.assert_not_called()
+
+    def test_shows_prompt_when_enabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = True
+        mock_tui = MagicMock()
+        installer.tui = mock_tui
+        installer._handle_secure_boot()
+        mock_tui.show_secure_boot_prompt.assert_called_once()
+
+    def test_no_tui_with_secure_boot_enabled(self) -> None:
+        installer = self._make_installer()
+        installer.config.security.secure_boot = True
+        installer.tui = None
+        installer._handle_secure_boot()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# _check_ram — OSError branch
+# ---------------------------------------------------------------------------
+
+
+class TestCheckRam:
+    def _make_installer(self) -> Installer:
+        return Installer()
+
+    def test_raises_when_ram_insufficient(self) -> None:
+        installer = self._make_installer()
+        meminfo = "MemTotal:         512000 kB\n"
+        with patch("installer.state_machine.Path.read_text", return_value=meminfo):
+            with pytest.raises(InstallerError, match="Insufficient RAM"):
+                installer._check_ram()
+
+    def test_passes_when_ram_sufficient(self) -> None:
+        installer = self._make_installer()
+        meminfo = "MemTotal:        4096000 kB\n"
+        with patch("installer.state_machine.Path.read_text", return_value=meminfo):
+            installer._check_ram()  # must not raise
+
+    def test_oserror_reading_meminfo_treats_as_zero_ram(self) -> None:
+        installer = self._make_installer()
+        # OSError is silently caught but mem_kb stays 0 → InstallerError raised
+        with patch("installer.state_machine.Path.read_text", side_effect=OSError("no file")):
+            with pytest.raises(InstallerError, match="Insufficient RAM"):
+                installer._check_ram()

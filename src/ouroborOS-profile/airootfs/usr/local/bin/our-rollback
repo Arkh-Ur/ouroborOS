@@ -1,0 +1,334 @@
+#!/usr/bin/env bash
+# our-rollback — atomic snapshot rollback for ouroborOS
+#
+# Provides two rollback modes:
+#
+#   try <NAME>      Boot once from a snapshot (non-destructive).
+#                   Uses bootctl set-oneshot. If the boot fails, the next
+#                   reboot returns to the current default automatically.
+#
+#   promote <NAME>  Atomically replace @ with the snapshot (permanent).
+#                   Mounts subvolid=5, moves @→@.old, snapshot→@, prunes @.old.
+#                   Creates a new snapshot of the promoted state.
+#
+#   list            List available snapshots (delegates to our-snapshot list).
+#   status          Show current root subvolume and default boot entry.
+#   undo            Restore @.old as @ (undo the last promote, if @.old exists).
+#
+# WARNING: promote is irreversible without a separate snapshot of the pre-promote
+# state. our-rollback creates one automatically before promoting.
+#
+# Requirements:
+#   - Must run as root
+#   - systemd-boot (bootctl must be available)
+#   - @snapshots mounted at /.snapshots
+#   - Btrfs root on a real block device (not overlayfs)
+set -euo pipefail
+
+readonly PROGRAM="our-rollback"
+readonly SNAPSHOTS_DIR="/.snapshots"
+readonly ESP="/boot"
+readonly ENTRIES_DIR="${ESP}/loader/entries"
+readonly SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+
+_require_root() {
+    [[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+}
+
+_load_lib() {
+    [[ -r "$SNAPSHOT_LIB" ]] || _die "Snapshot library not found: ${SNAPSHOT_LIB}"
+    # shellcheck source=/dev/null
+    source "$SNAPSHOT_LIB"
+}
+
+_check_snapshots_dir() {
+    [[ -d "$SNAPSHOTS_DIR" ]] || \
+        _die "@snapshots not mounted at ${SNAPSHOTS_DIR}. Is the subvolume configured?"
+}
+
+_validate_name() {
+    local name="$1"
+    [[ "$name" =~ ^[a-zA-Z0-9_\.\-]+$ ]] || \
+        _die "Invalid snapshot name '${name}'."
+}
+
+_check_snapshot_exists() {
+    local name="$1"
+    [[ -d "${SNAPSHOTS_DIR}/${name}" ]] || \
+        _die "Snapshot '${name}' not found in ${SNAPSHOTS_DIR}."
+}
+
+# Get the block device backing /
+_root_device() {
+    local src
+    src=$(findmnt -n -o SOURCE / 2>/dev/null | sed 's/\[.*//')
+    [[ -n "$src" ]] || _die "Cannot determine root device."
+    echo "$src"
+}
+
+# Mount Btrfs top-level (subvolid=5) to a temp dir, echo the path.
+# Caller MUST unmount when done.
+_mount_toplevel() {
+    local dev="$1"
+    local tmp
+    tmp=$(mktemp -d)
+    if ! mount -t btrfs -o subvolid=5 "$dev" "$tmp" 2>/dev/null; then
+        rmdir "$tmp"
+        _die "Cannot mount Btrfs top-level from ${dev}."
+    fi
+    echo "$tmp"
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    exec /usr/local/bin/our-snapshot list
+}
+
+cmd_status() {
+    _info "Current root subvolume:"
+    findmnt -n -o OPTIONS / | tr ',' '\n' | grep "^subvol=" || \
+        btrfs subvolume show / 2>/dev/null | grep "Name:" || \
+        echo "  (could not determine)"
+
+    _info "Default boot entry:"
+    bootctl status 2>/dev/null | grep -E "default|Default" | head -3 || \
+        cat "${ESP}/loader/loader.conf" 2>/dev/null | grep "^default" || \
+        echo "  (could not determine)"
+
+    if [[ -d "${SNAPSHOTS_DIR}" ]]; then
+        local count
+        count=$(find "${SNAPSHOTS_DIR}" -maxdepth 1 -mindepth 1 -type d | wc -l)
+        _info "Available snapshots: ${count}"
+    fi
+
+    local old_snap
+    old_snap=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    local toplevel
+    toplevel=$(_mount_toplevel "$old_snap" 2>/dev/null) || true
+    if [[ -n "$toplevel" ]] && [[ -d "${toplevel}/@.old" ]]; then
+        _warn "An @.old rollback target exists (from a previous promote)."
+        _warn "Run: ${PROGRAM} undo   — to revert to @.old"
+        umount "$toplevel" && rmdir "$toplevel"
+    elif [[ -n "$toplevel" ]]; then
+        umount "$toplevel" && rmdir "$toplevel"
+    fi
+}
+
+cmd_try() {
+    local name="${1:?Usage: ${PROGRAM} try <SNAPSHOT_NAME>}"
+    _validate_name "$name"
+    _check_snapshots_dir
+    _check_snapshot_exists "$name"
+
+    local entry_file="${ENTRIES_DIR}/ouroboros-snapshot-${name}.conf"
+
+    # Generate boot entry if missing
+    if [[ ! -f "$entry_file" ]]; then
+        _info "Boot entry missing — generating..."
+        _load_lib
+        generate_snapshot_boot_entry "$name" "$ESP" "quiet ro"
+    fi
+
+    _info "Setting one-shot boot to snapshot '${name}'..."
+    bootctl set-oneshot "ouroboros-snapshot-${name}.conf" || \
+        _die "bootctl set-oneshot failed. Is systemd-boot active?"
+
+    _ok "Next reboot will boot from snapshot '${name}'."
+    _ok "If the boot succeeds and you want it permanent, run: ${PROGRAM} promote ${name}"
+    _ok "If it fails, the following reboot returns to the current default automatically."
+}
+
+cmd_promote() {
+    local name="${1:?Usage: ${PROGRAM} promote <SNAPSHOT_NAME>}"
+    _validate_name "$name"
+    _check_snapshots_dir
+    _check_snapshot_exists "$name"
+
+    local snap_path="${SNAPSHOTS_DIR}/${name}"
+    local dev
+    dev=$(_root_device)
+
+    _warn "PROMOTE is a permanent operation."
+    _warn "Snapshot '${name}' will become the new root (@)."
+    _warn "The current @ will be saved as @.old (auto-deleted after success)."
+    echo ""
+    read -r -p "Type 'yes' to continue: " confirm
+    [[ "$confirm" == "yes" ]] || _die "Aborted."
+
+    # Step 1: Create a pre-promote snapshot of current @ for safety
+    local pre_promote_name
+    pre_promote_name="pre-promote-$(date +%Y-%m-%dT%H%M%S)"
+    _info "Creating pre-promote safety snapshot '${pre_promote_name}'..."
+    _load_lib
+    create_snapshot "/" "${SNAPSHOTS_DIR}/${pre_promote_name}" --readonly
+    generate_snapshot_boot_entry "$pre_promote_name" "$ESP" "quiet ro"
+    _ok "Safety snapshot created: ${pre_promote_name}"
+
+    # Step 2: Make the snapshot read-write (promote requires rw)
+    _info "Making snapshot '${name}' read-write for promotion..."
+    btrfs property set "$snap_path" ro false
+
+    # Step 3: Mount top-level and perform atomic swap via rename
+    _info "Mounting Btrfs top-level for atomic swap..."
+    local toplevel
+    toplevel=$(_mount_toplevel "$dev")
+
+    # Cleanup trap: if anything fails, unmount and abort cleanly
+    cleanup() {
+        local exit_code=$?
+        umount "$toplevel" 2>/dev/null || true
+        rmdir "$toplevel" 2>/dev/null || true
+        if [[ $exit_code -ne 0 ]]; then
+            _err "Promote failed. System is unchanged. Safety snapshot: ${pre_promote_name}"
+        fi
+    }
+    trap cleanup EXIT
+
+    local tl_root="${toplevel}/@"
+    local tl_old="${toplevel}/@.old"
+    local tl_snap="${toplevel}/@snapshots/${name}"
+
+    [[ -d "$tl_root" ]] || _die "@ subvolume not found at ${tl_root}."
+    [[ -d "$tl_snap" ]] || _die "@snapshots/${name} not found at ${tl_snap}."
+
+    if [[ -d "$tl_old" ]]; then
+        _warn "@.old already exists — deleting previous rollback remnant..."
+        btrfs subvolume delete "$tl_old"
+    fi
+
+    # Atomic swap: @→@.old, snapshot→@
+    _info "Performing atomic subvolume swap..."
+    mv "${tl_root}" "${tl_old}"
+    mv "${tl_snap}" "${tl_root}"
+
+    # Step 4: Lock the new @ (was rw for the move)
+    btrfs property set "${tl_root}" ro true
+    _ok "New @ is read-only."
+
+    # Step 5: Delete @.old
+    _info "Deleting @.old..."
+    btrfs subvolume delete "${tl_old}"
+
+    # Step 6: Update default boot entry
+    local new_entry="${ENTRIES_DIR}/ouroborOS.conf"
+    if [[ -f "$new_entry" ]]; then
+        _info "Default boot entry unchanged (points to @)."
+    fi
+
+    umount "$toplevel"
+    rmdir "$toplevel"
+    trap - EXIT
+
+    _ok "Promote complete. Snapshot '${name}' is now the root (@)."
+    _ok "Reboot to activate the new root."
+    _info "Safety snapshot available: ${pre_promote_name}"
+}
+
+cmd_undo() {
+    local dev
+    dev=$(_root_device)
+
+    local toplevel
+    toplevel=$(_mount_toplevel "$dev")
+
+    cleanup() {
+        umount "$toplevel" 2>/dev/null || true
+        rmdir "$toplevel" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    local tl_root="${toplevel}/@"
+    local tl_old="${toplevel}/@.old"
+
+    if [[ ! -d "$tl_old" ]]; then
+        umount "$toplevel"; rmdir "$toplevel"; trap - EXIT
+        _die "@.old not found. Nothing to undo."
+    fi
+
+    _warn "UNDO: @.old will replace the current @."
+    _warn "The current @ will be deleted permanently."
+    echo ""
+    read -r -p "Type 'yes' to continue: " confirm
+    [[ "$confirm" == "yes" ]] || { umount "$toplevel"; rmdir "$toplevel"; trap - EXIT; _die "Aborted."; }
+
+    _info "Making @.old read-write for restore..."
+    btrfs property set "${tl_old}" ro false 2>/dev/null || true
+
+    _info "Deleting current @..."
+    btrfs subvolume delete "${tl_root}"
+
+    _info "Restoring @.old → @..."
+    mv "${tl_old}" "${tl_root}"
+
+    btrfs property set "${tl_root}" ro true
+    _ok "Root restored from @.old."
+
+    umount "$toplevel"; rmdir "$toplevel"; trap - EXIT
+    _ok "Undo complete. Reboot to activate."
+}
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — atomic snapshot rollback for ouroborOS
+
+USAGE
+  ${PROGRAM} <command> [options]
+
+COMMANDS
+  list               List available snapshots
+  status             Show current root subvolume and boot entry
+  try <NAME>         Boot once from snapshot (non-destructive, one-shot)
+  promote <NAME>     Permanently replace @ with snapshot (atomic, irreversible)
+  undo               Restore @.old as @ (only if a previous promote was done)
+  help               Show this help
+
+WORKFLOW (recommended)
+  1. sudo ${PROGRAM} list
+  2. sudo ${PROGRAM} try <NAME>         — test the snapshot on next reboot
+  3. sudo ${PROGRAM} promote <NAME>     — make it permanent once confirmed good
+
+EXAMPLES
+  sudo ${PROGRAM} list
+  sudo ${PROGRAM} try install
+  sudo ${PROGRAM} promote 2026-04-10T143200
+  sudo ${PROGRAM} status
+  sudo ${PROGRAM} undo
+
+NOTES
+  - 'try' uses bootctl set-oneshot; requires systemd-boot.
+  - 'promote' saves a pre-promote safety snapshot automatically.
+  - 'promote' mounts subvolid=5 to bypass VFS ro restriction.
+  - Snapshot names must match a directory in /.snapshots.
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+_require_root "$@"
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    list)     cmd_list ;;
+    status)   cmd_status ;;
+    try)      cmd_try "${1:-}" ;;
+    promote)  cmd_promote "${1:-}" ;;
+    undo)     cmd_undo ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

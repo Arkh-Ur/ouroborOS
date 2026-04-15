@@ -33,8 +33,10 @@ user:
     - audio
     - video
     - input
-  shell: /bin/bash
   homed_storage: classic
+
+# Login shell — top-level key, short name (Phase 3 schema)
+shell: bash
 
 desktop:
   profile: minimal

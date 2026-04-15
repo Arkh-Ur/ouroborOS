@@ -41,9 +41,25 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
     ],
     "kde": [
         "plasma",
-        "plasma-wayland-session",
         "kde-applications-meta",
     ],
+}
+
+# AUR packages per profile — installed lazily via our-aur on first boot.
+# These packages are NOT in official Arch repos and require makepkg.
+# Build happens in ouroboros-firstboot to avoid stalling the installer.
+# Empty list = no AUR packages for that profile.
+PROFILE_AUR_PACKAGES: dict[str, list[str]] = {
+    "minimal":  [],
+    "hyprland": [
+        "quickshell",    # Qt6/QML Wayland shell (hyprland-native, not in repos)
+        "hyprlock",      # Hyprland screen locker
+        "hypridle",      # Idle daemon for hyprland
+        "hyprshot",      # Screenshot tool for hyprland
+    ],
+    "niri":     [],      # niri ya está en [extra]; no AUR needed
+    "gnome":    [],
+    "kde":      [],
 }
 
 # ---------------------------------------------------------------------------
@@ -115,6 +131,48 @@ def resolve_dm(profile: str, dm_choice: str = "auto") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Shell options
+# ---------------------------------------------------------------------------
+#
+# Three shells are offered at install time:
+#   bash — POSIX-compatible, default. Already part of 'base'.
+#   zsh  — Bash-compatible with advanced completion and prompt customisation.
+#   fish — Modern, user-friendly, non-POSIX (breaks legacy scripts).
+#
+# Bash is the default. Fish and Zsh are opt-in — users who want them know
+# what they're choosing. Fish is intentionally last: its non-POSIX behaviour
+# surprises users who expect standard shell semantics.
+
+VALID_SHELLS: dict[str, str] = {
+    "bash": "/bin/bash",
+    "zsh":  "/bin/zsh",
+    "fish": "/usr/bin/fish",
+}
+
+# Packages that need to be installed for each shell.
+# bash is already included in the 'base' metapackage — no extra install needed.
+SHELL_PACKAGES: dict[str, str] = {
+    "zsh":  "zsh",
+    "fish": "fish",
+}
+
+
+def shell_package(shell_name: str) -> str | None:
+    """Return the pacman package for *shell_name*, or None if already in base."""
+    return SHELL_PACKAGES.get(shell_name)
+
+
+def shell_path(shell_name: str) -> str:
+    """Return the absolute path for *shell_name*, or raise ValueError."""
+    if shell_name not in VALID_SHELLS:
+        raise ValueError(
+            f"Unknown shell: {shell_name!r}. "
+            f"Valid options: {sorted(VALID_SHELLS)}"
+        )
+    return VALID_SHELLS[shell_name]
+
+
+# ---------------------------------------------------------------------------
 # Legacy mapping (kept for backward compat — maps profile → default DM)
 # ---------------------------------------------------------------------------
 
@@ -140,6 +198,16 @@ def packages_for(profile: str) -> list[str]:
             f"Valid profiles: {sorted(VALID_PROFILES)}"
         )
     return list(PROFILE_PACKAGES[profile])
+
+
+def aur_packages_for(profile: str) -> list[str]:
+    """Return the AUR package list for *profile* (may be empty)."""
+    if profile not in PROFILE_AUR_PACKAGES:
+        raise ValueError(
+            f"Unknown desktop profile: {profile!r}. "
+            f"Valid profiles: {sorted(VALID_PROFILES)}"
+        )
+    return list(PROFILE_AUR_PACKAGES[profile])
 
 
 def display_manager_for(profile: str) -> str:

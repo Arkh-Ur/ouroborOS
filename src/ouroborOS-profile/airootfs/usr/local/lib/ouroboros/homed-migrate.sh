@@ -108,6 +108,11 @@ rollback() {
     esac
 
     log_error "Migration FAILED at step: ${step}. System left in pre-migration state."
+    log_warn "User '${HOMED_USERNAME}' remains as a classic /etc/passwd user."
+    log_warn "Home directory: /home/${HOMED_USERNAME} (unchanged, no data loss)."
+    log_warn "Known issue: homectl create fails when /home is a Btrfs subvolume (@home)."
+    log_warn "See: https://github.com/systemd/systemd/issues/15121"
+    log_warn "The system is fully functional — login works normally as a classic user."
     exit 1
 }
 

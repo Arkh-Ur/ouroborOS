@@ -1,6 +1,6 @@
-# our-box — Container Management Guide
+# our-container — Container Management Guide
 
-`our-box` is a systemd-nspawn wrapper that provides simple, Btrfs-aware container management on ouroborOS. It handles container lifecycle, snapshots, bind mounts, base images, monitoring, and diagnostics — all without the complexity of Docker or Podman.
+`our-container` is a systemd-nspawn wrapper that provides simple, Btrfs-aware container management on ouroborOS. It handles container lifecycle, snapshots, bind mounts, base images, monitoring, and diagnostics — all without the complexity of Docker or Podman.
 
 ---
 
@@ -18,7 +18,7 @@
 
 ## Overview
 
-`our-box` wraps `systemd-nspawn` and `machinectl` to provide a streamlined container experience on ouroborOS. Key features:
+`our-container` wraps `systemd-nspawn` and `machinectl` to provide a streamlined container experience on ouroborOS. Key features:
 
 - **Btrfs subvolumes** — containers are created as Btrfs subvolumes by default, enabling instant copy-on-write snapshots
 - **Multiple distros** — create Arch Linux, Debian, or Ubuntu containers
@@ -44,7 +44,7 @@
     └── mydb/
 └── .images/                    # IMAGES_ROOT — cached base images
     ├── arch/
-    │   └── .our-box-image      #   Metadata marker
+    │   └── .our-container-image      #   Metadata marker
     └── debian/
 ```
 
@@ -62,12 +62,12 @@
 
 | Requirement                    | Details                                                        |
 |--------------------------------|----------------------------------------------------------------|
-| ouroborOS installed            | `our-box` ships with the system at `/usr/local/bin/our-box`    |
+| ouroborOS installed            | `our-container` ships with the system at `/usr/local/bin/our-container`    |
 | Btrfs filesystem               | Required for snapshots. Falls back to plain directories otherwise. |
 | `systemd-machined`             | Enabled by default on ouroborOS. Run `diagnose` to verify.     |
 | `arch-install-scripts`         | Required for Arch containers (`pacstrap`). Install via `our-pac`. |
 | `debootstrap`                  | Required for Debian/Ubuntu containers. Install via `our-pac`.  |
-| Root access                    | `our-box` auto-prompts with `sudo` when needed.                |
+| Root access                    | `our-container` auto-prompts with `sudo` when needed.                |
 
 ### Installing Bootstrap Tools
 
@@ -85,28 +85,28 @@ sudo our-pac -S debootstrap
 
 ```bash
 # 1. Create a container
-our-box create mydev arch
+our-container create mydev arch
 
 # 2. Start it
-our-box start mydev
+our-container start mydev
 
 # 3. Enter it
-our-box enter mydev
+our-container enter mydev
 
 # 4. Do work inside the container
 pacman -S neovim git
 
 # 5. Snapshot before making changes
-our-box snapshot create mydev v1.0
+our-container snapshot create mydev v1.0
 
 # 6. Check disk usage
-our-box disk-usage
+our-container disk-usage
 
 # 7. Clean up old snapshots
-our-box cleanup
+our-container cleanup
 
 # 8. Remove when done
-our-box remove mydev
+our-container remove mydev
 ```
 
 ---
@@ -115,14 +115,14 @@ our-box remove mydev
 
 ### Container Lifecycle
 
-#### `our-box create <name> [distro]`
+#### `our-container create <name> [distro]`
 
 Bootstrap a new container. Creates a Btrfs subvolume (or plain directory fallback), bootstraps the distro filesystem, and sets a root password.
 
 ```bash
-our-box create mydev              # Arch container (default)
-our-box create webapp debian      # Debian container
-our-box create testbox ubuntu     # Ubuntu container
+our-container create mydev              # Arch container (default)
+our-container create webapp debian      # Debian container
+our-container create testbox ubuntu     # Ubuntu container
 ```
 
 **Container names** must match: `[a-zA-Z0-9._-]+`
@@ -133,46 +133,46 @@ our-box create testbox ubuntu     # Ubuntu container
 
 On failure, partial artifacts are cleaned up automatically.
 
-#### `our-box enter <name>`
+#### `our-container enter <name>`
 
 Open an interactive shell inside a container. Uses `machinectl shell` if the container is registered; falls back to `systemd-nspawn -D` if not.
 
 ```bash
-our-box enter mydev
+our-container enter mydev
 ```
 
-#### `our-box start <name>`
+#### `our-container start <name>`
 
 Boot a container as a systemd machine via `machinectl start`. Waits up to 5 seconds for the container to reach "running" state.
 
 ```bash
-our-box start mydev
+our-container start mydev
 ```
 
-#### `our-box stop <name>`
+#### `our-container stop <name>`
 
 Stop a running container via `machinectl stop`. Waits up to 5 seconds for the container to stop. If stuck, suggests `machinectl terminate`.
 
 ```bash
-our-box stop mydev
+our-container stop mydev
 ```
 
-#### `our-box list` (alias: `ls`)
+#### `our-container list` (alias: `ls`)
 
 List all containers showing their registration state (machinectl), storage location, filesystem type, and running status.
 
 ```bash
-our-box list
+our-container list
 ```
 
 Output shows both machinectl-registered machines and on-disk containers at `/var/lib/machines/`.
 
-#### `our-box remove <name>` (alias: `rm`)
+#### `our-container remove <name>` (alias: `rm`)
 
 Delete a container, its Btrfs subvolume, all associated snapshots, and any `.nspawn` configuration. If the container is running, it is stopped first.
 
 ```bash
-our-box remove mydev
+our-container remove mydev
 ```
 
 **This is destructive.** Snapshots are not preserved.
@@ -183,33 +183,33 @@ our-box remove mydev
 
 Snapshots are **read-only Btrfs subvolumes**. They require the container to be on a Btrfs filesystem and stopped.
 
-#### `our-box snapshot create <container> <name>`
+#### `our-container snapshot create <container> <name>`
 
 Create a read-only snapshot of a container.
 
 ```bash
-our-box snapshot create mydev v1.0
-our-box snapshot create mydev before-upgrade
+our-container snapshot create mydev v1.0
+our-container snapshot create mydev before-upgrade
 ```
 
 Snapshot names must match: `[a-zA-Z0-9._-]+`
 
-#### `our-box snapshot list <container>`
+#### `our-container snapshot list <container>`
 
 List all snapshots for a container, showing name, read-only status, creation date, and size.
 
 ```bash
-our-box snapshot list mydev
+our-container snapshot list mydev
 ```
 
-#### `our-box snapshot restore <container> <name>`
+#### `our-container snapshot restore <container> <name>`
 
 Restore a container from a snapshot. **Replaces the current container state entirely.**
 
 A safety snapshot (`pre-restore-YYYYMMDDTHHMMSS`) is automatically created before the restore. If the restore fails, an attempt is made to recover from the safety snapshot.
 
 ```bash
-our-box snapshot restore mydev v1.0
+our-container snapshot restore mydev v1.0
 ```
 
 ---
@@ -218,22 +218,22 @@ our-box snapshot restore mydev v1.0
 
 Bind mounts are persisted in systemd-nspawn `.nspawn` configuration files. They take effect when the container starts.
 
-#### `our-box storage mount <container> <host-path> <container-path>`
+#### `our-container storage mount <container> <host-path> <container-path>`
 
 Bind-mount a host directory into a container. The host path must exist. The container path must be absolute.
 
 ```bash
-our-box storage mount mydev /home/user/projects /opt/projects
+our-container storage mount mydev /home/user/projects /opt/projects
 ```
 
 This creates or updates `/etc/systemd/nspawn/<container>.nspawn` with a `Bind=` directive. If the container is registered, restart it for the mount to take effect.
 
-#### `our-box storage umount <container> <container-path>` (alias: `unmount`)
+#### `our-container storage umount <container> <container-path>` (alias: `unmount`)
 
 Remove a bind mount from a container's `.nspawn` configuration.
 
 ```bash
-our-box storage umount mydev /opt/projects
+our-container storage umount mydev /opt/projects
 ```
 
 If the `.nspawn` file becomes empty after removal, it is deleted entirely.
@@ -242,7 +242,7 @@ If the `.nspawn` file becomes empty after removal, it is deleted entirely.
 
 ### Maintenance
 
-#### `our-box cleanup [--threshold <percentage>]`
+#### `our-container cleanup [--threshold <percentage>]`
 
 Prune old container snapshots. Default threshold is `80%`.
 
@@ -251,16 +251,16 @@ Prune old container snapshots. Default threshold is `80%`.
 - `pre-restore-*` safety snapshots are always preserved.
 
 ```bash
-our-box cleanup                  # Use default 80% threshold
-our-box cleanup --threshold 70   # Prune if disk > 70%
+our-container cleanup                  # Use default 80% threshold
+our-container cleanup --threshold 70   # Prune if disk > 70%
 ```
 
-#### `our-box disk-usage` (alias: `du`)
+#### `our-container disk-usage` (alias: `du`)
 
 Show detailed disk usage: Btrfs filesystem stats, per-container size and state, snapshot sizes, and a threshold alert.
 
 ```bash
-our-box disk-usage
+our-container disk-usage
 ```
 
 ---
@@ -269,50 +269,50 @@ our-box disk-usage
 
 Base images are cached, read-only Btrfs subvolumes stored under `/var/lib/machines/.images/`.
 
-#### `our-box image pull <distro>`
+#### `our-container image pull <distro>`
 
 Pre-bootstrap a base image. The image is marked read-only on Btrfs.
 
 ```bash
-our-box image pull arch
-our-box image pull debian
+our-container image pull arch
+our-container image pull debian
 ```
 
-#### `our-box image list` (alias: `ls`)
+#### `our-container image list` (alias: `ls`)
 
 List cached base images with distro, read-only status, creation date, and size.
 
 ```bash
-our-box image list
+our-container image list
 ```
 
-#### `our-box image remove <distro>` (alias: `rm`)
+#### `our-container image remove <distro>` (alias: `rm`)
 
-Remove a cached base image. The directory must contain a `.our-box-image` metadata marker.
+Remove a cached base image. The directory must contain a `.our-container-image` metadata marker.
 
 ```bash
-our-box image remove debian
+our-container image remove debian
 ```
 
 ---
 
 ### Monitoring and Diagnostics
 
-#### `our-box monitor [--interval <seconds>] [filter]`
+#### `our-container monitor [--interval <seconds>] [filter]`
 
 Real-time dashboard showing all containers. Refreshes every N seconds (default: 2).
 
 Displays: system CPU cores, memory usage, running container count, storage usage, and per-container state/PID/IP.
 
 ```bash
-our-box monitor                    # Default: refresh every 2 seconds
-our-box monitor --interval 5       # Refresh every 5 seconds
-our-box monitor mydev              # Show only containers matching "mydev"
+our-container monitor                    # Default: refresh every 2 seconds
+our-container monitor --interval 5       # Refresh every 5 seconds
+our-container monitor mydev              # Show only containers matching "mydev"
 ```
 
 Press **Ctrl+C** to stop.
 
-#### `our-box diagnose`
+#### `our-container diagnose`
 
 Run health checks on the container subsystem:
 
@@ -323,12 +323,12 @@ Run health checks on the container subsystem:
 5. **Running containers** — PID alive? Memory usage?
 
 ```bash
-our-box diagnose
+our-container diagnose
 ```
 
 Returns the number of issues found as the exit code.
 
-#### `our-box stats [name]`
+#### `our-container stats [name]`
 
 Show performance statistics for running containers (or a specific container):
 
@@ -339,22 +339,22 @@ Show performance statistics for running containers (or a specific container):
 - **Network** — open TCP connections
 
 ```bash
-our-box stats              # All running containers
-our-box stats mydev        # Specific container
+our-container stats              # All running containers
+our-container stats mydev        # Specific container
 ```
 
-#### `our-box logs <name> [-f|--follow] [-n|--lines <N>]`
+#### `our-container logs <name> [-f|--follow] [-n|--lines <N>]`
 
 Show journal logs for a container via `journalctl --machine`.
 
 ```bash
-our-box logs mydev                # Last 100 lines (default)
-our-box logs mydev -n 50          # Last 50 lines
-our-box logs mydev -f             # Follow mode (like tail -f)
-our-box logs mydev -f -n 200      # Follow, starting from last 200 lines
+our-container logs mydev                # Last 100 lines (default)
+our-container logs mydev -n 50          # Last 50 lines
+our-container logs mydev -f             # Follow mode (like tail -f)
+our-container logs mydev -f -n 200      # Follow, starting from last 200 lines
 ```
 
-#### `our-box check`
+#### `our-container check`
 
 Verify filesystem and configuration integrity:
 
@@ -365,7 +365,7 @@ Verify filesystem and configuration integrity:
 5. **Boot entries** — systemd-boot entries present? Snapshot entries counted?
 
 ```bash
-our-box check
+our-container check
 ```
 
 Returns the number of errors found as the exit code.
@@ -374,12 +374,12 @@ Returns the number of errors found as the exit code.
 
 ### Miscellaneous
 
-#### `our-box help`
+#### `our-container help`
 
 Display full usage information with all commands, aliases, and examples.
 
 ```bash
-our-box help
+our-container help
 ```
 
 ### Exit Codes
@@ -400,18 +400,18 @@ Create an isolated Arch environment for building or testing:
 
 ```bash
 # Create and enter
-our-box create dev-env arch
-our-box start dev-env
-our-box enter dev-env
+our-container create dev-env arch
+our-container start dev-env
+our-container enter dev-env
 
 # Install build dependencies inside the container
 pacman -S base-devel cmake git
 
 # Snapshot before risky changes
-our-box snapshot create dev-env before-refactor
+our-container snapshot create dev-env before-refactor
 
 # If something breaks, restore
-our-box snapshot restore dev-env before-refactor
+our-container snapshot restore dev-env before-refactor
 ```
 
 ### Web Application Testing
@@ -420,23 +420,23 @@ Test a web app across multiple distros:
 
 ```bash
 # Create containers for each distro
-our-box create web-arch arch
-our-box create web-debian debian
-our-box create web-ubuntu ubuntu
+our-container create web-arch arch
+our-container create web-debian debian
+our-container create web-ubuntu ubuntu
 
 # Share the project directory into each container
-our-box storage mount web-arch /home/user/myproject /opt/myproject
-our-box storage mount web-debian /home/user/myproject /opt/myproject
-our-box storage mount web-ubuntu /home/user/myproject /opt/myproject
+our-container storage mount web-arch /home/user/myproject /opt/myproject
+our-container storage mount web-debian /home/user/myproject /opt/myproject
+our-container storage mount web-ubuntu /home/user/myproject /opt/myproject
 
 # Start and test
-our-box start web-arch
-our-box start web-debian
-our-box start web-ubuntu
+our-container start web-arch
+our-container start web-debian
+our-container start web-ubuntu
 
 # Follow logs from all containers
-our-box logs web-arch -f
-our-box logs web-debian -f
+our-container logs web-arch -f
+our-container logs web-debian -f
 ```
 
 ### Database Sandbox
@@ -444,8 +444,8 @@ our-box logs web-debian -f
 Run a database in an isolated container:
 
 ```bash
-our-box create mydb arch
-our-box enter mydb
+our-container create mydb arch
+our-container enter mydb
 # Inside: pacman -S postgresql && initdb && pg_ctl start
 ```
 
@@ -455,16 +455,16 @@ Watch all containers in real time:
 
 ```bash
 # Real-time dashboard
-our-box monitor
+our-container monitor
 
 # Or check health
-our-box diagnose
+our-container diagnose
 
 # Performance stats
-our-box stats
+our-container stats
 
 # Individual container logs
-our-box logs mydev -f
+our-container logs mydev -f
 ```
 
 ### Disk Space Management
@@ -473,13 +473,13 @@ Keep container storage under control:
 
 ```bash
 # Check what's using space
-our-box disk-usage
+our-container disk-usage
 
 # Prune snapshots if disk is getting full
-our-box cleanup --threshold 70
+our-container cleanup --threshold 70
 
 # Remove unused base images
-our-box image remove debian
+our-container image remove debian
 ```
 
 ---
@@ -496,7 +496,7 @@ ls /var/lib/machines/
 machinectl list --all
 
 # Run diagnostics
-our-box diagnose
+our-container diagnose
 ```
 
 ### Container won't start
@@ -506,7 +506,7 @@ our-box diagnose
 journalctl -u systemd-machined --since "5 min ago"
 
 # Verify the container filesystem
-our-box check
+our-container check
 
 # Try entering directly (bypasses machinectl)
 sudo systemd-nspawn -D /var/lib/machines/mydev
@@ -545,8 +545,8 @@ sudo our-pac -S debootstrap
 Bind mounts are configured via `.nspawn` files and take effect on container start. If the container is already running:
 
 ```bash
-our-box stop mydev
-our-box start mydev
+our-container stop mydev
+our-container start mydev
 ```
 
 ### "container appears corrupted (missing /bin and /usr)"
@@ -554,37 +554,37 @@ our-box start mydev
 The container filesystem is incomplete. This usually means the bootstrap failed partway through. Remove and recreate:
 
 ```bash
-our-box remove mydev
-our-box create mydev arch
+our-container remove mydev
+our-container create mydev arch
 ```
 
 ### High disk usage warning
 
 ```bash
 # See what's consuming space
-our-box disk-usage
+our-container disk-usage
 
 # Clean old snapshots
-our-box cleanup
+our-container cleanup
 
 # Remove unused images
-our-box image list
-our-box image remove <unused-distro>
+our-container image list
+our-container image remove <unused-distro>
 
 # Remove unused containers
-our-box list
-our-box remove <unused-container>
+our-container list
+our-container remove <unused-container>
 ```
 
 ---
 
 ## systemd Integration
 
-### How our-box integrates with systemd
+### How our-container integrates with systemd
 
-`our-box` delegates container lifecycle to systemd's native container management:
+`our-container` delegates container lifecycle to systemd's native container management:
 
-| our-box command   | systemd component         | What happens                                              |
+| our-container command   | systemd component         | What happens                                              |
 |--------------------|--------------------------|-----------------------------------------------------------|
 | `start`            | `machinectl start`       | Registers the container as a systemd machine unit          |
 | `stop`             | `machinectl stop`        | Sends shutdown signal; waits for clean stop                |
@@ -607,13 +607,13 @@ sudo systemctl start systemd-machined
 
 ### .nspawn Configuration Files
 
-When you use `our-box storage mount`, a configuration file is created or updated at:
+When you use `our-container storage mount`, a configuration file is created or updated at:
 
 ```
 /etc/systemd/nspawn/<container-name>.nspawn
 ```
 
-Example file created by `our-box storage mount mydev /data /opt/data`:
+Example file created by `our-container storage mount mydev /data /opt/data`:
 
 ```ini
 [Exec]
@@ -623,7 +623,7 @@ PrivateUsers=no
 Bind=/data:/opt/data
 ```
 
-These files are read by `systemd-nspawn` when starting a container. You can edit them manually for advanced configuration, but `our-box storage` commands handle the common cases.
+These files are read by `systemd-nspawn` when starting a container. You can edit them manually for advanced configuration, but `our-container storage` commands handle the common cases.
 
 ### Running containers as systemd services
 
@@ -640,8 +640,8 @@ This creates a `systemd-nspawn@mydev.service` that starts on boot.
 Container logs are accessible through the host's journal:
 
 ```bash
-# Via our-box
-our-box logs mydev
+# Via our-container
+our-container logs mydev
 
 # Direct journalctl (equivalent)
 journalctl --machine=mydev --no-pager

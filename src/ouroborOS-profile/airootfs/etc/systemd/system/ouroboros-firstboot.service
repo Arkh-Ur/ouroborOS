@@ -1,0 +1,24 @@
+# ouroboros-firstboot.service — one-shot first-boot setup for ouroborOS
+#
+# Runs /usr/local/bin/ouroboros-firstboot exactly once (guarded by firstboot.done).
+# Tasks: reflector mirror update, machine-id verification, enable system timers.
+#
+# The service requires network connectivity (reflector needs HTTPS access).
+# Runs after network-online.target so mirrors can be reached.
+
+[Unit]
+Description=ouroborOS First Boot Setup
+Documentation=man:ouroboros-firstboot(8)
+ConditionPathExists=!/var/lib/ouroborOS/firstboot.done
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ouroboros-firstboot
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
