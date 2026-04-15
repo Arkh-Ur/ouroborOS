@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Dev / PR builds: validate only, no release ────────────────────────────
+  # ── Branch / PR builds: validate only, no release ──────────────────────────
   build:
     name: Build ouroborOS ISO
     if: "!startsWith(github.ref, 'refs/tags/v')"
@@ -40,15 +40,11 @@ jobs:
           done
           modprobe loop max_loop=8 2>/dev/null || true
 
-      - name: Patch mkarchiso for debug output
-        run: |
-          sed -i '2a set -x' "$(command -v mkarchiso)"
-
       - name: Build ISO
         run: |
           bash src/scripts/build-iso.sh \
             --clean \
-            --workdir /tmp/ouroborOS-build \
+            --workdir /home/ouroborOS-build \
             --output out/
 
       - name: Generate SHA256 checksum
@@ -59,7 +55,7 @@ jobs:
 
       - name: Verify ISO size (800 MiB – 2.5 GiB)
         run: |
-          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          ISO=$(ls out/ouroborOS-*.iso | head-1)
           SIZE=$(stat -c%s "$ISO")
           MIN=$((800 * 1024 * 1024))
           MAX=$((2560 * 1024 * 1024))
@@ -117,8 +113,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Disable credential injection so our PUBLIC_REPO_TOKEN in the
-          # git remote URL is used without being overridden by GITHUB_TOKEN.
           persist-credentials: false
 
       - name: Set up loop devices
@@ -128,18 +122,13 @@ jobs:
           done
           modprobe loop max_loop=8 2>/dev/null || true
 
-      - name: Patch mkarchiso for debug output
-        run: |
-          # Add set -x to mkarchiso so we can see exactly where it fails
-          sed -i '2a set -x' "$(command -v mkarchiso)"
-
       - name: Build ISO
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           bash src/scripts/build-iso.sh \
             --clean \
-            --workdir /tmp/ouroborOS-build \
+            --workdir /home/ouroborOS-build \
             --output out/ \
             --version="${VERSION}"
 
@@ -151,7 +140,7 @@ jobs:
 
       - name: Verify ISO size (800 MiB – 2.5 GiB)
         run: |
-          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          ISO=$(ls out/ouroborOS-*.iso | head-1)
           SIZE=$(stat -c%s "$ISO")
           MIN=$((800 * 1024 * 1024))
           MAX=$((2560 * 1024 * 1024))
@@ -172,8 +161,6 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
 
-          # Extract section for this version from CHANGELOG.md
-          # Section starts at "## [X.Y.Z]" and ends at the next "## [" or EOF
           NOTES=$(awk \
             "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
             CHANGELOG.md)
@@ -229,14 +216,13 @@ jobs:
             exit 0
           fi
           TAG="${{ github.ref_name }}"
-          ISO=$(ls out/ouroborOS-*.iso | head -1)
+          ISO=$(ls out/ouroborOS-*.iso | head-1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
 
           # Delete existing release if present (supports hotfix re-runs)
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --repo Arkh-Ur/ouroborOS --yes --cleanup-tag 2>/dev/null || true
-            # Re-push the tag since --cleanup-tag removes it
             git push public "refs/tags/${TAG}" --force
           fi
 
