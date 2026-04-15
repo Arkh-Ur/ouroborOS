@@ -197,7 +197,7 @@ class TestConfigureShInstallsAllTools:
         )
 
     @pytest.mark.parametrize("tool", INDIVIDUALLY_COPIED_TOOLS)  # type: ignore[misc]  # noqa: F821
-    def test_individually_copied_tool_referenced(self, tool: str):
+    def test_individually_copied_tool_referenced(self, tool: str) -> None:
         """Individually copied tools must have explicit cp commands."""
         content = _read_script(CONFIGURE_SH)
         assert tool in content, (
@@ -205,7 +205,7 @@ class TestConfigureShInstallsAllTools:
         )
 
     @pytest.mark.parametrize("tool", INLINE_TOOLS)  # type: ignore[misc]  # noqa: F821
-    def test_inline_tool_referenced(self, tool: str):
+    def test_inline_tool_referenced(self, tool: str) -> None:
         content = _read_script(CONFIGURE_SH)
         assert tool in content, f"{tool} not referenced in configure.sh"
 
@@ -213,12 +213,12 @@ class TestConfigureShInstallsAllTools:
 class TestNoCircularSymlinks:
     """our-pac must be a real file, not a circular symlink."""
 
-    def test_our_pac_is_regular_file(self):
+    def test_our_pac_is_regular_file(self) -> None:
         path = AIROOTFS_BIN / "our-pac"
         assert path.is_file(), "our-pac is not a file"
         assert not path.is_symlink(), "our-pac must not be a symlink"
 
-    def test_our_pac_no_self_symlink_in_configure(self):
+    def test_our_pac_no_self_symlink_in_configure(self) -> None:
         """configure.sh must NOT create a symlink of our-pac to itself."""
         content = _read_script(CONFIGURE_SH)
         # The old bug was: ln -sf our-pac "${TARGET}/usr/local/bin/our-pac"
@@ -235,7 +235,7 @@ class TestToolNamingConvention:
     """Installed scripts must follow the our-*/ouroboros-* naming convention."""
 
     @pytest.mark.parametrize("script_name", ALL_INSTALLED_TOOLS)  # type: ignore[misc]  # noqa: F821
-    def test_naming_prefix(self, script_name: str):
+    def test_naming_prefix(self, script_name: str) -> None:
         assert script_name.startswith(("our-", "ouroboros-")), (
             f"{script_name}: does not follow our-*/ouroboros-* naming convention"
         )
@@ -245,7 +245,7 @@ class TestScriptNotEmpty:
     """No script should be empty or trivially small."""
 
     @pytest.mark.parametrize("script_name", AIROOTFS_SOURCE_SCRIPTS)  # type: ignore[misc]  # noqa: F821
-    def test_minimum_size(self, script_name: str):
+    def test_minimum_size(self, script_name: str) -> None:
         path = AIROOTFS_BIN / script_name
         size = path.stat().st_size
         # A valid script with shebang + set -euo pipefail + help is at least ~200 bytes
