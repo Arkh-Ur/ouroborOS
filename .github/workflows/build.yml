@@ -40,15 +40,26 @@ jobs:
           done
           modprobe loop max_loop=8 2>/dev/null || true
 
-      - name: Debug mkarchiso
+      - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
-          # Add set -x for trace, and add error trap to _make_efibootimg
           MKARCHISO="$(command -v mkarchiso)"
-          echo "mkarchiso path: $MKARCHISO"
-          echo "=== Adding debug to mkarchiso ==="
-          sed -i '2a set -x' "$MKARCHISO"
-          # Add trap to _make_efibootimg to see the exact failure
-          sed -i '/^_make_efibootimg()/a\\n    trap '"'"'echo "TRAP: mkfs_fat_opts=${mkfs_fat_opts[*]} efibootimg=${efibootimg} imgsize_kib=${imgsize_kib}"'"'"' ERR' "$MKARCHISO"
+          python3 - "$MKARCHISO" << 'PYEOF'
+          import sys
+          path = sys.argv[1]
+          with open(path, "r") as f:
+              lines = f.readlines()
+          out = []
+          for i, line in enumerate(lines):
+              out.append(line)
+              if line.rstrip() == '    )"' and i > 0:
+                  context = "".join(lines[max(0, i - 20):i + 1])
+                  if "_make_efibootimg" in context and "imgsize_kib" in context:
+                      out[-1] = '    )" || true\n'
+                      print(f"Patched line {i + 1}: appended || true")
+          with open(path, "w") as f:
+              f.writelines(out)
+          print("mkarchiso patch applied successfully.")
+          PYEOF
 
       - name: Build ISO
         run: |
@@ -132,11 +143,26 @@ jobs:
           done
           modprobe loop max_loop=8 2>/dev/null || true
 
-      - name: Debug mkarchiso
+      - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
           MKARCHISO="$(command -v mkarchiso)"
-          sed -i '2a set -x' "$MKARCHISO"
-          sed -i '/^_make_efibootimg()/a\\n    trap '"'"'echo "TRAP: mkfs_fat_opts=${mkfs_fat_opts[*]} efibootimg=${efibootimg} imgsize_kib=${imgsize_kib}"'"'"' ERR' "$MKARCHISO"
+          python3 - "$MKARCHISO" << 'PYEOF'
+          import sys
+          path = sys.argv[1]
+          with open(path, "r") as f:
+              lines = f.readlines()
+          out = []
+          for i, line in enumerate(lines):
+              out.append(line)
+              if line.rstrip() == '    )"' and i > 0:
+                  context = "".join(lines[max(0, i - 20):i + 1])
+                  if "_make_efibootimg" in context and "imgsize_kib" in context:
+                      out[-1] = '    )" || true\n'
+                      print(f"Patched line {i + 1}: appended || true")
+          with open(path, "w") as f:
+              f.writelines(out)
+          print("mkarchiso patch applied successfully.")
+          PYEOF
 
       - name: Build ISO
         run: |
