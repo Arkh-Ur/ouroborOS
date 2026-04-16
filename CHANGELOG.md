@@ -5,6 +5,29 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-04-15
+
+### Added
+
+- Boot entries: `architecture x64` field added to `01-ouroborOS.conf` and
+  `02-ouroborOS-accessibility.conf` (systemd-boot spec compliance).
+
+### Changed
+
+- ISO: airootfs compression migrated from `squashfs` (zstd-15) to `erofs`
+  (lzma + ztailpacking). Faster kernel mount at boot; `erofs-utils` already
+  present in CI build environment.
+- `build-iso.sh`: `mksquashfs` preflight check replaced with `mkfs.erofs`;
+  `--version` flag now also injects version into `os-release` (VERSION_ID,
+  PRETTY_NAME) and boot entry titles in addition to `profiledef.sh`.
+- `profiledef.sh`: `iso_publisher` URL corrected to `Arkh-Ur` (was `Arkhur-Vo`).
+
+### Fixed
+
+- Installer: keyboard layout selected in the locale screen was never applied to
+  the live environment. `loadkeys` is now called immediately after the user
+  selects a keymap, so the layout takes effect for the rest of the installation.
+
 ## [0.4.5] - 2026-04-15
 
 ### Added
@@ -216,6 +239,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 93% pytest coverage.
 - Developer tooling scripts.
 
+[0.4.6]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.6
+[0.4.5]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.5
+[0.4.4]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.1

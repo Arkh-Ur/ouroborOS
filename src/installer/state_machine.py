@@ -417,6 +417,8 @@ class Installer:
             self.config.locale.locale = locale_cfg["locale"]
             self.config.locale.keymap = locale_cfg["keymap"]
             self.config.locale.timezone = locale_cfg["timezone"]
+            subprocess.run(["loadkeys", self.config.locale.keymap], check=False)
+            log.info("Applied keymap '%s' to live environment.", self.config.locale.keymap)
             self.config.network.hostname = self.tui.show_hostname_input()
         log.info(
             "Locale: %s / %s / %s",

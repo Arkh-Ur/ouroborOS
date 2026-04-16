@@ -1,5 +1,5 @@
 NAME="ouroborOS"
-PRETTY_NAME="ouroborOS 0.4.5"
+PRETTY_NAME="ouroborOS 0.4.6"
 ID=ouroboros
 ID_LIKE=arch
 BUILD_ID=rolling
@@ -8,4 +8,4 @@ HOME_URL="https://github.com/Arkh-Ur/ouroborOS"
 SUPPORT_URL="https://github.com/Arkh-Ur/ouroborOS/issues"
 BUG_REPORT_URL="https://github.com/Arkh-Ur/ouroborOS/issues"
 LOGO=ouroboros
-VERSION_ID="0.4.5"
+VERSION_ID="0.4.6"
