@@ -31,7 +31,7 @@ jobs:
             libisoburn git erofs-utils mtools
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up loop devices
         run: |
@@ -45,9 +45,14 @@ jobs:
           MKARCHISO="$(command -v mkarchiso)"
           awk '
           /^_make_efibootimg\(\)/ { in_func=1 }
-          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          in_func && /^\}[[:space:]]*$/  { in_func=0 }
+          in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          if ! grep -q '|| true' "$MKARCHISO"; then
+            echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
+            exit 1
+          fi
 
       - name: Build ISO
         run: |
@@ -119,7 +124,7 @@ jobs:
             libisoburn git erofs-utils mtools github-cli
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -136,9 +141,14 @@ jobs:
           MKARCHISO="$(command -v mkarchiso)"
           awk '
           /^_make_efibootimg\(\)/ { in_func=1 }
-          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          in_func && /^\}[[:space:]]*$/  { in_func=0 }
+          in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          if ! grep -q '|| true' "$MKARCHISO"; then
+            echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
+            exit 1
+          fi
 
       - name: Build ISO
         run: |
