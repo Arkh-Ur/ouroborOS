@@ -1,12 +1,15 @@
 # Phase 4 Plan — AUR, TPM2, Flatpak & Extended Package Management
 
 **Version:** post-v0.3.0
-**Date:** 2026-04-11
-**Branch:** main
+**Date:** 2026-04-15 (updated)
+**Branch:** dev
 
 > **v0.3.0 released.** Phase 3 complete. Este documento define Phase 4.
 > Arranca desde el backlog "Out of Scope (Phase 4+)" de PHASE_3_PLAN.md
 > más lo resuelto en la sesión de kickoff del 2026-04-11.
+>
+> **Actualización 2026-04-15:** Milestones 4.A y 4.B completados (v0.4.5).
+> Próximo: 4.2 → 4.3 → 4.6 → 4.5 → 4.7.
 
 ---
 
@@ -125,6 +128,65 @@ via `ouroboros-firstboot` + `our-aur`.
 
 ---
 
+### Milestone 4.A — ISO & CI Hardening ✅
+
+**Completado:** 2026-04-15
+
+Correcciones críticas y limpieza derivadas del análisis comparativo con archiso/archinstall
+(`docs/architecture/upstream-analysis.md`).
+
+**ISO (`packages.x86_64`):**
+- `cryptsetup` agregado — **bug crítico**: cualquier instalación con `use_luks: true` fallaba
+  con `command not found` en `disk.sh encrypt_partition()`
+- `linux-zen-headers` eliminado — solo necesario para DKMS en el sistema instalado, ya se
+  instala via `pacstrap` (-30 MB)
+- `flatpak` eliminado — se instala on-demand post-install via `our-flat` (-15 MB)
+- `pciutils`, `usbutils`, `diffutils` agregados — diagnóstico de hardware en el live env
+
+**CI (`.github/workflows/build.yml`):**
+- `actions/checkout` actualizado de v4 a v5 (Node.js 20 depreca el 2026-06-02)
+- Verificación explícita post-patch de `mkarchiso`: falla rápido con `::error::` si el awk
+  no aplicó el parche, en vez de fallar silenciosamente adentro del build
+- Regex del awk endurecido: `[[:space:]]+` reemplaza 4 espacios hardcodeados; guard de
+  fin de función (`}`) para evitar falsos positivos en otras funciones
+
+**Rollback (`our-rollback`):**
+- `promote`: la boot entry huérfana `ouroboros-snapshot-<name>.conf` ahora se elimina tras
+  el swap atómico — apuntaba a `@snapshots/<name>` que ya no existe
+- `promote`: `bootctl set-default ouroborOS.conf` llamado explícitamente para resetear el
+  default a `@` tras el promote
+
+**os-release:**
+- `VERSION_ID` y `PRETTY_NAME` actualizados de `0.1.0` a `0.4.5`
+- `HOME_URL` corregida a `Arkh-Ur` (era `Arkhur-Vo`)
+
+---
+
+### Milestone 4.B — Desktop Profile Completion ✅
+
+**Completado:** 2026-04-15
+
+Gaps identificados en el análisis comparativo con archinstall.
+
+**Hyprland:**
+- `grim` + `slurp` agregados — backend de screenshots requerido por `hyprshot` (AUR)
+- `dunst` agregado — notifications daemon
+- `thunar` agregado — file manager liviano (evita el dep chain de KDE que arrastraría `dolphin`)
+
+**Niri:**
+- `waybar` agregado — barra de estado (esencial para un tiling WM)
+- `mako` agregado — notifications daemon
+- `swaylock` agregado — lock screen
+- `swaybg` agregado — wallpaper setter
+- `swayidle` agregado — idle daemon para auto-lock
+
+**KDE:**
+- `kde-applications-meta` eliminado — instalaba ~300 paquetes (~1.5 GB) incluyendo juegos,
+  educación y ofimática
+- Reemplazado por set curado: `dolphin konsole kate gwenview ark ffmpegthumbs` (~400 MB)
+
+---
+
 ### Milestone 4.2 — TPM2 + `systemd-cryptenroll` ⬜
 
 Integración de TPM2 para desbloqueo automático de LUKS sin passphrase en boot.
@@ -219,18 +281,19 @@ Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
 |---|---------|-----------------|-----------|-------------|--------|
 | 4.0 | `our-aur` AUR helper containerizado | `our-aur` | 🔴 | Alta | ✅ |
 | 4.1 | Lazy AUR install via firstboot queue | pipeline | 🔴 | Media | ✅ |
+| 4.4 | Flatpak | `our-flat` | 🟡 | Baja | ✅ |
+| **4.A** | **ISO & CI Hardening** | `packages.x86_64`, CI | 🔴 | Baja | ✅ |
+| **4.B** | **Desktop Profile Completion** | `desktop_profiles.py` | 🟡 | Baja | ✅ |
 | 4.2 | TPM2 + `systemd-cryptenroll` | `ouroboros-secureboot` | 🟡 | Alta | ⬜ |
 | 4.3 | Multi-Language TUI | TUI | 🟢 | Media | ⬜ |
-| 4.4 | Flatpak | `our-flat` | 🟡 | Baja | ✅ |
 | 4.5 | Live USB Persistence | `our-persist` | 🟢 | Alta | ⬜ |
 | 4.6 | Dual-Boot + Secure Boot | installer | 🟡 | Alta | ⬜ |
 | 4.7 | ARM / aarch64 | archiso | 🟢 | Muy Alta | ⬜ |
 
-**Orden de implementación sugerido:**
+**Orden de implementación (actualizado):**
 ```
-4.2 → 4.4 → 4.3 → 4.6 → 4.5 → 4.7
+[✅ 4.0] → [✅ 4.1] → [✅ 4.4] → [✅ 4.A] → [✅ 4.B] → 4.2 → 4.3 → 4.6 → 4.5 → 4.7
 ```
-> 4.2 y 4.4 son independientes y pueden ir en paralelo.
 
 ---
 
@@ -239,10 +302,18 @@ Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
 - [x] `our-aur -S quickshell` instala sin tocar el root del host
 - [x] Perfil hyprland encola AUR packages para firstboot
 - [x] `ouroboros-firstboot` instala AUR queue via `our-aur` al primer boot
+- [x] `cryptsetup` disponible en el live ISO (fix bug LUKS)
+- [x] Perfiles Hyprland y Niri con screenshots, notificaciones, lock screen y file manager
+- [x] KDE sin `kde-applications-meta` (curated set ~400 MB vs ~1.5 GB)
+- [x] `our-rollback promote` limpia boot entry huérfana y resetea default boot
+- [x] CI: awk patch de mkarchiso verificado y endurecido contra cambios de indentación
 - [ ] Todos los scripts: shellcheck 0 warnings (pendiente: `our-snapshot`, `configure.sh`)
-- [ ] pytest coverage ≥ 93% (actualmente: 347 tests pasan)
-- [ ] TPM2 unlock funciona en QEMU con OVMF + swtpm
-- [ ] Flatpak instala apps de Flathub en perfil gnome/kde
+- [ ] pytest coverage ≥ 93%
+- [ ] TPM2 unlock funciona en QEMU con OVMF + swtpm (Milestone 4.2)
+- [ ] Multi-language TUI operativa en es_AR, en_US, de_DE (Milestone 4.3)
+- [ ] Dual-boot con Windows detectado y entrada en systemd-boot (Milestone 4.6)
+- [ ] `our-persist setup` crea partición de persistencia en USB live (Milestone 4.5)
+- [ ] ISO construye para aarch64 y bootea en QEMU ARM (Milestone 4.7)
 
 ---
 
