@@ -27,6 +27,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 from installer.config import InstallerConfig, find_unattended_config, load_config, load_config_from_url
+from installer.i18n import init_i18n
 from installer.desktop_profiles import (
     aur_packages_for,
     dm_package,
@@ -337,6 +338,14 @@ class Installer:
 
         # No config found — start interactive TUI
         self.tui = TUI(title="ouroborOS Installer")
+
+        # Language selection is the very first screen — before welcome.
+        # i18n is not yet initialised; show_language_selection() uses hardcoded strings.
+        lang = self.tui.show_language_selection()
+        self.config.locale.language = lang
+        init_i18n(lang)
+        log.info("Installer language set to: %s", lang)
+
         self.tui.show_welcome()
 
         # Ask if user wants to provide a remote config URL

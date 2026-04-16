@@ -1,0 +1,61 @@
+# ouroborOS Installer — English (US) source strings
+# This is the reference locale; msgstr mirrors msgid.
+msgid ""
+msgstr ""
+"Project-Id-Version: ouroborOS installer\n"
+"Report-Msgid-Bugs-To: https://github.com/Arkh-Ur/ouroborOS/issues\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Welcome to the ouroborOS installer."
+msgstr "Welcome to the ouroborOS installer."
+
+msgid "ouroborOS is an ArchLinux-based distribution with an immutable\nBtrfs root filesystem and a fully systemd-native stack."
+msgstr "ouroborOS is an ArchLinux-based distribution with an immutable\nBtrfs root filesystem and a fully systemd-native stack."
+
+msgid "This installer will guide you through the installation process."
+msgstr "This installer will guide you through the installation process."
+
+msgid "WARNING: This will ERASE the target disk completely."
+msgstr "WARNING: This will ERASE the target disk completely."
+
+msgid "Select system locale:"
+msgstr "Select system locale:"
+
+msgid "Select keyboard layout:"
+msgstr "Select keyboard layout:"
+
+msgid "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)"
+msgstr "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)"
+
+msgid "Select a desktop profile for the installed system:"
+msgstr "Select a desktop profile for the installed system:"
+
+msgid "Select a display manager:"
+msgstr "Select a display manager:"
+
+msgid "Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."
+msgstr "Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."
+
+msgid "Enable LUKS2 full-disk encryption?"
+msgstr "Enable LUKS2 full-disk encryption?"
+
+msgid "Enter username for the primary user"
+msgstr "Enter username for the primary user"
+
+msgid "Confirm password"
+msgstr "Confirm password"
+
+msgid "Select the login shell for your user account:"
+msgstr "Select the login shell for your user account:"
+
+msgid "Select the GPU driver to install:"
+msgstr "Select the GPU driver to install:"
+
+msgid "Installation Complete"
+msgstr "Installation Complete"
+
+msgid "Remove the installation media."
+msgstr "Remove the installation media."

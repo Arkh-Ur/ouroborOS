@@ -232,6 +232,22 @@ if [[ -d "$INSTALLER_SRC" ]]; then
         cp "$PROFILE_DIR/profiledef.sh" "$INSTALLER_DST/profiledef.sh"
     fi
 
+    # Sync locale directory and compile .po → .mo
+    if [[ -d "$INSTALLER_SRC/locale" ]]; then
+        log_info "Compiling locale files (.po → .mo)..."
+        while IFS= read -r -d '' po_file; do
+            lang_dir="$(dirname "$po_file")"
+            lang="$(basename "$(dirname "$lang_dir")")"
+            mo_dir="$INSTALLER_DST/locale/${lang}/LC_MESSAGES"
+            mkdir -p "$mo_dir"
+            if msgfmt -o "${mo_dir}/installer.mo" "$po_file"; then
+                log_ok "Compiled locale: ${lang}"
+            else
+                log_warn "msgfmt failed for ${lang} — installer will fall back to English"
+            fi
+        done < <(find "$INSTALLER_SRC/locale" -name 'installer.po' -print0)
+    fi
+
     chmod 0755 "$INSTALLER_DST/ops/"*.sh
     log_ok "Installer modules synced: $(find "$INSTALLER_DST" -type f | wc -l) files"
 else

@@ -1293,3 +1293,40 @@ class TestWhiptailWifiConnect:
              patch("time.sleep"):
             result = whiptail_tui._whiptail_wifi_connect()
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Language selection (v0.4.9 i18n)
+# ---------------------------------------------------------------------------
+
+
+class TestLanguageSelectionRich:
+    """show_language_selection() — rich backend."""
+
+    def test_returns_selected_language_code(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="es_AR") as mock_sel:
+            result = rich_tui.show_language_selection()
+        assert result == "es_AR"
+        mock_sel.assert_called_once()
+
+    def test_default_is_en_us(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_select", return_value="en_US"):
+            result = rich_tui.show_language_selection()
+        assert result == "en_US"
+
+    def test_language_options_include_all_supported(self, rich_tui: TUI) -> None:
+        codes = [code for code, _ in rich_tui._LANGUAGE_OPTIONS]
+        assert "en_US" in codes
+        assert "es_AR" in codes
+        assert "de_DE" in codes
+
+
+class TestLanguageSelectionWhiptail:
+    """show_language_selection() — whiptail backend."""
+
+    def test_returns_selected_language_code(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_select_from_list", return_value="de_DE") as mock_sel:
+            result = whiptail_tui.show_language_selection()
+        assert result == "de_DE"
+        mock_sel.assert_called_once()
+
