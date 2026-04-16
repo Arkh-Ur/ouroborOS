@@ -1,0 +1,1883 @@
+#!/usr/bin/env bash
+# our-container - systemd-nspawn container wrapper for ouroborOS.
+#
+# Usage:
+#   our-container create <name> [distro]          # bootstrap a container (default: arch)
+#   our-container enter <name>                    # machinectl shell into a container
+#   our-container start <name>                    # boot the container
+#   our-container stop <name>                     # stop the container
+#   our-container list                            # list machines
+#   our-container remove <name>                   # delete container + its subvolume
+#   our-container snapshot create <ctr> <name>    # snapshot a container
+#   our-container snapshot list <ctr>             # list snapshots of a container
+#   our-container snapshot restore <ctr> <name>   # restore a container from snapshot
+#   our-container storage mount <ctr> <h> <c>     # bind-mount host path into container
+#   our-container storage umount <ctr> <c-path>   # remove a bind mount from container
+#   our-container cleanup [--threshold <pct>]     # prune old container snapshots
+#   our-container disk-usage                      # show per-container disk usage
+#   our-container image pull <distro>             # pre-bootstrap a base image
+#   our-container image list                      # list available base images
+#   our-container image remove <distro>           # remove a cached base image
+set -euo pipefail
+
+readonly MACHINES_ROOT="/var/lib/machines"
+readonly SNAPSHOTS_ROOT="/var/lib/machines/.snapshots"
+readonly IMAGES_ROOT="/var/lib/machines/.images"
+readonly PROGRAM_NAME="our-container"
+
+# --- Logging ---
+_log() {
+    local level="$1"; shift
+    local ts
+    ts="$(date '+%Y-%m-%d %H:%M:%S')" || ts="????"
+    echo "[${ts}] [${PROGRAM_NAME}] [${level}] $*" >&2
+}
+log_info()  { _log "INFO"  "$*"; }
+log_warn()  { _log "WARN"  "$*"; }
+log_error() { _log "ERROR" "$*"; }
+die()       { log_error "$*"; exit 1; }
+
+# --- Helpers ---
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        log_info "Re-executing with sudo for: $*"
+        exec sudo /usr/local/bin/our-container "$@"
+    fi
+}
+
+_container_exists() {
+    local name="$1"
+    [[ -e "${MACHINES_ROOT}/${name}" ]]
+}
+
+_container_state() {
+    local name="$1"
+    local state
+    state="$(machinectl show "$name" 2>/dev/null | grep -m1 '^State=' || true)"
+    if [[ -z "$state" ]]; then
+        echo "unknown"
+        return 1
+    fi
+    echo "${state#State=}"
+    return 0
+}
+
+_require_container_exists() {
+    local name="$1"
+    local action="$2"
+    if ! _container_exists "$name"; then
+        die "cannot ${action}: container '${name}' does not exist (checked: ${MACHINES_ROOT}/${name})"
+    fi
+}
+
+_require_container_not_running() {
+    local name="$1"
+    local action="$2"
+    local state
+    state="$(_container_state "$name")"
+    if [[ "$state" == "running" ]]; then
+        die "cannot ${action}: container '${name}' is currently running -- stop it first"
+    fi
+}
+
+_is_btrfs() {
+    local path="$1"
+    local fstype
+    fstype="$(findmnt -n -o FSTYPE --target "$path" 2>/dev/null || true)"
+    [[ "$fstype" == "btrfs" ]]
+}
+
+_is_btrfs_subvolume() {
+    local path="$1"
+    btrfs subvolume show "$path" >/dev/null 2>&1
+}
+
+_nspawn_file() {
+    local name="$1"
+    echo "/etc/systemd/nspawn/${name}.nspawn"
+}
+
+# --- Command: create ---
+cmd_create() {
+    local name="${1:-}"
+    local distro="${2:-arch}"
+    local opt_isolated=false
+
+    # Parse optional flags after name and distro
+    shift 2 2>/dev/null || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --isolated) opt_isolated=true; shift ;;
+            *) die "unknown option: $1 (valid: --isolated)" ;;
+        esac
+    done
+
+    [[ -n "$name" ]] || die "usage: our-container create <name> [distro] [--isolated]"
+    [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "invalid container name '${name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
+    require_root "create" "$name" "$distro"
+
+    _require_container_not_running "$name" "create"
+
+    local target="${MACHINES_ROOT}/${name}"
+    if _container_exists "$name"; then
+        die "container '${name}' already exists at ${target}"
+    fi
+
+    mkdir -p "$MACHINES_ROOT"
+    if btrfs subvolume create "$target" 2>/dev/null; then
+        log_info "Created Btrfs subvolume: ${target}"
+    else
+        mkdir -p "$target"
+        log_info "Created directory (non-Btrfs fallback): ${target}"
+    fi
+
+    log_info "Bootstrapping '${distro}' into container '${name}'..."
+    case "$distro" in
+        arch)
+            command -v pacstrap >/dev/null \
+                || die "pacstrap not found -- install arch-install-scripts"
+            pacstrap -c "$target" base \
+                || { log_error "pacstrap failed for container '${name}'"; rm -rf "$target"; die "bootstrap aborted, cleaned up ${target}"; }
+            ;;
+        debian|ubuntu)
+            command -v debootstrap >/dev/null \
+                || die "debootstrap not found -- install it with: sudo our-pac -S debootstrap"
+            debootstrap --include=systemd-container "$distro" "$target" \
+                || { log_error "debootstrap failed for container '${name}'"; rm -rf "$target"; die "bootstrap aborted, cleaned up ${target}"; }
+            ;;
+        *)
+            die "unsupported distro: '${distro}' (supported: arch, debian, ubuntu)"
+            ;;
+    esac
+
+    log_info "Setting root password for container '${name}'"
+    systemd-nspawn -D "$target" --pipe passwd -d root || {
+        log_warn "Could not set root password -- set it manually via: our-container enter ${name}"
+    }
+
+    # Write .nspawn override for isolated networking
+    if [[ "$opt_isolated" == true ]]; then
+        local nspawn_dir="/etc/systemd/nspawn"
+        mkdir -p "$nspawn_dir"
+        cat > "${nspawn_dir}/${name}.nspawn" << EOF
+[Network]
+VirtualEthernet=yes
+EOF
+        log_info "Network isolation configured: ${nspawn_dir}/${name}.nspawn"
+    fi
+
+    log_info "Container '${name}' ready. Enter with: our-container enter ${name}"
+}
+
+# --- Command: enter ---
+cmd_enter() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container enter <name> [--isolated] [--wayland] [--gpu] [--audio] [--gui]"
+    shift
+
+    # Parse optional flags
+    local opt_isolated=false opt_wayland=false opt_gpu=false opt_audio=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --isolated) opt_isolated=true; shift ;;
+            --wayland)  opt_wayland=true;  shift ;;
+            --gpu)      opt_gpu=true;      shift ;;
+            --audio)    opt_audio=true;    shift ;;
+            --gui)      opt_wayland=true; opt_gpu=true; opt_audio=true; shift ;;
+            *) die "unknown option: $1 (valid: --isolated --wayland --gpu --audio --gui)" ;;
+        esac
+    done
+
+    require_root "enter" "$name"
+    _require_container_exists "$name" "enter"
+
+    # Build extra systemd-nspawn arguments for the flags
+    local nspawn_extra=()
+
+    if [[ "$opt_isolated" == true ]]; then
+        # Private network via veth pair — container gets its own network namespace
+        nspawn_extra+=(--network-veth)
+        log_info "Network isolation: --network-veth (private veth pair)"
+    fi
+
+    if [[ "$opt_wayland" == true ]]; then
+        local uid
+        uid=$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo "0")
+        local wayland_sock="/run/user/${uid}/wayland-0"
+        if [[ -S "$wayland_sock" ]]; then
+            nspawn_extra+=(--bind-ro="${wayland_sock}")
+            nspawn_extra+=(--setenv=WAYLAND_DISPLAY=wayland-0)
+            nspawn_extra+=("--setenv=XDG_RUNTIME_DIR=/run/user/${uid}")
+            log_info "Wayland passthrough: binding ${wayland_sock}"
+        else
+            log_warn "Wayland socket not found at ${wayland_sock} — --wayland ignored"
+        fi
+    fi
+
+    if [[ "$opt_gpu" == true ]]; then
+        if [[ -d /dev/dri ]]; then
+            nspawn_extra+=(--bind=/dev/dri)
+            nspawn_extra+=(--property=DeviceAllow=char-drm rw)
+            log_info "GPU passthrough: binding /dev/dri"
+        else
+            log_warn "/dev/dri not found — --gpu ignored"
+        fi
+    fi
+
+    if [[ "$opt_audio" == true ]]; then
+        local uid
+        uid=$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo "0")
+        local pw_sock="/run/user/${uid}/pipewire-0"
+        if [[ -S "$pw_sock" ]]; then
+            nspawn_extra+=(--bind-ro="${pw_sock}")
+            nspawn_extra+=(--setenv=PIPEWIRE_REMOTE="${pw_sock}")
+            log_info "Audio passthrough: binding PipeWire socket ${pw_sock}"
+        else
+            local pulse_sock="/run/user/${uid}/pulse/native"
+            if [[ -S "$pulse_sock" ]]; then
+                nspawn_extra+=(--bind-ro="${pulse_sock}")
+                nspawn_extra+=(--setenv=PULSE_SERVER="unix:${pulse_sock}")
+                log_info "Audio passthrough: binding PulseAudio socket (PipeWire not found)"
+            else
+                log_warn "No PipeWire or PulseAudio socket found — --audio ignored"
+            fi
+        fi
+    fi
+
+    local state
+    state="$(_container_state "$name")"
+    log_info "Container '${name}' state: ${state}"
+
+    # If flags are set, always use systemd-nspawn directly (machinectl doesn't support them)
+    if [[ ${#nspawn_extra[@]} -gt 0 ]]; then
+        log_info "Using systemd-nspawn with flags: ${nspawn_extra[*]}"
+        exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" "${nspawn_extra[@]}"
+    fi
+
+    if [[ "$state" != "unknown" ]]; then
+        log_info "Entering container '${name}' via machinectl shell"
+        exec machinectl shell "$name" || {
+            local rc=$?
+            log_error "machinectl shell failed with exit code ${rc}"
+            log_info "Falling back to systemd-nspawn direct access..."
+            exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+        }
+    fi
+
+    log_info "Container '${name}' not registered with machinectl, using systemd-nspawn fallback"
+    exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+}
+
+# --- Command: start ---
+cmd_start() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container start <name>"
+    require_root "start" "$name"
+    _require_container_exists "$name" "start"
+
+    local state
+    state="$(_container_state "$name")"
+
+    case "$state" in
+        running)
+            log_warn "Container '${name}' is already running (no action taken)"
+            return 0
+            ;;
+        unknown)
+            log_info "Container '${name}' not registered with machinectl -- starting anyway"
+            ;;
+        *)
+            log_info "Container '${name}' state: ${state} -- starting..."
+            ;;
+    esac
+
+    log_info "Starting container '${name}'..."
+    if ! machinectl start "$name"; then
+        log_error "machinectl start failed for container '${name}'"
+        die "failed to start container '${name}' -- check 'journalctl -u systemd-machined' for details"
+    fi
+
+    local retries=5
+    while (( retries > 0 )); do
+        state="$(_container_state "$name")"
+        if [[ "$state" == "running" ]]; then
+            log_info "Container '${name}' is now running"
+            return 0
+        fi
+        sleep 1
+        (( retries-- )) || true
+    done
+
+    log_warn "Container '${name}' start command succeeded but state is '${state}' -- it may still be booting"
+}
+
+# --- Command: stop ---
+cmd_stop() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container stop <name>"
+    require_root "stop" "$name"
+    _require_container_exists "$name" "stop"
+
+    local state
+    state="$(_container_state "$name")"
+
+    if [[ "$state" == "unknown" ]]; then
+        log_warn "Container '${name}' is not registered with machinectl -- nothing to stop"
+        return 0
+    fi
+
+    if [[ "$state" != "running" ]]; then
+        log_warn "Container '${name}' is not running (state: ${state}) -- nothing to stop"
+        return 0
+    fi
+
+    log_info "Stopping container '${name}'..."
+    if ! machinectl stop "$name"; then
+        log_error "machinectl stop failed for container '${name}'"
+        die "failed to stop container '${name}' -- it may be stuck; try: machinectl terminate ${name}"
+    fi
+
+    local retries=5
+    while (( retries > 0 )); do
+        state="$(_container_state "$name")"
+        if [[ "$state" != "running" ]]; then
+            log_info "Container '${name}' stopped successfully"
+            return 0
+        fi
+        sleep 1
+        (( retries-- )) || true
+    done
+
+    log_warn "Container '${name}' stop command succeeded but state is still '${state}'"
+    log_info "You may need to force-terminate: machinectl terminate ${name}"
+}
+
+# --- Command: list ---
+cmd_list() {
+    log_info "Listing all containers..."
+
+    if [[ ! -d "$MACHINES_ROOT" ]]; then
+        log_info "Container storage does not exist yet: ${MACHINES_ROOT}"
+        log_info "Create a container first: our-container create <name>"
+        return 0
+    fi
+
+    echo ""
+    echo "=== Registered machines (machinectl) ==="
+    if ! machinectl list --all --no-pager 2>/dev/null; then
+        log_warn "machinectl list failed -- systemd-machined may not be running"
+    fi
+
+    echo ""
+    echo "=== Container storage (${MACHINES_ROOT}) ==="
+    local count=0
+    for entry in "${MACHINES_ROOT}"/*/; do
+        if [[ -d "$entry" ]]; then
+            local cname
+            cname="$(basename "$entry")"
+            [[ "$cname" == .* ]] && continue
+            local state
+            state="$(_container_state "$cname" 2>/dev/null || echo "offline")"
+            local is_btrfs="dir"
+            if btrfs subvolume show "$entry" >/dev/null 2>&1; then
+                is_btrfs="btrfs-subvol"
+            fi
+            echo "  ${cname}  [${state}]  (${is_btrfs})"
+            (( count++ )) || true
+        fi
+    done
+
+    if (( count == 0 )); then
+        echo "  (no containers found)"
+    else
+        echo ""
+        echo "Total: ${count} container(s)"
+    fi
+}
+
+# --- Command: remove ---
+cmd_remove() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container remove <name>"
+    require_root "remove" "$name"
+    _require_container_exists "$name" "remove"
+
+    local state
+    state="$(_container_state "$name")"
+
+    if [[ "$state" == "running" ]]; then
+        log_info "Container '${name}' is running -- stopping it before removal..."
+        if ! machinectl stop "$name"; then
+            log_error "Failed to stop container '${name}' -- cannot remove a running container"
+            die "stop the container manually first: our-container stop ${name}"
+        fi
+        sleep 1
+    elif [[ "$state" != "unknown" ]]; then
+        log_info "Container '${name}' state: ${state} -- proceeding with removal"
+    fi
+
+    local target="${MACHINES_ROOT}/${name}"
+
+    # Remove snapshots for this container
+    local snap_dir="${SNAPSHOTS_ROOT}/${name}"
+    if [[ -d "$snap_dir" ]]; then
+        log_info "Removing snapshots for container '${name}'..."
+        for snap in "${snap_dir}"/*/; do
+            if [[ -d "$snap" ]] && _is_btrfs_subvolume "$snap"; then
+                btrfs subvolume delete "$snap" 2>/dev/null || true
+            fi
+        done
+        rm -rf "$snap_dir"
+    fi
+
+    # Remove .nspawn configuration
+    local nspawn_file
+    nspawn_file="$(_nspawn_file "$name")"
+    if [[ -f "$nspawn_file" ]]; then
+        log_info "Removing .nspawn configuration: ${nspawn_file}"
+        rm -f "$nspawn_file"
+    fi
+
+    log_info "Removing container '${name}' at ${target}..."
+    if btrfs subvolume show "$target" >/dev/null 2>&1; then
+        log_info "Detected Btrfs subvolume -- using btrfs subvolume delete"
+        if ! btrfs subvolume delete "$target"; then
+            log_error "btrfs subvolume delete failed for ${target}"
+            die "failed to remove Btrfs subvolume -- check dmesg for filesystem errors"
+        fi
+    else
+        log_info "Removing directory tree..."
+        if ! rm -rf "$target"; then
+            log_error "rm -rf failed for ${target}"
+            die "failed to remove container directory -- check permissions"
+        fi
+    fi
+
+    if [[ -e "$target" ]]; then
+        log_error "Removal verification failed -- ${target} still exists"
+        die "container '${name}' may not have been fully removed"
+    fi
+
+    log_info "Container '${name}' removed successfully"
+}
+
+# =============================================================================
+# Snapshot management
+# =============================================================================
+
+cmd_snapshot_create() {
+    local container="${1:-}"
+    local snap_name="${2:-}"
+    [[ -n "$container" ]] || die "usage: our-container snapshot create CONTAINER SNAPSHOT_NAME"
+    [[ -n "$snap_name" ]]  || die "usage: our-container snapshot create CONTAINER SNAPSHOT_NAME"
+    [[ "$snap_name" =~ ^[a-zA-Z0-9._-]+$ ]] \
+        || die "invalid snapshot name '${snap_name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
+    require_root "snapshot" "create" "$container" "$snap_name"
+
+    _require_container_exists "$container" "create snapshot for"
+    _require_container_not_running "$container" "create snapshot for"
+
+    local source="${MACHINES_ROOT}/${container}"
+    local snap_dir="${SNAPSHOTS_ROOT}/${container}"
+    local snap_path="${snap_dir}/${snap_name}"
+
+    if ! _is_btrfs_subvolume "$source"; then
+        die "container '${container}' is not a Btrfs subvolume -- snapshots require Btrfs"
+    fi
+
+    if [[ -d "$snap_path" ]]; then
+        die "snapshot '${snap_name}' already exists for container '${container}' (${snap_path})"
+    fi
+
+    mkdir -p "$snap_dir"
+
+    log_info "Creating snapshot '${snap_name}' for container '${container}'..."
+    if ! btrfs subvolume snapshot -r "$source" "$snap_path"; then
+        log_error "btrfs subvolume snapshot failed"
+        die "failed to create snapshot -- check dmesg for Btrfs errors"
+    fi
+
+    log_info "Snapshot '${snap_name}' created for container '${container}' at ${snap_path}"
+}
+
+cmd_snapshot_list() {
+    local container="${1:-}"
+    [[ -n "$container" ]] || die "usage: our-container snapshot list CONTAINER"
+    _require_container_exists "$container" "list snapshots for"
+
+    local snap_dir="${SNAPSHOTS_ROOT}/${container}"
+
+    echo ""
+    echo "=== Snapshots for container '${container}' ==="
+
+    if [[ ! -d "$snap_dir" ]]; then
+        echo "  (no snapshots found)"
+        echo ""
+        return 0
+    fi
+
+    local count=0
+    for entry in "${snap_dir}"/*/; do
+        if [[ -d "$entry" ]]; then
+            local snap_name
+            snap_name="$(basename "$entry")"
+            local snap_date
+            snap_date="$(btrfs subvolume show "$entry" 2>/dev/null \
+                | grep -m1 'Creation time' \
+                | sed 's/Creation time:\s*//' || echo 'unknown')"
+            local snap_size="-"
+            if btrfs qgroup show "$entry" >/dev/null 2>&1; then
+                snap_size="$(btrfs qgroup show -e --raw "$entry" 2>/dev/null \
+                    | tail -1 \
+                    | awk '{print $2}' || echo '-')"
+            fi
+            local is_ro="rw"
+            if btrfs property get -ts "$entry" ro 2>/dev/null | grep -q 'ro=true'; then
+                is_ro="ro"
+            fi
+            printf "  %-30s  %-8s  %s  (%s)\n" "$snap_name" "$is_ro" "$snap_date" "${snap_size}"
+            (( count++ )) || true
+        fi
+    done
+
+    if (( count == 0 )); then
+        echo "  (no snapshots found)"
+    else
+        echo ""
+        echo "Total: ${count} snapshot(s)"
+    fi
+    echo ""
+}
+
+cmd_snapshot_restore() {
+    local container="${1:-}"
+    local snap_name="${2:-}"
+    [[ -n "$container" ]] || die "usage: our-container snapshot restore CONTAINER SNAPSHOT_NAME"
+    [[ -n "$snap_name" ]]  || die "usage: our-container snapshot restore CONTAINER SNAPSHOT_NAME"
+    require_root "snapshot" "restore" "$container" "$snap_name"
+
+    _require_container_exists "$container" "restore snapshot for"
+    _require_container_not_running "$container" "restore snapshot for"
+
+    local source="${MACHINES_ROOT}/${container}"
+    local snap_path="${SNAPSHOTS_ROOT}/${container}/${snap_name}"
+
+    if [[ ! -d "$snap_path" ]]; then
+        die "snapshot '${snap_name}' not found for container '${container}' (checked: ${snap_path})"
+    fi
+
+    if ! _is_btrfs_subvolume "$source"; then
+        die "container '${container}' is not a Btrfs subvolume -- restore requires Btrfs"
+    fi
+
+    if ! _is_btrfs_subvolume "$snap_path"; then
+        die "'${snap_path}' is not a Btrfs subvolume"
+    fi
+
+    log_warn "This will REPLACE the current state of container '${container}' with snapshot '${snap_name}'"
+    log_warn "All current data in the container will be lost!"
+
+    # Create safety snapshot of current state
+    local backup_name
+    backup_name="pre-restore-$(date +%Y%m%dT%H%M%S)"
+    local backup_path="${SNAPSHOTS_ROOT}/${container}/${backup_name}"
+    mkdir -p "${SNAPSHOTS_ROOT}/${container}"
+
+    log_info "Creating safety snapshot '${backup_name}' of current container state..."
+    if btrfs subvolume snapshot -r "$source" "$backup_path" 2>/dev/null; then
+        log_info "Safety snapshot created: ${backup_path}"
+    else
+        log_warn "Could not create safety snapshot -- proceeding anyway"
+    fi
+
+    log_info "Deleting current container subvolume..."
+    if ! btrfs subvolume delete "$source"; then
+        log_error "Failed to delete current container subvolume"
+        die "restore aborted -- container may be in an inconsistent state"
+    fi
+
+    log_info "Restoring snapshot '${snap_name}' to container '${container}'..."
+    if ! btrfs subvolume snapshot "$snap_path" "$source"; then
+        log_error "Failed to restore snapshot"
+        log_error "Attempting to restore from safety snapshot '${backup_name}'..."
+        if [[ -d "$backup_path" ]]; then
+            btrfs subvolume snapshot "$backup_path" "$source" 2>/dev/null || true
+            log_warn "Restored from safety snapshot -- verify container integrity"
+        fi
+        die "snapshot restore failed"
+    fi
+
+    log_info "Container '${container}' restored from snapshot '${snap_name}' successfully"
+    log_info "Start the container to verify: our-container start ${container}"
+}
+
+# =============================================================================
+# Storage management
+# =============================================================================
+
+cmd_storage_mount() {
+    local container="${1:-}"
+    local host_path="${2:-}"
+    local container_path="${3:-}"
+    [[ -n "$container" ]]      || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    [[ -n "$host_path" ]]      || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    [[ -n "$container_path" ]] || die "usage: our-container storage mount CONTAINER HOST_PATH CONTAINER_PATH"
+    require_root "storage" "mount" "$container" "$host_path" "$container_path"
+
+    _require_container_exists "$container" "mount storage into"
+
+    if [[ ! -e "$host_path" ]]; then
+        die "host path does not exist: ${host_path}"
+    fi
+
+    host_path="$(realpath "$host_path")"
+
+    if [[ "$container_path" != /* ]]; then
+        die "container path must be absolute: ${container_path}"
+    fi
+
+    local nspawn_file
+    nspawn_file="$(_nspawn_file "$container")"
+
+    if [[ -f "$nspawn_file" ]] && grep -q "Bind=${host_path}:${container_path}" "$nspawn_file" 2>/dev/null; then
+        log_warn "Bind mount '${host_path}:${container_path}' already configured for container '${container}'"
+        return 0
+    fi
+
+    mkdir -p /etc/systemd/nspawn
+
+    log_info "Configuring bind mount: ${host_path} -> ${container_path} for container '${container}'..."
+
+    if [[ ! -f "$nspawn_file" ]]; then
+        cat > "$nspawn_file" << NSPAWN_EOF
+[Exec]
+PrivateUsers=no
+
+[Files]
+Bind=${host_path}:${container_path}
+NSPAWN_EOF
+        log_info "Created .nspawn configuration: ${nspawn_file}"
+    else
+        if ! grep -q '^\[Files\]' "$nspawn_file" 2>/dev/null; then
+            echo "" >> "$nspawn_file"
+            echo "[Files]" >> "$nspawn_file"
+        fi
+        echo "Bind=${host_path}:${container_path}" >> "$nspawn_file"
+        log_info "Updated .nspawn configuration: ${nspawn_file}"
+    fi
+
+    local state
+    state="$(_container_state "$container" 2>/dev/null || echo "unknown")"
+    if [[ "$state" != "unknown" ]]; then
+        log_info "Container '${container}' is registered -- restart it for bind mount to take effect"
+        log_info "Run: our-container stop ${container} && our-container start ${container}"
+    else
+        log_info "Bind mount will take effect when the container is started"
+    fi
+
+    log_info "Bind mount configured successfully"
+}
+
+cmd_storage_umount() {
+    local container="${1:-}"
+    local container_path="${2:-}"
+    [[ -n "$container" ]]      || die "usage: our-container storage umount CONTAINER CONTAINER_PATH"
+    [[ -n "$container_path" ]] || die "usage: our-container storage umount CONTAINER CONTAINER_PATH"
+    require_root "storage" "umount" "$container" "$container_path"
+
+    if [[ "$container_path" != /* ]]; then
+        die "container path must be absolute: ${container_path}"
+    fi
+
+    local nspawn_file
+    nspawn_file="$(_nspawn_file "$container")"
+
+    if [[ ! -f "$nspawn_file" ]]; then
+        die "no .nspawn configuration found for container '${container}' (checked: ${nspawn_file})"
+    fi
+
+    local bind_pattern
+    bind_pattern="Bind=.*:${container_path}"
+
+    if ! grep -q "$bind_pattern" "$nspawn_file" 2>/dev/null; then
+        die "no bind mount found for path '${container_path}' in container '${container}'"
+    fi
+
+    log_info "Removing bind mount for path '${container_path}' from container '${container}'..."
+
+    local tmp_file
+    tmp_file="$(mktemp)"
+    grep -v "$bind_pattern" "$nspawn_file" > "$tmp_file" || true
+    mv "$tmp_file" "$nspawn_file"
+
+    # If [Files] section is now empty, remove it
+    if grep -qA1 '^\[Files\]' "$nspawn_file" 2>/dev/null \
+        && ! grep -A1 '^\[Files\]' "$nspawn_file" 2>/dev/null | grep -q '^Bind='; then
+        local tmp_file2
+        tmp_file2="$(mktemp)"
+        sed '/^\[Files\]$/d' "$nspawn_file" > "$tmp_file2" || true
+        mv "$tmp_file2" "$nspawn_file"
+    fi
+
+    if ! grep -q '^\[' "$nspawn_file" 2>/dev/null; then
+        rm -f "$nspawn_file"
+        log_info "Removed empty .nspawn configuration: ${nspawn_file}"
+    fi
+
+    local state
+    state="$(_container_state "$container" 2>/dev/null || echo "unknown")"
+    if [[ "$state" == "running" ]]; then
+        log_warn "Container '${container}' is running -- restart it for changes to take effect"
+        log_info "Run: our-container stop ${container} && our-container start ${container}"
+    fi
+
+    log_info "Bind mount removed successfully"
+}
+
+# =============================================================================
+# Cleanup
+# =============================================================================
+
+cmd_cleanup() {
+    local threshold=80
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --threshold)
+                threshold="${2:?--threshold requires a value (e.g. 80 for 80%)}"
+                shift 2
+                ;;
+            *)
+                die "usage: our-container cleanup [--threshold <percentage>]"
+                ;;
+        esac
+    done
+
+    if ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold < 1 || threshold > 99 )); then
+        die "threshold must be an integer between 1 and 99"
+    fi
+
+    require_root "cleanup" "--threshold" "$threshold"
+
+    if [[ ! -d "$SNAPSHOTS_ROOT" ]]; then
+        log_info "No snapshots directory found (${SNAPSHOTS_ROOT}) -- nothing to clean up"
+        return 0
+    fi
+
+    log_info "Starting cleanup (disk usage threshold: ${threshold}%)..."
+
+    local disk_usage=0
+    disk_usage="$(df --output=pcent "$MACHINES_ROOT" 2>/dev/null | tail -1 | tr -d ' %' || echo 0)"
+
+    log_info "Current disk usage: ${disk_usage}% (threshold: ${threshold}%)"
+
+    local now
+    now=$(date +%s)
+    local cutoff=$(( now - 30 * 86400 ))
+    local pruned=0
+
+    for container_dir in "${SNAPSHOTS_ROOT}"/*/; do
+        [[ -d "$container_dir" ]] || continue
+        local container_name
+        container_name="$(basename "$container_dir")"
+
+        for snap_dir in "${container_dir}"/*/; do
+            [[ -d "$snap_dir" ]] || continue
+
+            local snap_name
+            snap_name="$(basename "$snap_dir")"
+
+            # Skip safety snapshots (pre-restore-*)
+            [[ "$snap_name" == pre-restore-* ]] && continue
+
+            local should_prune=false
+            local reason=""
+
+            if _is_btrfs_subvolume "$snap_dir"; then
+                local otime
+                otime="$(btrfs subvolume show "$snap_dir" 2>/dev/null \
+                    | grep -m1 'Creation time' \
+                    | sed 's/Creation time:\s*//' || echo '')"
+
+                if [[ -n "$otime" ]]; then
+                    local snap_epoch
+                    snap_epoch="$(date -d "$otime" +%s 2>/dev/null || echo 0)"
+                    if (( snap_epoch > 0 && snap_epoch < cutoff )); then
+                        should_prune=true
+                        reason="older than 30 days"
+                    fi
+                fi
+            fi
+
+            # Prune if disk usage critical (>=90%), keep only 3 recent per container
+            if [[ "$should_prune" == false ]] && (( disk_usage >= 90 )); then
+                local snap_count
+                snap_count="$(find "${container_dir}" -maxdepth 1 -mindepth 1 -type d \
+                    -name 'pre-restore-*' -prune -o -type d -print 2>/dev/null | wc -l)"
+                if (( snap_count > 3 )); then
+                    should_prune=true
+                    reason="disk usage critical (>=90%), keeping only 3 recent snapshots"
+                fi
+            fi
+
+            if [[ "$should_prune" == true ]]; then
+                log_info "  Pruning ${container_name}/${snap_name} (${reason})"
+                if _is_btrfs_subvolume "$snap_dir"; then
+                    btrfs subvolume delete "$snap_dir" 2>/dev/null || rm -rf "$snap_dir"
+                else
+                    rm -rf "$snap_dir"
+                fi
+                pruned=$((pruned + 1))
+            fi
+        done
+    done
+
+    if (( pruned == 0 )); then
+        log_info "No snapshots needed pruning"
+    else
+        log_info "Pruned ${pruned} snapshot(s)"
+    fi
+
+    # Clean up empty container snapshot directories
+    for container_dir in "${SNAPSHOTS_ROOT}"/*/; do
+        [[ -d "$container_dir" ]] || continue
+        local remaining
+        remaining="$(find "$container_dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)"
+        if (( remaining == 0 )); then
+            rmdir "$container_dir" 2>/dev/null || true
+            log_info "Removed empty snapshot directory: ${container_dir}"
+        fi
+    done
+
+    log_info "Cleanup complete"
+}
+
+# =============================================================================
+# Disk usage monitoring
+# =============================================================================
+
+cmd_disk_usage() {
+    if [[ ! -d "$MACHINES_ROOT" ]]; then
+        log_info "Container storage does not exist yet: ${MACHINES_ROOT}"
+        return 0
+    fi
+
+    echo ""
+    echo "=== Container disk usage ==="
+    echo ""
+
+    if _is_btrfs "$MACHINES_ROOT"; then
+        echo "--- Btrfs filesystem (${MACHINES_ROOT}) ---"
+        btrfs filesystem df "$MACHINES_ROOT" 2>/dev/null | sed 's/^/  /' || true
+        echo ""
+        echo "--- Disk usage ---"
+        df -h "$MACHINES_ROOT" --output=source,size,used,avail,pcent,target 2>/dev/null | sed 's/^/  /' || true
+    else
+        echo "--- Disk usage ---"
+        df -h "$MACHINES_ROOT" --output=source,size,used,avail,pcent,target 2>/dev/null | sed 's/^/  /' || true
+    fi
+
+    echo ""
+    echo "--- Per-container usage ---"
+    printf "  %-30s  %-10s  %-10s  %s\n" "CONTAINER" "TYPE" "SIZE" "STATE"
+    printf "  %-30s  %-10s  %-10s  %s\n" "------------------------------" "----------" "----------" "----------"
+
+    local container_count=0
+
+    for entry in "${MACHINES_ROOT}"/*/; do
+        [[ -d "$entry" ]] || continue
+        local cname
+        cname="$(basename "$entry")"
+        [[ "$cname" == .* ]] && continue
+
+        local state
+        state="$(_container_state "$cname" 2>/dev/null || echo "offline")"
+        local is_btrfs="dir"
+        local size="-"
+
+        if btrfs subvolume show "$entry" >/dev/null 2>&1; then
+            is_btrfs="btrfs"
+            size="$(btrfs qgroup show -e --raw "$entry" 2>/dev/null \
+                | tail -1 \
+                | awk '{print $2}' || echo '-')"
+            if [[ "$size" == "-" || -z "$size" ]]; then
+                size="$(du -sh "$entry" 2>/dev/null | cut -f1 || echo '-')"
+            fi
+        else
+            size="$(du -sh "$entry" 2>/dev/null | cut -f1 || echo '-')"
+        fi
+
+        printf "  %-30s  %-10s  %-10s  %s\n" "$cname" "$is_btrfs" "$size" "$state"
+        (( container_count++ )) || true
+    done
+
+    if (( container_count == 0 )); then
+        echo "  (no containers found)"
+    fi
+
+    # Snapshot summary
+    if [[ -d "$SNAPSHOTS_ROOT" ]]; then
+        echo ""
+        echo "--- Snapshot usage ---"
+        local snap_count=0
+        for container_dir in "${SNAPSHOTS_ROOT}"/*/; do
+            [[ -d "$container_dir" ]] || continue
+            local container_name
+            container_name="$(basename "$container_dir")"
+            local container_snaps=0
+
+            for snap_dir in "${container_dir}"/*/; do
+                [[ -d "$snap_dir" ]] || continue
+                local snap_name
+                snap_name="$(basename "$snap_dir")"
+                local snap_size="-"
+
+                if _is_btrfs_subvolume "$snap_dir"; then
+                    snap_size="$(btrfs qgroup show -e --raw "$snap_dir" 2>/dev/null \
+                        | tail -1 \
+                        | awk '{print $2}' || echo '-')"
+                    if [[ "$snap_size" == "-" || -z "$snap_size" ]]; then
+                        snap_size="$(du -sh "$snap_dir" 2>/dev/null | cut -f1 || echo '-')"
+                    fi
+                else
+                    snap_size="$(du -sh "$snap_dir" 2>/dev/null | cut -f1 || echo '-')"
+                fi
+
+                printf "    %-28s %-20s  %s\n" "$container_name" "$snap_name" "$snap_size"
+                (( snap_count++ )) || true
+                (( container_snaps++ )) || true
+            done
+
+            if (( container_snaps == 0 )); then
+                echo "    ${container_name}: (no snapshots)"
+            fi
+        done
+
+        if (( snap_count == 0 )); then
+            echo "  (no snapshots found)"
+        else
+            echo ""
+            echo "Total snapshots: ${snap_count}"
+        fi
+    fi
+
+    # Threshold alert
+    local disk_usage=0
+    local threshold=80
+    disk_usage="$(df --output=pcent "$MACHINES_ROOT" 2>/dev/null | tail -1 | tr -d ' %' || echo 0)"
+
+    echo ""
+    if (( disk_usage >= threshold )); then
+        log_warn "Disk usage at ${disk_usage}% -- exceeds ${threshold}% threshold!"
+        log_warn "Consider running: our-container cleanup --threshold ${threshold}"
+    else
+        log_info "Disk usage at ${disk_usage}% -- below ${threshold}% threshold"
+    fi
+    echo ""
+}
+
+# =============================================================================
+# Image management
+# =============================================================================
+
+cmd_image_pull() {
+    local distro="${1:-}"
+    [[ -n "$distro" ]] || die "usage: our-container image pull DISTRO"
+    require_root "image" "pull" "$distro"
+
+    case "$distro" in
+        arch|debian|ubuntu) ;;
+        *)
+            die "unsupported distro: '${distro}' (supported: arch, debian, ubuntu)"
+            ;;
+    esac
+
+    local image_dir="${IMAGES_ROOT}/${distro}"
+
+    if [[ -d "$image_dir" ]]; then
+        log_warn "Base image '${distro}' already exists at ${image_dir}"
+        log_info "Remove it first to re-pull: our-container image remove ${distro}"
+        return 0
+    fi
+
+    mkdir -p "$IMAGES_ROOT"
+
+    log_info "Pulling base image '${distro}'..."
+
+    if btrfs subvolume create "$image_dir" 2>/dev/null; then
+        log_info "Created Btrfs subvolume: ${image_dir}"
+    else
+        mkdir -p "$image_dir"
+        log_info "Created directory: ${image_dir}"
+    fi
+
+    case "$distro" in
+        arch)
+            command -v pacstrap >/dev/null \
+                || die "pacstrap not found -- install arch-install-scripts"
+            log_info "Bootstrapping Arch Linux base image..."
+            pacstrap -c "$image_dir" base \
+                || { log_error "pacstrap failed for image '${distro}'"; rm -rf "$image_dir"; die "image pull aborted, cleaned up ${image_dir}"; }
+            ;;
+        debian|ubuntu)
+            command -v debootstrap >/dev/null \
+                || die "debootstrap not found -- install it with: sudo our-pac -S debootstrap"
+            log_info "Bootstrapping ${distro} base image..."
+            debootstrap --include=systemd-container "$distro" "$image_dir" \
+                || { log_error "debootstrap failed for image '${distro}'"; rm -rf "$image_dir"; die "image pull aborted, cleaned up ${image_dir}"; }
+            ;;
+    esac
+
+    # Create metadata marker
+    cat > "${image_dir}/.our-container-image" << IMAGE_META_EOF
+# our-container base image metadata
+DISTRO=${distro}
+CREATED=$(date '+%Y-%m-%dT%H:%M:%S')
+CREATED_BY=our-container
+IMAGE_META_EOF
+
+    if _is_btrfs_subvolume "$image_dir"; then
+        btrfs property set -ts "$image_dir" ro true 2>/dev/null || true
+        log_info "Base image set as read-only"
+    fi
+
+    log_info "Base image '${distro}' ready at ${image_dir}"
+    log_info "Create a container from this image with: our-container create NAME ${distro}"
+}
+
+cmd_image_list() {
+    echo ""
+    echo "=== Available base images ==="
+
+    if [[ ! -d "$IMAGES_ROOT" ]]; then
+        echo "  (no images found -- pull one with: our-container image pull DISTRO)"
+        echo ""
+        return 0
+    fi
+
+    local count=0
+    for entry in "${IMAGES_ROOT}"/*/; do
+        [[ -d "$entry" ]] || continue
+        local distro
+        distro="$(basename "$entry")"
+        local created="unknown"
+        local size="-"
+
+        if [[ -f "${entry}/.our-container-image" ]]; then
+            created="$(grep -m1 '^CREATED=' "${entry}/.our-container-image" 2>/dev/null | cut -d= -f2 || echo 'unknown')"
+        fi
+
+        if _is_btrfs_subvolume "$entry"; then
+            size="$(btrfs qgroup show -e --raw "$entry" 2>/dev/null \
+                | tail -1 \
+                | awk '{print $2}' || echo '-')"
+            if [[ "$size" == "-" || -z "$size" ]]; then
+                size="$(du -sh "$entry" 2>/dev/null | cut -f1 || echo '-')"
+            fi
+        else
+            size="$(du -sh "$entry" 2>/dev/null | cut -f1 || echo '-')"
+        fi
+
+        local is_ro="rw"
+        if btrfs property get -ts "$entry" ro 2>/dev/null | grep -q 'ro=true'; then
+            is_ro="ro"
+        fi
+
+        printf "  %-15s  %-8s  %-20s  %s\n" "$distro" "$is_ro" "${created}" "${size}"
+        (( count++ )) || true
+    done
+
+    if (( count == 0 )); then
+        echo "  (no images found -- pull one with: our-container image pull DISTRO)"
+    else
+        echo ""
+        echo "Total: ${count} image(s)"
+    fi
+    echo ""
+}
+
+cmd_image_remove() {
+    local distro="${1:-}"
+    [[ -n "$distro" ]] || die "usage: our-container image remove DISTRO"
+    require_root "image" "remove" "$distro"
+
+    local image_dir="${IMAGES_ROOT}/${distro}"
+
+    if [[ ! -d "$image_dir" ]]; then
+        die "base image '${distro}' not found (checked: ${image_dir})"
+    fi
+
+    if [[ ! -f "${image_dir}/.our-container-image" ]]; then
+        die "directory '${image_dir}' does not appear to be a our-container base image (missing .our-container-image marker)"
+    fi
+
+    if _is_btrfs_subvolume "$image_dir"; then
+        btrfs property set -ts "$image_dir" ro false 2>/dev/null || true
+        log_info "Deleting Btrfs subvolume: ${image_dir}"
+        if ! btrfs subvolume delete "$image_dir"; then
+            log_error "btrfs subvolume delete failed for ${image_dir}"
+            die "failed to remove base image -- check dmesg for Btrfs errors"
+        fi
+    else
+        log_info "Removing directory: ${image_dir}"
+        if ! rm -rf "$image_dir"; then
+            log_error "rm -rf failed for ${image_dir}"
+            die "failed to remove base image -- check permissions"
+        fi
+    fi
+
+    if [[ -d "$IMAGES_ROOT" ]] && find "$IMAGES_ROOT" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | grep -q '^0$'; then
+        rmdir "$IMAGES_ROOT" 2>/dev/null || true
+        log_info "Removed empty images directory: ${IMAGES_ROOT}"
+    fi
+
+    log_info "Base image '${distro}' removed successfully"
+}
+
+# =============================================================================
+# Monitoring and diagnostics
+# =============================================================================
+
+# --- Command: monitor ---
+# Real-time dashboard showing all container states. Refreshes every N seconds.
+cmd_monitor() {
+    require_root "monitor"
+
+    if ! command -v machinectl >/dev/null 2>&1; then
+        die "machinectl not found — systemd-container is required"
+    fi
+
+    # Parse optional --interval flag
+    local interval=2
+    if [[ "${1:-}" == "--interval" && -n "${2:-}" ]]; then
+        interval="$2"
+        if ! [[ "$interval" =~ ^[0-9]+$ ]] || (( interval < 1 )); then
+            die "invalid interval '${interval}' — must be a positive integer (seconds)"
+        fi
+        shift 2
+    fi
+
+    local container_filter="${1:-}"
+
+    # Trap SIGINT/SIGTERM to exit cleanly
+    local _running=1
+    # shellcheck disable=SC2317
+    _monitor_trap() { _running=0; echo ""; log_info "Monitor stopped"; }
+    trap _monitor_trap INT TERM
+
+    log_info "Starting real-time monitor (refresh: ${interval}s, press Ctrl+C to stop)..."
+
+    while (( _running )); do
+        clear
+        local ts
+        ts="$(date '+%Y-%m-%d %H:%M:%S')"
+
+        echo "================================================"
+        echo " our-container container monitor — ${ts}"
+        echo "================================================"
+
+        # System summary
+        local mem_used mem_total mem_pct
+        mem_used="$(free -h --si | awk '/^Mem:/{print $3}')"
+        mem_total="$(free -h --si | awk '/^Mem:/{print $2}')"
+        mem_pct="$(free --si | awk '/^Mem:/{printf "%.0f", $3/$2*100}')"
+        local disk_used="N/A" disk_total="N/A"
+        if [[ -d "$MACHINES_ROOT" ]]; then
+            disk_used="$(df -h --output=used "$MACHINES_ROOT" | tail -1 | tr -s ' ')"
+            disk_total="$(df -h --output=size "$MACHINES_ROOT" | tail -1 | tr -s ' ')"
+        fi
+        local running_count=0
+        running_count="$(machinectl list --no-pager --no-legend 2>/dev/null | grep -c 'running' || true)"
+
+        echo " System: CPU $(nproc 2>/dev/null || echo '?') cores | Mem ${mem_used}/${mem_total} (${mem_pct}%)"
+        echo " Containers: ${running_count} running | Storage: ${disk_used}/${disk_total}"
+        echo "------------------------------------------------"
+        printf "  %-25s %-12s %-8s %s\n" "NAME" "STATE" "PID" "IP"
+        echo "------------------------------------------------"
+
+        local any_output=0
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local m_name m_state m_pid m_ip
+            read -r m_name m_state m_pid m_ip <<< "$line"
+
+            # Apply filter if specified
+            if [[ -n "$container_filter" && "$m_name" != *"$container_filter"* ]]; then
+                continue
+            fi
+
+            any_output=1
+            printf "  %-25s %-12s %-8s %s\n" \
+                "$m_name" \
+                "$m_state" \
+                "$m_pid" \
+                "${m_ip:-host}"
+        done < <(machinectl list --all --no-pager --no-legend 2>/dev/null || true)
+
+        if (( any_output == 0 )); then
+            echo "  (no containers found)"
+        fi
+
+        echo "================================================"
+
+        (( _running )) || break
+        sleep "$interval"
+    done
+
+    trap - INT TERM
+}
+
+# --- Command: diagnose ---
+# Performs health checks on the container subsystem and reports problems.
+cmd_diagnose() {
+    require_root "diagnose"
+
+    log_info "Running container subsystem diagnostics..."
+
+    local issues=0
+    local warnings=0
+
+    echo ""
+    echo "=== ouroborOS Container Diagnostics ==="
+    echo ""
+
+    # --- Check 1: systemd-machined ---
+    echo "--- Check 1: systemd-machined service ---"
+    if systemctl is-active --quiet systemd-machined 2>/dev/null; then
+        echo "  [OK] systemd-machined is running"
+    else
+        echo "  [FAIL] systemd-machined is NOT running"
+        echo "         Fix: sudo systemctl start systemd-machined"
+        (( issues++ )) || true
+    fi
+
+    # --- Check 2: /var/lib/machines ---
+    echo ""
+    echo "--- Check 2: Container storage ---"
+    if [[ -d "$MACHINES_ROOT" ]]; then
+        local machines_fs
+        machines_fs="$(df --output=fstype "$MACHINES_ROOT" 2>/dev/null | tail -1 | tr -s ' ')"
+        echo "  [OK] Storage exists: ${MACHINES_ROOT} (${machines_fs:-unknown})"
+
+        if _is_btrfs "$MACHINES_ROOT"; then
+            echo "  [OK] Btrfs filesystem detected — snapshots supported"
+        else
+            echo "  [WARN] Not on Btrfs — container snapshots will not be available"
+            (( warnings++ )) || true
+        fi
+
+        # Check disk space
+        local machines_pct
+        machines_pct="$(df --output=pcent "$MACHINES_ROOT" 2>/dev/null | tail -1 | tr -s ' ')"
+        machines_pct="${machines_pct%\%}"
+        if (( machines_pct > 90 )); then
+            echo "  [FAIL] Disk usage critical: ${machines_pct}% used"
+            echo "         Free space or move containers to reclaim space"
+            (( issues++ )) || true
+        elif (( machines_pct > 75 )); then
+            echo "  [WARN] Disk usage high: ${machines_pct}% used"
+            (( warnings++ )) || true
+        else
+            echo "  [OK] Disk usage healthy: ${machines_pct}%"
+        fi
+    else
+        echo "  [FAIL] Container storage does not exist: ${MACHINES_ROOT}"
+        echo "         Fix: sudo mkdir -p ${MACHINES_ROOT}"
+        (( issues++ )) || true
+    fi
+
+    # --- Check 3: Container integrity ---
+    echo ""
+    echo "--- Check 3: Container integrity ---"
+    if [[ -d "$MACHINES_ROOT" ]]; then
+        local container_count=0
+        local orphaned=0
+        for entry in "${MACHINES_ROOT}"/*/; do
+            [[ -d "$entry" ]] || continue
+            local cname
+            cname="$(basename "$entry")"
+            # Skip internal our-container directories
+            [[ "$cname" == .* ]] && continue
+            (( container_count++ )) || true
+
+            local state
+            state="$(_container_state "$cname" 2>/dev/null || echo "unknown")"
+
+            # Check essential directories
+            if [[ ! -d "${entry}/bin" && ! -d "${entry}/usr" ]]; then
+                echo "  [FAIL] Container '${cname}' appears corrupted (missing /bin and /usr)"
+                (( issues++ )) || true
+                continue
+            fi
+
+            if [[ "$state" == "unknown" ]]; then
+                echo "  [WARN] Container '${cname}' exists on disk but is not registered with machinectl"
+                (( orphaned++ )) || true
+            else
+                echo "  [OK] Container '${cname}' — state: ${state}"
+            fi
+        done
+
+        if (( container_count == 0 )); then
+            echo "  (no containers found)"
+        fi
+
+        if (( orphaned > 0 )); then
+            (( warnings += orphaned )) || true
+            echo ""
+            echo "  [INFO] ${orphaned} orphaned container(s) found"
+            echo "         Use 'our-container start <name>' to register, or 'our-container remove <name>' to clean up"
+        fi
+    fi
+
+    # --- Check 4: Network connectivity ---
+    echo ""
+    echo "--- Check 4: Host network ---"
+    if systemctl is-active --quiet systemd-networkd 2>/dev/null; then
+        echo "  [OK] systemd-networkd is running"
+    else
+        echo "  [WARN] systemd-networkd is not running — containers using host network may fail"
+        (( warnings++ )) || true
+    fi
+
+    if command -v resolvectl >/dev/null 2>&1 && resolvectl status >/dev/null 2>&1; then
+        echo "  [OK] DNS resolution is working"
+    else
+        echo "  [WARN] DNS resolution may not be working"
+        (( warnings++ )) || true
+    fi
+
+    # --- Check 5: Running container health ---
+    echo ""
+    echo "--- Check 5: Running container health ---"
+    local running_checked=0
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local m_name m_state m_pid
+        read -r m_name m_state m_pid _ <<< "$line"
+        [[ "$m_state" != "running" || "$m_pid" == "0" ]] && continue
+
+        (( running_checked++ )) || true
+
+        if [[ -d "/proc/${m_pid}" ]]; then
+            local pid_mem
+            pid_mem="$(awk '/VmRSS/{printf "%.1f MB", $2/1024}' "/proc/${m_pid}/status" 2>/dev/null || echo '?')"
+            echo "  [OK] ${m_name} — PID ${m_pid} alive, RSS: ${pid_mem}"
+        else
+            echo "  [FAIL] ${m_name} — PID ${m_pid} is dead but machinectl reports running"
+            echo "         Fix: sudo machinectl terminate ${m_name}"
+            (( issues++ )) || true
+        fi
+    done < <(machinectl list --all --no-pager --no-legend 2>/dev/null || true)
+
+    if (( running_checked == 0 )); then
+        echo "  (no running containers to check)"
+    fi
+
+    # --- Summary ---
+    echo ""
+    echo "============================================"
+    if (( issues == 0 && warnings == 0 )); then
+        echo "  All checks passed — system is healthy"
+    else
+        if (( issues > 0 )); then
+            echo "  [!] ${issues} issue(s) found — action required"
+        fi
+        if (( warnings > 0 )); then
+            echo "  [~] ${warnings} warning(s) — review recommended"
+        fi
+    fi
+    echo "============================================"
+    echo ""
+
+    return "$issues"
+}
+
+# --- Command: stats ---
+# Shows performance statistics for running containers (CPU, memory, disk, network).
+cmd_stats() {
+    require_root "stats"
+
+    local target_name="${1:-}"
+
+    if ! command -v machinectl >/dev/null 2>&1; then
+        die "machinectl not found — systemd-container is required"
+    fi
+
+    echo ""
+    echo "=== Container Performance Statistics ==="
+    echo ""
+
+    local any_displayed=0
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local m_name m_state m_pid m_ip
+        read -r m_name m_state m_pid _ <<< "$line"
+
+        # Filter by name if specified
+        if [[ -n "$target_name" && "$m_name" != *"$target_name"* ]]; then
+            continue
+        fi
+
+        [[ "$m_state" != "running" || "$m_pid" == "0" ]] && continue
+        [[ ! -d "/proc/${m_pid}" ]] && continue
+
+        any_displayed=1
+
+        echo "--- ${m_name} (PID ${m_pid}) ---"
+
+        # CPU usage: compute delta from /proc/[pid]/stat between two samples
+        local cpu_pct="N/A"
+        if [[ -f "/proc/${m_pid}/stat" ]]; then
+            local utime1 stime1
+            utime1="$(awk '{print $14}' "/proc/${m_pid}/stat" 2>/dev/null || echo "")"
+            stime1="$(awk '{print $15}' "/proc/${m_pid}/stat" 2>/dev/null || echo "")"
+            local uptime1
+            uptime1="$(awk '{print $1}' /proc/uptime 2>/dev/null || echo "")"
+            local hz
+            hz="$(getconf CLK_TCK 2>/dev/null || echo 100)"
+
+            if [[ -n "$utime1" && -n "$uptime1" ]]; then
+                sleep 1
+                if [[ -f "/proc/${m_pid}/stat" ]]; then
+                    local utime2 stime2
+                    utime2="$(awk '{print $14}' "/proc/${m_pid}/stat" 2>/dev/null || echo "")"
+                    stime2="$(awk '{print $15}' "/proc/${m_pid}/stat" 2>/dev/null || echo "")"
+                    local uptime2
+                    uptime2="$(awk '{print $1}' /proc/uptime 2>/dev/null || echo "")"
+
+                    if [[ -n "$utime2" && -n "$uptime2" ]]; then
+                        local time_delta
+                        time_delta="$(awk "BEGIN{printf \"%.2f\", ${uptime2} - ${uptime1}}")"
+                        if awk "BEGIN{exit !(${time_delta} > 0)}"; then
+                            local total_ticks=$(( (utime2 - utime1) + (stime2 - stime1) ))
+                            cpu_pct="$(awk "BEGIN{printf \"%.1f\", (${total_ticks}.0 / ${hz}) / ${time_delta} * 100}")"
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        # Memory from /proc/[pid]/status
+        local vm_rss vm_size vm_peak threads
+        if [[ -f "/proc/${m_pid}/status" ]]; then
+            vm_rss="$(awk '/^VmRSS:/{printf "%.1f MB", $2/1024}' "/proc/${m_pid}/status" 2>/dev/null || echo '?')"
+            vm_size="$(awk '/^VmSize:/{printf "%.1f MB", $2/1024}' "/proc/${m_pid}/status" 2>/dev/null || echo '?')"
+            vm_peak="$(awk '/^VmPeak:/{printf "%.1f MB", $2/1024}' "/proc/${m_pid}/status" 2>/dev/null || echo '?')"
+            threads="$(awk '/^Threads:/{print $2}' "/proc/${m_pid}/status" 2>/dev/null || echo '?')"
+        else
+            vm_rss="N/A"; vm_size="N/A"; vm_peak="N/A"; threads="N/A"
+        fi
+
+        # Disk usage for container
+        local disk_usage="N/A"
+        local container_path="${MACHINES_ROOT}/${m_name}"
+        if [[ -d "$container_path" ]]; then
+            disk_usage="$(du -sh "$container_path" 2>/dev/null | awk '{print $1}')"
+        fi
+
+        # Network: count open TCP connections from container PID namespace
+        local net_connections="N/A"
+        if [[ -f "/proc/${m_pid}/net/tcp" ]]; then
+            net_connections="$(awk 'NR>1 && $4 != "00000000:0000" {count++} END{print count+0}' "/proc/${m_pid}/net/tcp" 2>/dev/null || echo '?')"
+        fi
+
+        echo "  CPU:     ${cpu_pct}%"
+        echo "  Memory:  RSS ${vm_rss}  VIRT ${vm_size}  Peak ${vm_peak}"
+        echo "  Threads: ${threads}"
+        echo "  Disk:    ${disk_usage} (${container_path})"
+        echo "  Net:     ${net_connections} open TCP connections"
+        echo ""
+
+    done < <(machinectl list --all --no-pager --no-legend 2>/dev/null || true)
+
+    if (( any_displayed == 0 )); then
+        if [[ -n "$target_name" ]]; then
+            log_warn "No running container matching '${target_name}' found"
+        else
+            log_info "No running containers to show stats for"
+        fi
+        echo "  Start a container first: our-container start <name>"
+        echo ""
+    fi
+}
+
+# --- Command: logs ---
+# Shows journal logs for a container via journalctl --machine.
+cmd_logs() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container logs <name> [--follow] [--lines N]"
+    require_root "logs" "$name"
+
+    shift
+
+    local follow=false
+    local lines=100
+    while (( $# > 0 )); do
+        case "$1" in
+            -f|--follow) follow=true; shift ;;
+            -n|--lines)
+                lines="${2:-100}"
+                if ! [[ "$lines" =~ ^[0-9]+$ ]]; then
+                    die "invalid --lines value '${lines}' — must be a positive integer"
+                fi
+                shift 2
+                ;;
+            *)
+                die "unknown flag for logs: '${1}' — valid flags: --follow, --lines N"
+                ;;
+        esac
+    done
+
+    local state
+    state="$(_container_state "$name")"
+    log_info "Showing logs for container '${name}' (state: ${state})"
+
+    local journal_args=(
+        --no-pager
+        --output=short-precise
+        --lines="$lines"
+        --machine="$name"
+    )
+
+    if $follow; then
+        log_info "Following logs (Ctrl+C to stop)..."
+        journalctl "${journal_args[@]}" --follow
+    else
+        journalctl "${journal_args[@]}"
+    fi
+}
+
+# --- Command: check ---
+# Verifies integrity of the container filesystem and configuration.
+cmd_check() {
+    require_root "check"
+
+    log_info "Running integrity checks..."
+
+    local errors=0
+    echo ""
+    echo "=== Integrity Verification ==="
+    echo ""
+
+    # --- Check 1: Storage filesystem ---
+    echo "--- Storage filesystem ---"
+    if [[ ! -d "$MACHINES_ROOT" ]]; then
+        echo "  [FAIL] Container storage missing: ${MACHINES_ROOT}"
+        (( errors++ )) || true
+    else
+        if _is_btrfs "$MACHINES_ROOT"; then
+            echo "  [OK] Btrfs filesystem detected at ${MACHINES_ROOT}"
+
+            # Check for Btrfs errors in kernel log
+            if dmesg 2>/dev/null | grep -qi "btrfs.*error"; then
+                echo "  [WARN] Btrfs errors found in kernel log"
+                echo "         Run 'dmesg | grep btrfs' for details"
+                (( errors++ )) || true
+            else
+                echo "  [OK] No Btrfs errors in kernel log"
+            fi
+
+            # Verify each container subvolume
+            echo ""
+            echo "--- Container subvolumes ---"
+            local subvol_count=0
+            for entry in "${MACHINES_ROOT}"/*/; do
+                [[ -d "$entry" ]] || continue
+                local cname
+                cname="$(basename "$entry")"
+                # Skip internal directories
+                [[ "$cname" == .* ]] && continue
+                (( subvol_count++ )) || true
+
+                if _is_btrfs_subvolume "$entry"; then
+                    echo "  [OK] '${cname}' — valid Btrfs subvolume"
+                else
+                    echo "  [WARN] '${cname}' — NOT a Btrfs subvolume (plain directory)"
+                    (( errors++ )) || true
+                fi
+            done
+
+            if (( subvol_count == 0 )); then
+                echo "  (no containers found)"
+            fi
+        else
+            echo "  [WARN] Storage is not on Btrfs — Btrfs features unavailable"
+            (( errors++ )) || true
+        fi
+    fi
+
+    # --- Check 2: Essential system services ---
+    echo ""
+    echo "--- System services ---"
+    if systemctl is-active --quiet systemd-machined 2>/dev/null; then
+        echo "  [OK] systemd-machined — machinectl container management"
+    else
+        echo "  [FAIL] systemd-machined — machinectl container management (NOT active)"
+        (( errors++ )) || true
+    fi
+
+    if systemctl is-active --quiet systemd-networkd 2>/dev/null; then
+        echo "  [OK] systemd-networkd — host networking"
+    else
+        echo "  [FAIL] systemd-networkd — host networking (NOT active)"
+        (( errors++ )) || true
+    fi
+
+    # --- Check 3: Required tools ---
+    echo ""
+    echo "--- Required tools ---"
+    local tool
+    for tool in machinectl systemd-nspawn btrfs journalctl; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            echo "  [OK] ${tool}"
+        else
+            echo "  [FAIL] ${tool} — NOT found"
+            (( errors++ )) || true
+        fi
+    done
+
+    # --- Check 4: Container configuration consistency ---
+    echo ""
+    echo "--- Configuration consistency ---"
+    if [[ -d "$MACHINES_ROOT" ]]; then
+        local on_disk=0
+        local registered=0
+
+        # Count on-disk containers (skip internal dirs)
+        for entry in "${MACHINES_ROOT}"/*/; do
+            [[ -d "$entry" ]] || continue
+            local cname
+            cname="$(basename "$entry")"
+            [[ "$cname" == .* ]] && continue
+            (( on_disk++ )) || true
+        done
+
+        # Count registered containers
+        while IFS= read -r _line; do
+            [[ -n "$_line" ]] && (( registered++ )) || true
+        done < <(machinectl list --all --no-pager --no-legend 2>/dev/null || true)
+
+        echo "  [INFO] On-disk containers: ${on_disk}"
+        echo "  [INFO] Registered with machinectl: ${registered}"
+
+        if (( on_disk > registered )); then
+            echo "  [WARN] More containers on disk than registered — some may be orphaned"
+            echo "         Use 'our-container diagnose' for details"
+        elif (( registered > on_disk )); then
+            echo "  [WARN] More containers registered than on disk — ghost entries may exist"
+            echo "         Use 'machinectl list' to identify, then 'machinectl remove <name>' to clean"
+            (( errors++ )) || true
+        else
+            echo "  [OK] Container count consistent"
+        fi
+
+        # Check .nspawn configuration files
+        local nspawn_count=0
+        for nspawn_file in /etc/systemd/nspawn/*.nspawn; do
+            [[ -f "$nspawn_file" ]] || continue
+            (( nspawn_count++ )) || true
+        done
+        if (( nspawn_count > 0 )); then
+            echo "  [INFO] ${nspawn_count} .nspawn configuration file(s) found in /etc/systemd/nspawn/"
+        fi
+    fi
+
+    # --- Check 5: Boot loader integrity (snapshot entries) ---
+    echo ""
+    echo "--- Boot entries ---"
+    if [[ -d "/boot/loader/entries" ]]; then
+        local boot_entries=0
+        local snapshot_entries=0
+        for entry in /boot/loader/entries/*.conf; do
+            [[ -f "$entry" ]] || continue
+            (( boot_entries++ )) || true
+            if grep -q "snapshot" "$entry" 2>/dev/null; then
+                (( snapshot_entries++ )) || true
+            fi
+        done
+        echo "  [INFO] ${boot_entries} boot entry/entries found"
+        echo "  [INFO] ${snapshot_entries} snapshot entry/entries found"
+        if (( boot_entries == 0 )); then
+            echo "  [FAIL] No boot entries found — system may not boot correctly"
+            (( errors++ )) || true
+        fi
+    elif [[ -d "/boot" ]]; then
+        echo "  [WARN] /boot exists but has no loader/entries directory"
+        (( errors++ )) || true
+    fi
+
+    # --- Summary ---
+    echo ""
+    echo "============================================"
+    if (( errors == 0 )); then
+        echo "  All integrity checks passed"
+    else
+        echo "  [!] ${errors} error(s) found — review output above"
+    fi
+    echo "============================================"
+    echo ""
+
+    return "$errors"
+}
+
+# --- Main command dispatcher ---
+# shellcheck disable=SC2317
+usage() {
+    cat <<'HELP'
+our-container - systemd-nspawn container wrapper for ouroborOS
+
+USAGE
+    our-container create <name> [distro]          Bootstrap a new container (default: arch)
+    our-container enter <name>                    Open a shell in the container
+    our-container start <name>                    Boot the container as a machine
+    our-container stop <name>                     Stop a running machine
+    our-container list                            List all containers
+    our-container remove <name>                   Delete a container and its subvolume
+
+    our-container snapshot create <ctr> <name>    Create a read-only Btrfs snapshot
+    our-container snapshot list <ctr>             List snapshots for a container
+    our-container snapshot restore <ctr> <name>   Restore container from snapshot
+
+    our-container storage mount <ctr> <h> <c>     Bind-mount host path into container
+    our-container storage umount <ctr> <c-path>   Remove a bind mount from container
+
+    our-container cleanup [--threshold <pct>]     Prune old container snapshots
+    our-container disk-usage                      Show per-container disk usage
+
+    our-container monitor [--interval N]          Real-time container dashboard (default: 2s)
+    our-container diagnose                        Run health checks and report problems
+    our-container stats [name]                    Show CPU, memory, disk, network stats
+    our-container logs <name> [-f] [-n N]         Show container journal logs
+    our-container check                           Verify filesystem and config integrity
+
+    our-container image pull <distro>             Pre-bootstrap a base image
+    our-container image list                      List available base images
+    our-container image remove <distro>           Remove a cached base image
+
+CONTAINERS
+    Live under /var/lib/machines/ and use Btrfs subvolumes when available,
+    so each one can be snapshotted independently of the host.
+
+SNAPSHOTS
+    Stored under /var/lib/machines/.snapshots/<container>/<snapshot-name>.
+    Read-only Btrfs snapshots. Restore creates a safety backup before replacing.
+
+STORAGE
+    Bind mounts are configured via systemd-nspawn .nspawn files at
+    /etc/systemd/nspawn/<container>.nspawn. Changes take effect on restart.
+
+IMAGES
+    Cached base images live under /var/lib/machines/.images/<distro>.
+
+MONITORING
+    monitor   Real-time dashboard refreshed every N seconds (default 2).
+              Shows container name, state, PID, and IP address.
+              Press Ctrl+C to exit. Optional --interval N to change speed.
+
+    diagnose  Runs health checks: service status, storage health, container
+              integrity, network connectivity, and running process health.
+              Reports issues and warnings with fix suggestions.
+
+    stats     For each running container (or a specific one), shows CPU usage
+              percentage, memory (RSS/VIRT/Peak), thread count, disk usage,
+              and open TCP connections. CPU measurement takes ~1 second.
+
+    logs      Displays journal logs for a container using journalctl --machine.
+              Supports --follow (-f) for tail mode and --lines (-n) to limit
+              output (default: 100 lines).
+
+    check     Verifies Btrfs filesystem health, service availability, required
+              tools, container registration consistency, and boot entry
+              integrity. Returns non-zero if errors are found.
+
+SUPPORTED DISTROS (for create and image pull)
+    arch      Arch Linux (default, uses pacstrap)
+    debian    Debian (uses debootstrap)
+    ubuntu    Ubuntu (uses debootstrap)
+
+EXAMPLES
+    our-container create mydev arch              Create an Arch container
+    our-container snapshot create mydev v1.0     Snapshot it
+    our-container snapshot list mydev            List snapshots
+    our-container snapshot restore mydev v1.0    Restore to v1.0
+    our-container storage mount mydev /data /opt/data   Mount /data inside container
+    our-container disk-usage                     Check space usage
+    our-container cleanup --threshold 80         Clean old snapshots if disk > 80%
+    our-container image pull debian              Cache a Debian base image
+    our-container monitor                        Watch all containers in real time
+    our-container diagnose                       Run diagnostics
+    our-container stats mydev                    Show performance stats for mydev
+    our-container logs mydev -f -n 50            Follow logs (last 50 lines)
+    our-container check                          Verify system integrity
+    our-container remove mydev                   Delete it
+
+EXIT CODES
+    0   Success
+    1   Error (invalid usage, operation failed)
+    N   Number of issues found (diagnose, check)
+HELP
+}
+
+case "${1:-}" in
+    create)      shift; cmd_create "$@" ;;
+    enter)       shift; cmd_enter "$@" ;;
+    start)       shift; cmd_start "$@" ;;
+    stop)        shift; cmd_stop "$@" ;;
+    list|ls)     cmd_list ;;
+    remove|rm)   shift; cmd_remove "$@" ;;
+    snapshot)
+        shift
+        case "${1:-}" in
+            create)   shift; cmd_snapshot_create "$@" ;;
+            list)     shift; cmd_snapshot_list "$@" ;;
+            restore)  shift; cmd_snapshot_restore "$@" ;;
+            ""|-h|--help|help)
+                echo "Usage: our-container snapshot {create|list|restore} [args...]"
+                ;;
+            *)
+                die "unknown snapshot command: '${1}' -- run 'our-container help' for usage"
+                ;;
+        esac
+        ;;
+    storage)
+        shift
+        case "${1:-}" in
+            mount)   shift; cmd_storage_mount "$@" ;;
+            umount|unmount)  shift; cmd_storage_umount "$@" ;;
+            ""|-h|--help|help)
+                echo "Usage: our-container storage {mount|umount} [args...]"
+                ;;
+            *)
+                die "unknown storage command: '${1}' -- run 'our-container help' for usage"
+                ;;
+        esac
+        ;;
+    cleanup)     shift; cmd_cleanup "$@" ;;
+    disk-usage|du) cmd_disk_usage ;;
+    monitor)     shift; cmd_monitor "$@" ;;
+    diagnose)    cmd_diagnose ;;
+    stats)       shift; cmd_stats "$@" ;;
+    logs)        shift; cmd_logs "$@" ;;
+    check)       cmd_check ;;
+    image)
+        shift
+        case "${1:-}" in
+            pull)   shift; cmd_image_pull "$@" ;;
+            list|ls) cmd_image_list ;;
+            remove|rm) shift; cmd_image_remove "$@" ;;
+            ""|-h|--help|help)
+                echo "Usage: our-container image {pull|list|remove} [args...]"
+                ;;
+            *)
+                die "unknown image command: '${1}' -- run 'our-container help' for usage"
+                ;;
+        esac
+        ;;
+    ""|-h|--help|help)
+        usage
+        ;;
+    *)
+        die "unknown command: '${1}' -- run 'our-container help' for usage"
+        ;;
+esac

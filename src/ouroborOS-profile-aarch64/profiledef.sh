@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 set -euo pipefail
-# profiledef.sh — ouroborOS archiso profile definition
+# profiledef.sh — ouroborOS archiso profile definition (aarch64)
 
-iso_name="ouroborOS"
+iso_name="ouroborOS-aarch64"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
 iso_publisher="ouroborOS <https://github.com/Arkh-Ur/ouroborOS>"
-iso_application="ouroborOS ArchLinux-based immutable Linux distribution"
+iso_application="ouroborOS ArchLinux-based immutable Linux distribution (aarch64)"
 iso_version="0.4.11"
 install_dir="arch"
 buildmodes=('iso')
 bootmodes=('uefi.systemd-boot')
-arch="x86_64"
+arch="aarch64"
 pacman_conf="pacman.conf"
 airootfs_image_type="erofs"
 airootfs_image_tool_options=('-zlzma' '-E' 'ztailpacking')

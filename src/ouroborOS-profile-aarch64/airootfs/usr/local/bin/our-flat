@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# our-flat — Flatpak wrapper for ouroborOS
+#
+# Thin wrapper sobre flatpak que aplica la política de ouroborOS:
+# instalación system-wide, Flathub opt-in explícito, interfaz
+# consistente con otros tools our-* (flags estilo pacman).
+#
+# Flags compatibles con pacman/flatpak:
+#   -S  <app-id>          Instalar app (system-wide)
+#   -Ss <query>           Buscar en remotos configurados
+#   -Si <app-id>          Info de la app
+#   -Su                   Actualizar todas las apps instaladas
+#   -R  <app-id>          Desinstalar app
+#   -Q                    Listar apps instaladas
+#   -Qs <query>           Buscar en apps instaladas
+#   remote-add    <n> <url>  Agregar remote (ej: flathub)
+#   remote-list              Listar remotos configurados
+#   remote-remove <name>     Remover remote
+#
+# Nota: -Syu NO está soportado aquí — usar sudo our-pac -Syu para el sistema base.
+# Nota: Flathub no se agrega por defecto — usá: sudo our-flat remote-add flathub \
+#         https://dl.flathub.org/repo/flathub.flatpakrepo
+set -euo pipefail
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+readonly PROGRAM_NAME="our-flat"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+_msg()  { echo "[${PROGRAM_NAME}] $*"; }
+_warn() { echo "[${PROGRAM_NAME}] WARNING: $*" >&2; }
+_err()  { echo "[${PROGRAM_NAME}] ERROR: $*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+_require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
+    fi
+}
+
+# ── Guards ────────────────────────────────────────────────────────────────────
+
+_check_flatpak() {
+    command -v flatpak &>/dev/null || \
+        _die "flatpak no encontrado. Instalalo con: sudo our-pac -S flatpak"
+}
+
+_check_remotes() {
+    local remotes
+    remotes=$(flatpak remotes --system 2>/dev/null || true)
+    if [[ -z "${remotes}" ]]; then
+        _die "No hay remotos configurados. Agregá uno con: sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
+    fi
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+_cmd_install() {
+    local app_id="${1:-}"
+    [[ -n "${app_id}" ]] || _die "Especificá un app-id. Ejemplo: our-flat -S org.videolan.VLC"
+    _check_flatpak
+    _check_remotes
+    _msg "=== Instalando '${app_id}' (system-wide) ==="
+    flatpak install --system --noninteractive "${app_id}"
+    _msg "Instalado: ${app_id}"
+}
+
+_cmd_search() {
+    local query="${1:-}"
+    [[ -n "${query}" ]] || _die "Especificá un término de búsqueda. Ejemplo: our-flat -Ss firefox"
+    _check_flatpak
+    _msg "Buscando '${query}' en remotos Flatpak..."
+    flatpak search "${query}"
+}
+
+_cmd_info() {
+    local app_id="${1:-}"
+    [[ -n "${app_id}" ]] || _die "Especificá un app-id. Ejemplo: our-flat -Si org.videolan.VLC"
+    _check_flatpak
+    flatpak info "${app_id}" 2>/dev/null || \
+        flatpak remote-info --system "$(flatpak remotes --system --columns=name 2>/dev/null | head -1)" "${app_id}" 2>/dev/null || \
+        _die "App no encontrada: '${app_id}'. Buscala con: our-flat -Ss <query>"
+}
+
+_cmd_upgrade() {
+    _check_flatpak
+    _msg "=== Actualizando apps Flatpak (system-wide) ==="
+    flatpak update --system --noninteractive
+    _msg "Actualización completa."
+}
+
+_cmd_remove() {
+    local app_id="${1:-}"
+    [[ -n "${app_id}" ]] || _die "Especificá un app-id. Ejemplo: our-flat -R org.videolan.VLC"
+    _check_flatpak
+    _msg "=== Desinstalando '${app_id}' ==="
+    flatpak uninstall --system --noninteractive "${app_id}"
+    _msg "Desinstalado: ${app_id}"
+}
+
+_cmd_list() {
+    _check_flatpak
+    local installed
+    installed=$(flatpak list --system --columns=application,version,origin 2>/dev/null || true)
+    if [[ -z "${installed}" ]]; then
+        _msg "No hay apps Flatpak instaladas (system-wide)."
+        return 0
+    fi
+    printf "%-50s %-20s %s\n" "Aplicación" "Versión" "Remote"
+    printf "%s\n" "$(printf '%0.s-' {1..80})"
+    echo "${installed}"
+}
+
+_cmd_list_search() {
+    local query="${1:-}"
+    [[ -n "${query}" ]] || _die "Especificá un término de búsqueda. Ejemplo: our-flat -Qs vlc"
+    _check_flatpak
+    local results
+    results=$(flatpak list --system --columns=application,version,origin 2>/dev/null | \
+              grep -i "${query}" || true)
+    if [[ -z "${results}" ]]; then
+        _msg "No se encontraron apps instaladas que coincidan con '${query}'."
+        return 0
+    fi
+    printf "%-50s %-20s %s\n" "Aplicación" "Versión" "Remote"
+    printf "%s\n" "$(printf '%0.s-' {1..80})"
+    echo "${results}"
+}
+
+_cmd_remote_add() {
+    local name="${1:-}"
+    local url="${2:-}"
+    [[ -n "${name}" ]] || _die "Especificá un nombre para el remote. Ejemplo: our-flat remote-add flathub <url>"
+    [[ -n "${url}" ]]  || _die "Especificá la URL del remote. Ejemplo: our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
+    _check_flatpak
+    _msg "Agregando remote '${name}' (${url})..."
+    flatpak remote-add --system --if-not-exists "${name}" "${url}"
+    _msg "Remote '${name}' agregado. Actualizando appstream cache..."
+    flatpak update --appstream --system 2>/dev/null || true
+    _msg "Appstream cache actualizado."
+}
+
+_cmd_remote_list() {
+    _check_flatpak
+    local remotes
+    remotes=$(flatpak remotes --system 2>/dev/null || true)
+    if [[ -z "${remotes}" ]]; then
+        _msg "No hay remotos configurados. Agregá uno con:"
+        _msg "  sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
+        return 0
+    fi
+    echo "${remotes}"
+}
+
+_cmd_remote_remove() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "Especificá el nombre del remote. Ejemplo: our-flat remote-remove flathub"
+    _check_flatpak
+    _msg "Removiendo remote '${name}'..."
+    flatpak remote-delete --system "${name}"
+    _msg "Remote '${name}' removido."
+}
+
+_cmd_help() {
+    cat <<EOF
+
+${PROGRAM_NAME} — Flatpak wrapper para ouroborOS
+
+USO:
+  our-flat -S  <app-id>               Instalar app (system-wide)
+  our-flat -Ss <query>                Buscar en remotos configurados
+  our-flat -Si <app-id>               Info de la app
+  our-flat -Su                        Actualizar todas las apps instaladas
+  our-flat -R  <app-id>               Desinstalar app
+  our-flat -Q                         Listar apps instaladas
+  our-flat -Qs <query>                Buscar en apps instaladas
+  our-flat remote-add  <name> <url>   Agregar remote Flatpak
+  our-flat remote-list                Listar remotos configurados
+  our-flat remote-remove <name>       Remover remote
+  our-flat --help                     Mostrar esta ayuda
+
+EJEMPLOS:
+  sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+  sudo our-flat -S org.videolan.VLC
+  our-flat -Ss firefox
+  our-flat -Q
+  sudo our-flat -Su
+  sudo our-flat -R org.videolan.VLC
+
+NOTA:
+  Flathub no se agrega por defecto — tenés que habilitarlo explícitamente.
+  Para actualizar el sistema base (pacman): sudo our-pac -Syu
+
+EOF
+}
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+main() {
+    local flag="${1:-}"
+
+    # Operaciones que requieren root
+    case "${flag}" in
+        -S|-Su|-R|remote-add|remote-remove)
+            _require_root "$@"
+            ;;
+    esac
+
+    shift || true
+
+    case "${flag}" in
+        -S)             _cmd_install "$@" ;;
+        -Ss)            _cmd_search "$@" ;;
+        -Si)            _cmd_info "$@" ;;
+        -Su)            _cmd_upgrade ;;
+        -Syu|-Suy|-Syuu)
+                        _die "-Syu no soportado en our-flat. Para actualizar el sistema base: sudo our-pac -Syu" ;;
+        -R)             _cmd_remove "$@" ;;
+        -Q)             _cmd_list ;;
+        -Qs)            _cmd_list_search "$@" ;;
+        remote-add)     _cmd_remote_add "$@" ;;
+        remote-list)    _cmd_remote_list ;;
+        remote-remove)  _cmd_remote_remove "$@" ;;
+        --help|-h|"")   _cmd_help; exit 0 ;;
+        -Ss*)           _cmd_search "${flag#-Ss}" ;;
+        -Si*)           _cmd_info "${flag#-Si}" ;;
+        -Qs*)           _cmd_list_search "${flag#-Qs}" ;;
+        *)              _err "Flag desconocido: '${flag}'"; _cmd_help; exit 1 ;;
+    esac
+}
+
+main "$@"

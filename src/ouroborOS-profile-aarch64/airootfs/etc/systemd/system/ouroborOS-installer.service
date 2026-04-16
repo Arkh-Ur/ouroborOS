@@ -1,0 +1,28 @@
+[Unit]
+Description=ouroborOS Installer
+Documentation=https://github.com/Arkhur-Vo/ouroborOS
+After=getty@tty1.service
+After=systemd-networkd.service
+After=systemd-networkd-wait-online.service
+After=systemd-resolved.service
+After=iwd.service
+After=sshd-setup.service
+Wants=systemd-networkd-wait-online.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ouroborOS-installer
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal+console
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+# Safety: do not auto-restart if the installer exits successfully or is aborted
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

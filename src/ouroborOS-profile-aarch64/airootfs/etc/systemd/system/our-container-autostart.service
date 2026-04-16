@@ -1,0 +1,25 @@
+# our-container-autostart.service — auto-start systemd-nspawn containers at boot
+#
+# Reads /etc/our-container/autostart.conf and runs `our-container start <name>` for each
+# container listed (one per line). Empty lines and # comments are ignored.
+#
+# The service runs as a oneshot unit after systemd-machined is available.
+# Individual container start failures are logged but do NOT abort remaining
+# entries — we want best-effort behaviour so one broken container doesn't
+# block the rest.
+#
+# Enable:  systemctl enable our-container-autostart.service
+# Disable: systemctl disable our-container-autostart.service
+
+[Unit]
+Description=Auto-start our-container containers at boot
+After=systemd-machined.service
+Wants=systemd-machined.service
+ConditionPathExists=/etc/our-container/autostart.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/our-container-autostart
+
+[Install]
+WantedBy=multi-user.target

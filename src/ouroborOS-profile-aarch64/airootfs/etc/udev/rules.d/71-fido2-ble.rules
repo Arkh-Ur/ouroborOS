@@ -1,0 +1,54 @@
+# /etc/udev/rules.d/71-fido2-ble.rules
+#
+# udev rules for BLE-attached FIDO2 authenticators in ouroborOS.
+#
+# These rules complement the USB FIDO2 rules shipped by libfido2
+# (at /usr/lib/udev/rules.d/70-u2f.rules) by covering:
+#
+#   1. BLE FIDO2 tokens via HID-over-GATT (HOGP):
+#      When a BLE FIDO2 device (e.g. YubiKey 5 NFC via BLE, SoloKey BLE)
+#      is connected, BlueZ instantiates a virtual HID device at /dev/hidraw*.
+#      The KERNELS filter matches the BlueZ HOGP device path containing the
+#      FIDO2 GATT service UUID (0xFFFD).
+#
+#   2. Generic HID devices presenting as FIDO2 authenticator class:
+#      USB devices with bInterfaceClass=03 (HID), bInterfaceSubClass=00,
+#      bInterfaceProtocol=00 and USAGE_PAGE=0xF1D0 (FIDO U2F usage page).
+#      This covers security keys not yet in the libfido2 vendor list.
+#
+# TAG+="uaccess": grants access to the logged-in session user automatically
+#                 via systemd-logind (no need to add user to 'input' group).
+# GROUP="input":  fallback for systems without logind seat management.
+# MODE="0660":    owner (root) + group (input) read-write.
+#
+# References:
+#   FIDO2 GATT Service: https://fidoalliance.org/specs/fido-v2.2/
+#   BlueZ HOGP: /usr/share/doc/bluez/hog-endian.txt
+#   libfido2 udev rules: /usr/lib/udev/rules.d/70-u2f.rules
+
+ACTION!="add|change", GOTO="fido2_ble_end"
+SUBSYSTEM!="hidraw", GOTO="fido2_ble_end"
+
+# ── BLE HID-over-GATT FIDO2 (virtual HID from BlueZ HOGP) ─────────────────
+# BlueZ creates the hidraw path with the GATT service UUID embedded.
+# FIDO2 GATT service short UUID: FFFD
+# Match both uppercase and lowercase UUID representations.
+KERNEL=="hidraw*", KERNELS=="*:FFFD*",                      TAG+="uaccess", GROUP="input", MODE="0660"
+KERNEL=="hidraw*", KERNELS=="*:fffd*",                      TAG+="uaccess", GROUP="input", MODE="0660"
+KERNEL=="hidraw*", KERNELS=="*0000fffd*",                   TAG+="uaccess", GROUP="input", MODE="0660"
+KERNEL=="hidraw*", KERNELS=="*0000FFFD*",                   TAG+="uaccess", GROUP="input", MODE="0660"
+
+# ── Generic HID class — FIDO2 usage page (USB fallback) ────────────────────
+# Covers devices with HID usage page 0xF1D0 (FIDO Alliance) that are not yet
+# in the libfido2 vendor list. The USAGE_PAGE attribute is set by the kernel
+# HID driver after parsing the HID report descriptor.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{bInterfaceClass}=="03", ATTRS{bInterfaceSubClass}=="00", ATTRS{bInterfaceProtocol}=="00", TAG+="uaccess", GROUP="input", MODE="0660"
+
+# ── Known BLE FIDO2 adapter drivers ────────────────────────────────────────
+# Some BLE adapters that are known to be used with FIDO2 tokens.
+# These rules ensure the /dev/bus/usb node is also accessible for BLE adapters
+# that enumerate as composite USB devices (e.g., CSR 8510 A10).
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0a12", ATTRS{idProduct}=="0001", TAG+="uaccess", GROUP="input", MODE="0660"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0b05", ATTRS{idProduct}=="17cb", TAG+="uaccess", GROUP="input", MODE="0660"
+
+LABEL="fido2_ble_end"
