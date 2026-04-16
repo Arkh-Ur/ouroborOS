@@ -5,6 +5,24 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.11] - 2026-04-16
+
+### Added
+
+- aarch64 (ARM64) architecture support — Milestone 4.7 complete.
+- New `src/ouroborOS-profile-aarch64/` archiso profile with `arch="aarch64"`.
+- `build-iso.sh --arch=[x86_64|aarch64]` flag for multi-arch builds.
+- aarch64-specific package list: `linux-aarch64` instead of `linux-zen`, no microcode packages.
+- aarch64 boot entries: `architecture aa64`, kernel path adjusted to `vmlinuz-linux-aarch64`.
+- CI validation job `build-aarch64-validate` — checks profile structure on every push.
+- CI release job `release-aarch64` — experimental ARM runner builds aarch64 ISO for tags.
+
+### Changed
+
+- `linux-zen` → `linux-aarch64` on aarch64 profile (linux-zen not available for ARM).
+- Removed `intel-ucode`, `amd-ucode`, `memtest86+-efi` from aarch64 profile (x86-specific).
+- systemd-boot architecture field in aarch64 boot entries: `aa64` instead of `x64`.
+
 ## [0.4.10] - 2026-04-16
 
 ### Added

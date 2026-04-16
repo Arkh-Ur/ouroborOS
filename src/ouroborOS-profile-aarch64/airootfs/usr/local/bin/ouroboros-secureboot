@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# ouroboros-secureboot — Secure Boot key management for ouroborOS
+#
+# Wraps sbctl to manage Secure Boot keys and binary signing.
+# All operations require the system to be in UEFI mode.
+#
+# Usage:
+#   ouroboros-secureboot setup [--include-ms-keys]  # Full setup: keys + enroll + sign
+#   ouroboros-secureboot status                     # Show SB status + unsigned binaries
+#   ouroboros-secureboot sign-all                   # Re-sign all tracked binaries
+#   ouroboros-secureboot verify                     # Verify all tracked signatures
+#   ouroboros-secureboot rotate-keys                # Backup + new keys + re-sign all
+#   ouroboros-secureboot help
+#
+# Requirements:
+#   - UEFI firmware in Setup Mode (for initial key enrollment)
+#   - sbctl package installed
+#   - Root privileges
+#
+# Gotcha — systemd-boot-update.service:
+#   systemd-boot-update.service copies the EFI binary on every reboot,
+#   potentially overwriting the signed version. sbctl's pacman hook covers
+#   package upgrades but NOT reboot-triggered updates. After any reboot
+#   following a systemd upgrade, run: ouroboros-secureboot sign-all
+set -euo pipefail
+
+readonly PROGRAM="ouroboros-secureboot"
+
+_info()  { printf '\033[0;34m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_ok()    { printf '\033[0;32m[%s]\033[0m %s\n'  "$PROGRAM" "$*"; }
+_warn()  { printf '\033[0;33m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_err()   { printf '\033[0;31m[%s]\033[0m %s\n'  "$PROGRAM" "$*" >&2; }
+_die()   { _err "$*"; exit 1; }
+
+_require_root() {
+    [[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+}
+
+_require_sbctl() {
+    command -v sbctl &>/dev/null || \
+        _die "sbctl not found. Install with: sudo our-pac -S sbctl"
+}
+
+_require_uefi() {
+    [[ -d /sys/firmware/efi ]] || \
+        _die "Not running in UEFI mode. Secure Boot requires UEFI firmware."
+}
+
+_check_setup_mode() {
+    local setup_mode
+    setup_mode=$(sbctl status 2>/dev/null | grep -i "setup mode" | awk '{print $NF}' || echo "unknown")
+    if [[ "$setup_mode" != "Enabled" && "$setup_mode" != "true" ]]; then
+        _warn "Firmware is NOT in Setup Mode."
+        _warn "Key enrollment will fail unless you enable Setup Mode in your UEFI firmware."
+        _warn "Steps: reboot → UEFI Setup → Security → Secure Boot → Clear keys / Setup Mode"
+    else
+        _info "Firmware is in Setup Mode — key enrollment is possible."
+    fi
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_setup() {
+    local include_ms=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --include-ms-keys) include_ms=true; shift ;;
+            *) _die "Unknown option: $1" ;;
+        esac
+    done
+
+    _require_sbctl
+    _require_uefi
+
+    _info "=== Secure Boot Setup ==="
+    _check_setup_mode
+
+    # Step 1: Create signing keys (if not already created)
+    if sbctl status 2>/dev/null | grep -q "Installed.*true\|Keys.*installed"; then
+        _info "Keys already created — skipping key generation."
+    else
+        _info "Creating Secure Boot signing keys..."
+        sbctl create-keys
+        _ok "Keys created in /var/lib/sbctl/."
+    fi
+
+    # Step 2: Enroll keys into firmware
+    _info "Enrolling keys into UEFI firmware..."
+    if [[ "$include_ms" == true ]]; then
+        _info "(Including Microsoft OEM keys — required for some hardware/dual-boot)"
+        sbctl enroll-keys --microsoft || \
+            _die "Key enrollment failed. Is firmware in Setup Mode?"
+    else
+        sbctl enroll-keys || \
+            _die "Key enrollment failed. Is firmware in Setup Mode?"
+    fi
+    _ok "Keys enrolled."
+
+    # Step 3: Sign all tracked binaries
+    _info "Signing all EFI binaries..."
+    cmd_sign_all
+
+    _ok "=== Secure Boot setup complete ==="
+    _ok "Reboot and verify Secure Boot is active in your firmware."
+    _warn "IMPORTANT: After any systemd upgrade + reboot, run: ${PROGRAM} sign-all"
+    _warn "(systemd-boot-update.service may overwrite the signed bootloader on reboot)"
+}
+
+cmd_status() {
+    _require_sbctl
+    _require_uefi
+
+    echo "=== Secure Boot Status ==="
+    sbctl status 2>/dev/null || _warn "sbctl status failed."
+
+    echo ""
+    echo "=== Unsigned Binaries ==="
+    local unsigned
+    unsigned=$(sbctl verify 2>/dev/null | grep -v "^✓" | grep -v "^$" || true)
+    if [[ -z "$unsigned" ]]; then
+        _ok "All tracked binaries are signed."
+    else
+        _warn "Unsigned or invalid binaries:"
+        echo "$unsigned"
+    fi
+}
+
+cmd_sign_all() {
+    _require_sbctl
+
+    _info "Signing all tracked EFI binaries..."
+    sbctl sign-all 2>/dev/null || {
+        _warn "sbctl sign-all encountered errors."
+        _warn "Run 'sbctl verify' for details."
+        return 1
+    }
+    _ok "All binaries signed."
+
+    # Also sign systemd-boot EFI binary explicitly (covers reboot-update gotcha)
+    local boot_efi="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
+    if [[ -f "$boot_efi" ]]; then
+        if ! sbctl list-files 2>/dev/null | grep -q "$boot_efi"; then
+            _info "Adding systemd-boot EFI to sbctl tracking..."
+            sbctl sign -s "$boot_efi"
+        fi
+    fi
+}
+
+cmd_verify() {
+    _require_sbctl
+
+    _info "Verifying signatures on tracked binaries..."
+    sbctl verify 2>/dev/null
+}
+
+cmd_rotate_keys() {
+    _require_sbctl
+    _require_uefi
+
+    _warn "KEY ROTATION will replace your current Secure Boot keys."
+    _warn "You will need to re-enroll keys into your firmware after this."
+    echo ""
+    read -r -p "Type 'yes' to continue: " confirm
+    [[ "$confirm" == "yes" ]] || _die "Aborted."
+
+    # Backup existing keys
+    local backup_dir
+    backup_dir="/var/lib/sbctl/backup-$(date +%Y%m%dT%H%M%S)"
+    _info "Backing up current keys to ${backup_dir}..."
+    cp -a /var/lib/sbctl "$backup_dir"
+    _ok "Keys backed up."
+
+    # Remove old DB entry so create-keys can run cleanly
+    _info "Creating new keys..."
+    sbctl create-keys
+    _ok "New keys created."
+
+    _info "Re-signing all tracked binaries with new keys..."
+    sbctl sign-all 2>/dev/null || _warn "Some binaries may need manual re-signing."
+
+    _warn "Keys rotated. You must re-enroll in firmware:"
+    _warn "  ${PROGRAM} setup   (after enabling Setup Mode in UEFI)"
+}
+
+cmd_tpm2_enroll() {
+    # Enroll TPM2 slot on a LUKS partition using PCR 7+14.
+    # Usage: ouroboros-secureboot tpm2-enroll [DEVICE]
+    # If DEVICE is omitted, reads from /etc/crypttab.
+    local device="${1:-}"
+
+    command -v systemd-cryptenroll &>/dev/null || \
+        _die "systemd-cryptenroll not found (install systemd)."
+    command -v tpm2_pcrread &>/dev/null || \
+        _die "tpm2-tools not found. Install: sudo our-pac -S tpm2-tools"
+
+    if [[ -z "$device" ]]; then
+        if [[ -f /etc/crypttab ]]; then
+            local uuid_field
+            uuid_field=$(awk 'NF && !/^#/ {print $2; exit}' /etc/crypttab)
+            device=$(blkid -t "UUID=${uuid_field#UUID=}" -o device 2>/dev/null || true)
+        fi
+        [[ -n "$device" ]] || \
+            _die "Cannot find LUKS device. Pass it explicitly: ${PROGRAM} tpm2-enroll /dev/sdX2"
+    fi
+
+    _info "Enrolling ${device} with TPM2 (PCR 7+14)..."
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7+14 "$device"
+    _ok "TPM2 slot enrolled on ${device}."
+    _ok "Disk will auto-unlock at boot if the boot chain is unmodified."
+}
+
+cmd_tpm2_status() {
+    command -v tpm2_pcrread &>/dev/null || \
+        _die "tpm2-tools not found. Install: sudo our-pac -S tpm2-tools"
+
+    echo "=== TPM2 Status ==="
+    if [[ -e /sys/class/tpm/tpm0 ]]; then
+        _ok "TPM2 device present: /sys/class/tpm/tpm0"
+    else
+        _warn "No TPM2 device detected (/sys/class/tpm/tpm0 absent)."
+    fi
+
+    echo ""
+    echo "=== PCR 7 (Secure Boot State) ==="
+    tpm2_pcrread sha256:7 2>/dev/null || _warn "Failed to read PCR 7."
+
+    echo ""
+    echo "=== PCR 14 (Boot Entries) ==="
+    tpm2_pcrread sha256:14 2>/dev/null || _warn "Failed to read PCR 14."
+
+    echo ""
+    echo "=== LUKS TPM2 Slots ==="
+    if [[ -f /etc/crypttab ]]; then
+        local uuid_field
+        uuid_field=$(awk 'NF && !/^#/ {print $2; exit}' /etc/crypttab)
+        local device
+        device=$(blkid -t "UUID=${uuid_field#UUID=}" -o device 2>/dev/null || true)
+        if [[ -n "$device" ]]; then
+            _info "LUKS device: ${device}"
+            systemd-cryptenroll --list "$device" 2>/dev/null || \
+                _warn "Could not list LUKS slots for ${device}."
+        fi
+    else
+        _info "No /etc/crypttab found — not a LUKS installation."
+    fi
+}
+
+cmd_help() {
+    cat << EOF
+${PROGRAM} — Secure Boot key management for ouroborOS
+
+USAGE
+  ${PROGRAM} <command> [options]
+
+COMMANDS
+  setup [--include-ms-keys]  Full setup: create-keys + enroll + sign-all
+                             --include-ms-keys: include Microsoft OEM keys
+                             (needed for dual-boot or hardware with signed ROMs)
+  status                     Show Secure Boot status and unsigned binaries
+  sign-all                   Re-sign all tracked EFI binaries
+  verify                     Verify signatures on tracked binaries
+  rotate-keys                Replace keys (backup + new keys + re-sign)
+  tpm2-enroll [DEVICE]       Enroll LUKS partition with TPM2 (PCR 7+14)
+                             If DEVICE is omitted, reads from /etc/crypttab
+  tpm2-status                Show TPM2 presence, PCR 7+14 values, LUKS slots
+  help                       Show this help
+
+WORKFLOW
+  1. Enable Setup Mode in UEFI firmware (Security → Secure Boot → Clear keys)
+  2. sudo ${PROGRAM} setup
+  3. Reboot — firmware should activate Secure Boot
+  4. sudo ${PROGRAM} status   — verify Secure Boot is enabled
+
+TPM2 AUTO-UNLOCK
+  Enabled at install time (disk.tpm2_unlock: true) or post-install:
+    sudo ${PROGRAM} tpm2-enroll         # enroll TPM2 on the LUKS partition
+    sudo ${PROGRAM} tpm2-status         # check TPM2 and PCR values
+
+AFTER SYSTEMD UPGRADES
+  systemd-boot-update.service overwrites the bootloader EFI on reboot.
+  Always run after upgrading systemd + rebooting:
+    sudo ${PROGRAM} sign-all
+
+NOTES
+  - Keys stored in /var/lib/sbctl/ (on @var, always writable)
+  - sbctl pacman hook handles re-signing on package upgrades
+  - Use --include-ms-keys on dual-boot or ASUS/MSI hardware
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+_require_root "$@"
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+    setup)       cmd_setup "$@" ;;
+    status)      cmd_status ;;
+    sign-all)    cmd_sign_all ;;
+    verify)      cmd_verify ;;
+    rotate-keys) cmd_rotate_keys ;;
+    tpm2-enroll) cmd_tpm2_enroll "$@" ;;
+    tpm2-status) cmd_tpm2_status ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        _err "Unknown command: ${command}"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac
