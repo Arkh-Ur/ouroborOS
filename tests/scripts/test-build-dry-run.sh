@@ -61,12 +61,12 @@ exit 0
 MOCK_EOF
 chmod +x "$MOCK_DIR/mkarchiso"
 
-# Mock mksquashfs (called internally by mkarchiso)
-cat > "$MOCK_DIR/mksquashfs" << 'MOCK_EOF'
+# Mock mkfs.erofs (replaces mksquashfs since airootfs migrated to erofs)
+cat > "$MOCK_DIR/mkfs.erofs" << 'MOCK_EOF'
 #!/usr/bin/env bash
 exit 0
 MOCK_EOF
-chmod +x "$MOCK_DIR/mksquashfs"
+chmod +x "$MOCK_DIR/mkfs.erofs"
 
 # Mock xorriso (required by build-iso.sh preflight check)
 cat > "$MOCK_DIR/xorriso" << 'MOCK_EOF'
