@@ -218,10 +218,19 @@ cmd_promote() {
     _info "Deleting @.old..."
     btrfs subvolume delete "${tl_old}"
 
-    # Step 6: Update default boot entry
-    local new_entry="${ENTRIES_DIR}/ouroborOS.conf"
-    if [[ -f "$new_entry" ]]; then
-        _info "Default boot entry unchanged (points to @)."
+    # Step 6: Remove orphaned snapshot boot entry and set default to @
+    local old_entry="${ENTRIES_DIR}/ouroboros-snapshot-${name}.conf"
+    if [[ -f "$old_entry" ]]; then
+        rm -f "$old_entry"
+        _ok "Removed orphaned boot entry: ouroboros-snapshot-${name}.conf"
+    fi
+
+    if [[ -f "${ENTRIES_DIR}/ouroborOS.conf" ]]; then
+        if bootctl set-default "ouroborOS.conf" 2>/dev/null; then
+            _ok "Default boot entry reset to ouroborOS.conf (boots from @)."
+        else
+            _warn "bootctl set-default failed — update loader.conf manually if needed."
+        fi
     fi
 
     umount "$toplevel"
