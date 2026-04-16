@@ -36,7 +36,7 @@ from installer.desktop_profiles import (
     shell_package,
     shell_path,
 )
-from installer.i18n import init_i18n
+from installer.i18n import init_i18n, _
 from installer.tui import TUI
 
 # ---------------------------------------------------------------------------
@@ -133,19 +133,19 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
 }
 
 _STEP_LABELS: dict[State, str] = {
-    State.INIT: "Iniciando",
-    State.NETWORK_SETUP: "Conectando a la red",
-    State.PREFLIGHT: "Verificando requisitos",
-    State.LOCALE: "Configurando idioma",
-    State.USER: "Creando usuario",
-    State.DESKTOP: "Seleccionando escritorio",
-    State.SECURE_BOOT: "Configurando Secure Boot",
-    State.PARTITION: "Seleccionando disco",
-    State.FORMAT: "Preparando disco",
-    State.INSTALL: "Instalando paquetes",
-    State.CONFIGURE: "Configurando sistema",
-    State.SNAPSHOT: "Creando snapshot",
-    State.FINISH: "Finalizando",
+    State.INIT: "Initializing",
+    State.NETWORK_SETUP: "Connecting to network",
+    State.PREFLIGHT: "Checking requirements",
+    State.LOCALE: "Configuring language",
+    State.USER: "Creating user",
+    State.DESKTOP: "Selecting desktop",
+    State.SECURE_BOOT: "Configuring Secure Boot",
+    State.PARTITION: "Selecting disk",
+    State.FORMAT: "Preparing disk",
+    State.INSTALL: "Installing packages",
+    State.CONFIGURE: "Configuring system",
+    State.SNAPSHOT: "Creating snapshot",
+    State.FINISH: "Finishing",
 }
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ class Installer:
         global_pct = lo + int((hi - lo) * max(0, min(100, sub_pct)) / 100)
         step_num = _STATE_ORDER.index(state) + 1
         total = len(_STATE_ORDER)
-        label = _STEP_LABELS.get(state, state.name)
+        label = _(_STEP_LABELS.get(state, state.name))
         if self.tui:
             self.tui.update_install_progress(global_pct, step_num, total, label, detail)
 

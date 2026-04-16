@@ -85,8 +85,8 @@ write_to_root_subvolume() {
     local tmp_root
     tmp_root=$(mktemp -d)
 
-    mount -t btrfs -o "subvol=@,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
-        log_warn "Could not temp-mount @ subvolume on ${tmp_root}"
+    mount -t btrfs -o "subvolid=5,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
+        log_warn "Could not temp-mount top-level subvolume on ${tmp_root}"
         rmdir "$tmp_root" 2>/dev/null || true
         return 1
     }
@@ -1247,8 +1247,17 @@ GREETD_EOF
     local FIRSTBOOT_SRC="/usr/local/bin/ouroboros-firstboot"
     local FIRSTBOOT_UNIT_SRC="/etc/systemd/system/ouroboros-firstboot.service"
     if [[ -f "${FIRSTBOOT_SRC}" && -f "${FIRSTBOOT_UNIT_SRC}" ]]; then
-        cp "${FIRSTBOOT_SRC}" "${TARGET}/usr/local/bin/ouroboros-firstboot"
-        chmod 0755 "${TARGET}/usr/local/bin/ouroboros-firstboot"
+        # Write to @ subvolume (pre-overlay) — /usr is read-only after overlay
+        _write_firstboot_to_root() {
+            local mnt="$1"
+            mkdir -p "${mnt}/usr/local/bin"
+            cp "${FIRSTBOOT_SRC}" "${mnt}/usr/local/bin/ouroboros-firstboot"
+            chmod 0755 "${mnt}/usr/local/bin/ouroboros-firstboot"
+            log_ok "ouroboros-firstboot binary written to @ subvolume."
+        }
+        write_to_root_subvolume _write_firstboot_to_root
+
+        # Unit file goes to @etc (will be overlaid on /etc/systemd/system)
         mkdir -p "${TARGET}/etc/systemd/system"
         cp "${FIRSTBOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-firstboot.service"
         in_chroot systemctl enable ouroboros-firstboot.service

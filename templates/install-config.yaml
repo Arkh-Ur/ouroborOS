@@ -8,7 +8,7 @@ locale:
   locale: en_US.UTF-8
   keymap: us
   timezone: America/Santiago
-  # TUI language for unattended installs. Options: en_US | es_AR | de_DE
+  # TUI language for unattended installs. Options: en_US | es_CL | de_DE
   language: en_US
 
 network:

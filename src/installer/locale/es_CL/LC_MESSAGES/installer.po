@@ -1,376 +1,375 @@
-# ouroborOS Installer — English (US) source strings
-# This is the reference locale; msgstr mirrors msgid.
+# ouroborOS Installer — Español (Chile)
 msgid ""
 msgstr ""
 "Project-Id-Version: ouroborOS installer\n"
 "Report-Msgid-Bugs-To: https://github.com/Arkh-Ur/ouroborOS/issues\n"
-"Language: en_US\n"
+"Language: es_CL\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
 msgid "Welcome to the ouroborOS installer."
-msgstr "Welcome to the ouroborOS installer."
+msgstr "Bienvenido al instalador de ouroborOS."
 
 msgid "ouroborOS is an ArchLinux-based distribution with an immutable\nBtrfs root filesystem and a fully systemd-native stack."
-msgstr "ouroborOS is an ArchLinux-based distribution with an immutable\nBtrfs root filesystem and a fully systemd-native stack."
+msgstr "ouroborOS es una distribución basada en ArchLinux con un sistema\nde archivos raíz Btrfs inmutable y una pila completamente systemd-nativa."
 
 msgid "This installer will guide you through the installation process."
-msgstr "This installer will guide you through the installation process."
+msgstr "Este instalador te guiará a través del proceso de instalación."
 
 msgid "WARNING: This will ERASE the target disk completely."
-msgstr "WARNING: This will ERASE the target disk completely."
+msgstr "ADVERTENCIA: Esto BORRARÁ completamente el disco de destino."
 
 msgid "Select system locale:"
-msgstr "Select system locale:"
+msgstr "Selecciona el idioma del sistema:"
 
 msgid "Select keyboard layout:"
-msgstr "Select keyboard layout:"
+msgstr "Selecciona la distribución del teclado:"
 
 msgid "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)"
-msgstr "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)"
+msgstr "Ingresa la zona horaria (ej. America/Santiago, UTC)"
 
 msgid "Select a desktop profile for the installed system:"
-msgstr "Select a desktop profile for the installed system:"
+msgstr "Selecciona un perfil de escritorio para el sistema instalado:"
 
 msgid "Select a display manager:"
-msgstr "Select a display manager:"
+msgstr "Selecciona un gestor de pantalla:"
 
 msgid "Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."
-msgstr "Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."
+msgstr "Selecciona el disco destino para la instalación.\nADVERTENCIA: Todos los datos en el disco seleccionado serán BORRADOS."
 
 msgid "Enable LUKS2 full-disk encryption?"
-msgstr "Enable LUKS2 full-disk encryption?"
+msgstr "¿Habilitar el cifrado completo del disco con LUKS2?"
 
 msgid "Enter username for the primary user"
-msgstr "Enter username for the primary user"
+msgstr "Ingresa el nombre de usuario para el usuario principal"
 
 msgid "Confirm password"
-msgstr "Confirm password"
+msgstr "Confirma la contraseña"
 
 msgid "Select the login shell for your user account:"
-msgstr "Select the login shell for your user account:"
+msgstr "Selecciona el shell de inicio de sesión para tu cuenta:"
 
 msgid "Select the GPU driver to install:"
-msgstr "Select the GPU driver to install:"
+msgstr "Selecciona el driver de GPU a instalar:"
 
 msgid "Installation Complete"
-msgstr "Installation Complete"
+msgstr "Instalación Completa"
 
 msgid "Remove the installation media."
-msgstr "Remove the installation media."
+msgstr "Retira el medio de instalación."
 
 # Language selection
 msgid "Language / Idioma / Sprache"
-msgstr "Language / Idioma / Sprache"
+msgstr "Idioma / Idioma / Sprache"
 
 msgid "Select the installer language:"
-msgstr "Select the installer language:"
+msgstr "Selecciona el idioma del instalador:"
 
 # Hostname
 msgid "Enter a hostname for the installed system"
-msgstr "Enter a hostname for the installed system"
+msgstr "Ingresa un nombre de host para el sistema instalado"
 
 msgid "Enter a hostname for the installed system:"
-msgstr "Enter a hostname for the installed system:"
+msgstr "Ingresa un nombre de host para el sistema instalado:"
 
 # Desktop profiles
 msgid "Nothing extra — TTY-only base (you install the DE yourself)"
-msgstr "Nothing extra — TTY-only base (you install the DE yourself)"
+msgstr "Nada extra — base solo TTY (instalas el DE tú mismo)"
 
 msgid "Hyprland + Hypr ecosystem (waybar, foot, hyprlauncher, hyprlock…)"
-msgstr "Hyprland + Hypr ecosystem (waybar, foot, hyprlauncher, hyprlock…)"
+msgstr "Hyprland + ecosistema Hypr (waybar, foot, hyprlauncher, hyprlock…)"
 
 msgid "Niri + foot + fuzzel (scrollable-tiling Wayland)"
-msgstr "Niri + foot + fuzzel (scrollable-tiling Wayland)"
+msgstr "Niri + foot + fuzzel (Wayland con mosaico desplazable)"
 
 msgid "GNOME desktop (gdm by default)"
-msgstr "GNOME desktop (gdm by default)"
+msgstr "Escritorio GNOME (gdm por defecto)"
 
 msgid "KDE Plasma — flavor selector next (plm by default)"
-msgstr "KDE Plasma — flavor selector next (plm by default)"
+msgstr "KDE Plasma — selector de versión después (plm por defecto)"
 
 msgid "COSMIC Desktop by System76 — Wayland-native, greetd"
-msgstr "COSMIC Desktop by System76 — Wayland-native, greetd"
+msgstr "Escritorio COSMIC de System76 — nativo Wayland, greetd"
 
 # Display managers
 msgid "Recommended for this profile (default)"
-msgstr "Recommended for this profile (default)"
+msgstr "Recomendado para este perfil (por defecto)"
 
 msgid "GNOME Display Manager — Wayland-native"
-msgstr "GNOME Display Manager — Wayland-native"
+msgstr "Gestor de Pantalla GNOME — nativo Wayland"
 
 msgid "Simple Desktop Display Manager — Wayland support"
-msgstr "Simple Desktop Display Manager — Wayland support"
+msgstr "Simple Desktop Display Manager — soporte Wayland"
 
 msgid "Plasma Login Manager — KDE native, fork of SDDM"
-msgstr "Plasma Login Manager — KDE native, fork of SDDM"
+msgstr "Plasma Login Manager — nativo KDE, fork de SDDM"
 
 msgid "greetd — generic greeter daemon (COSMIC uses cosmic-greeter)"
-msgstr "greetd — generic greeter daemon (COSMIC uses cosmic-greeter)"
+msgstr "greetd — daemon de greeter genérico (COSMIC usa cosmic-greeter)"
 
 msgid "TTY login — launch your session manually"
-msgstr "TTY login — launch your session manually"
+msgstr "Login TTY — lanza tu sesión manualmente"
 
 # KDE flavors
 msgid "plasma-meta    — curated set, recommended (~1 GB)"
-msgstr "plasma-meta    — curated set, recommended (~1 GB)"
+msgstr "plasma-meta    — conjunto curado, recomendado (~1 GB)"
 
 msgid "plasma         — full group, all components (~1.5 GB)"
-msgstr "plasma         — full group, all components (~1.5 GB)"
+msgstr "plasma         — grupo completo, todos los componentes (~1.5 GB)"
 
 msgid "plasma-desktop — minimal shell only (~400 MB)"
-msgstr "plasma-desktop — minimal shell only (~400 MB)"
+msgstr "plasma-desktop — solo shell mínima (~400 MB)"
 
 msgid "Select which Plasma meta-package to install:"
-msgstr "Select which Plasma meta-package to install:"
+msgstr "Selecciona qué meta-package de Plasma instalar:"
 
 # GPU drivers
 msgid "Auto-detect GPU and install recommended driver (default)"
-msgstr "Auto-detect GPU and install recommended driver (default)"
+msgstr "Auto-detectar GPU e instalar driver recomendado (por defecto)"
 
 msgid "Mesa — Intel / AMD open source (xf86-video-amdgpu + vulkan-radeon)"
-msgstr "Mesa — Intel / AMD open source (xf86-video-amdgpu + vulkan-radeon)"
+msgstr "Mesa — Intel / AMD código abierto (xf86-video-amdgpu + vulkan-radeon)"
 
 msgid "AMD GPU — mesa + vulkan-radeon explicitly"
-msgstr "AMD GPU — mesa + vulkan-radeon explicitly"
+msgstr "GPU AMD — mesa + vulkan-radeon explícito"
 
 msgid "NVIDIA — proprietary driver (recommended for NVIDIA hardware)"
-msgstr "NVIDIA — proprietary driver (recommended for NVIDIA hardware)"
+msgstr "NVIDIA — driver propietario (recomendado para hardware NVIDIA)"
 
 msgid "NVIDIA Open — open kernel module (Turing/Ampere+)"
-msgstr "NVIDIA Open — open kernel module (Turing/Ampere+)"
+msgstr "NVIDIA Open — módulo de kernel abierto (Turing/Ampere+)"
 
 msgid "Skip — install GPU drivers manually after reboot"
-msgstr "Skip — install GPU drivers manually after reboot"
+msgstr "Saltar — instalar drivers GPU manualmente después del reboot"
 
 msgid "Detected GPU family:"
-msgstr "Detected GPU family:"
+msgstr "Familia GPU detectada:"
 
 msgid "GPU Driver"
-msgstr "GPU Driver"
+msgstr "Driver GPU"
 
 # Shell options
 msgid "Bash   — POSIX-compatible, universal default (recommended)"
-msgstr "Bash   — POSIX-compatible, universal default (recommended)"
+msgstr "Bash   — compatible POSIX, por defecto universal (recomendado)"
 
 msgid "Zsh    — Bash-compatible with advanced completion and prompts"
-msgstr "Zsh    — Bash-compatible with advanced completion and prompts"
+msgstr "Zsh    — compatible con Bash con completado avanzado y prompts"
 
 msgid "Fish   — Modern and user-friendly (non-POSIX, breaks legacy scripts)"
-msgstr "Fish   — Modern and user-friendly (non-POSIX, breaks legacy scripts)"
+msgstr "Fish   — Moderno y amigable (no-POSIX, rompe scripts legacy)"
 
 msgid "Login Shell"
-msgstr "Login Shell"
+msgstr "Shell de Login"
 
 # Progress strings
 msgid "Paso {step_num}/{total_steps}: {step_label}"
-msgstr "Step {step_num}/{total_steps}: {step_label}"
+msgstr "Paso {step_num}/{total_steps}: {step_label}"
 
 msgid "Instalación completa"
-msgstr "Installation Complete"
+msgstr "Instalación completa"
 
 # Disk selection
 msgid "No suitable block devices found."
-msgstr "No suitable block devices found."
+msgstr "No se encontraron dispositivos de bloque adecuados."
 
 msgid "Disk Selection"
-msgstr "Disk Selection"
+msgstr "Selección de Disco"
 
 # LUKS strings
 msgid "Enable LUKS2 encryption?"
-msgstr "Enable LUKS2 encryption?"
+msgstr "¿Habilitar cifrado LUKS2?"
 
 msgid "You will be asked to set a passphrase."
-msgstr "You will be asked to set a passphrase."
+msgstr "Se te pedirá que configures una passphrase."
 
 msgid "Without encryption, data on the disk is accessible to anyone with physical access."
-msgstr "Without encryption, data on the disk is accessible to anyone with physical access."
+msgstr "Sin cifrado, los datos en el disco son accesibles para cualquiera con acceso físico."
 
 # TPM2 strings
 msgid "Enable TPM2 auto-unlock for LUKS?"
-msgstr "Enable TPM2 auto-unlock for LUKS?"
+msgstr "¿Habilitar auto-desbloqueo TPM2 para LUKS?"
 
 msgid "Binds the LUKS slot to TPM2 PCR 7+14 (Secure Boot state + measured boot)."
-msgstr "Binds the LUKS slot to TPM2 PCR 7+14 (Secure Boot state + measured boot)."
+msgstr "Vincula el slot LUKS al PCR 7+14 de TPM2 (estado Secure Boot + boot medido)."
 
 msgid "The disk unlocks automatically at boot without a passphrase — as long as the boot chain is unmodified."
-msgstr "The disk unlocks automatically at boot without a passphrase — as long as the boot chain is unmodified."
+msgstr "El disco se desbloquea automáticamente al arrancar sin passphrase — siempre que la cadena de boot no esté modificada."
 
 msgid "Falls back to passphrase if measurements change."
-msgstr "Falls back to passphrase if measurements change."
+msgstr "Vuelve a passphrase si las mediciones cambian."
 
 msgid "WARNING: No TPM2 device detected (/sys/class/tpm/tpm0 absent)."
-msgstr "WARNING: No TPM2 device detected (/sys/class/tpm/tpm0 absent)."
+msgstr "ADVERTENCIA: No se detectó dispositivo TPM2 (/sys/class/tpm/tpm0 ausente)."
 
 msgid "You can still enable this — it will be configured but will fall back to passphrase if TPM2 is not present at boot."
-msgstr "You can still enable this — it will be configured but will fall back to passphrase if TPM2 is not present at boot."
+msgstr "Puedes habilitarlo igual — se configurará pero volverá a passphrase si TPM2 no está presente al arrancar."
 
 msgid "  Enable TPM2 auto-unlock?"
-msgstr "  Enable TPM2 auto-unlock?"
+msgstr "  ¿Habilitar auto-desbloqueo TPM2?"
 
 msgid "Binds LUKS to TPM2 PCR 7+14 (Secure Boot + measured boot)."
-msgstr "Binds LUKS to TPM2 PCR 7+14 (Secure Boot + measured boot)."
+msgstr "Vincula LUKS al PCR 7+14 de TPM2 (Secure Boot + boot medido)."
 
 msgid "Auto-unlocks at boot if the boot chain is unmodified."
-msgstr "Auto-unlocks at boot if the boot chain is unmodified."
+msgstr "Auto-desbloquea al arrancar si la cadena de boot no está modificada."
 
 msgid "WARNING: No TPM2 device detected. Will fall back to passphrase."
-msgstr "WARNING: No TPM2 device detected. Will fall back to passphrase."
+msgstr "ADVERTENCIA: No se detectó dispositivo TPM2. Volverá a passphrase."
 
 # Password validation
 msgid "Password must be at least 4 characters."
-msgstr "Password must be at least 4 characters."
+msgstr "La contraseña debe tener al menos 4 caracteres."
 
 msgid "Passwords do not match. Attempt {attempt_num}/3."
-msgstr "Passwords do not match. Attempt {attempt_num}/3."
+msgstr "Las contraseñas no coinciden. Intento {attempt_num}/3."
 
 msgid "Password entry failed after 3 attempts."
-msgstr "Password entry failed after 3 attempts."
+msgstr "Falló el ingreso de contraseña después de 3 intentos."
 
 # Installation summary
 msgid "What next?"
-msgstr "What next?"
+msgstr "¿Y ahora qué?"
 
 msgid "Choose what to do after installation:"
-msgstr "Choose what to do after installation:"
+msgstr "Elige qué hacer después de la instalación:"
 
 msgid "Restart the system now"
-msgstr "Restart the system now"
+msgstr "Reiniciar el sistema ahora"
 
 msgid "Shut the system down"
-msgstr "Shut the system down"
+msgstr "Apagar el sistema"
 
 msgid "Restart the system now?\n\nYes = Reboot   No = Shutdown"
-msgstr "Restart the system now?\n\nYes = Reboot   No = Shutdown"
+msgstr "¿Reiniciar el sistema ahora?\n\nSí = Reboot   No = Apagar"
 
 # Error messages
 msgid "Error:\n\n{message}\n\nRetry?"
-msgstr "Error:\n\n{message}\n\nRetry?"
+msgstr "Error:\n\n{message}\n¿Reintentar?"
 
 msgid "Retry"
-msgstr "Retry"
+msgstr "Reintentar"
 
 msgid "Abort"
-msgstr "Abort"
+msgstr "Abortar"
 
 msgid "Fatal Error:\n\n{message}\n\nThe installer will exit."
-msgstr "Fatal Error:\n\n{message}\n\nThe installer will exit."
+msgstr "Error Fatal:\n\n{message}\nEl instalador saldrá."
 
 # WiFi strings
 msgid "No internet connectivity detected."
-msgstr "No internet connectivity detected."
+msgstr "No se detectó conectividad a internet."
 
 msgid "Select a WiFi network to connect to."
-msgstr "Select a WiFi network to connect to."
+msgstr "Selecciona una red WiFi para conectarte."
 
 msgid "No WiFi interface found."
-msgstr "No WiFi interface found."
+msgstr "No se encontró interfaz WiFi."
 
 msgid "Scanning for networks..."
-msgstr "Scanning for networks..."
+msgstr "Escaneando redes..."
 
 msgid "No WiFi networks found."
-msgstr "No WiFi networks found."
+msgstr "No se encontraron redes WiFi."
 
 msgid "[R] Re-scan  [M] Manual SSID  [0] Skip"
-msgstr "[R] Re-scan  [M] Manual SSID  [0] Skip"
+msgstr "[R] Re-escanear  [M] SSID manual  [0] Saltar"
 
 msgid "[R] Re-scan"
-msgstr "[R] Re-scan"
+msgstr "[R] Re-escanear"
 
 msgid "[M] Manual SSID"
-msgstr "[M] Manual SSID"
+msgstr "[M] SSID manual"
 
 msgid "[0] Skip"
-msgstr "[0] Skip"
+msgstr "[0] Saltar"
 
 msgid "Manual Connection"
-msgstr "Manual Connection"
+msgstr "Conexión Manual"
 
 msgid "Enter the network name manually.\nUse this for hidden / non-broadcasting SSIDs."
-msgstr "Enter the network name manually.\nUse this for hidden / non-broadcasting SSIDs."
+msgstr "Ingresa el nombre de la red manualmente.\nUsa esto para SSID ocultos / que no emiten."
 
 msgid "  SSID"
 msgstr "  SSID"
 
 msgid "Password for '{ssid}' (leave empty for open network)"
-msgstr "Password for '{ssid}' (leave empty for open network)"
+msgstr "Contraseña para '{ssid}' (deja vacío para red abierta)"
 
 msgid "  Password for '{ssid}'"
-msgstr "  Password for '{ssid}'"
+msgstr "  Contraseña para '{ssid}'"
 
 msgid "Connecting to {ssid}..."
-msgstr "Connecting to {ssid}..."
+msgstr "Conectando a {ssid}..."
 
 msgid "Connection failed: {error}"
-msgstr "Connection failed: {error}"
+msgstr "Falló la conexión: {error}"
 
 msgid "Connected! Internet OK"
-msgstr "Connected! Internet OK"
+msgstr "¡Conectado! Internet OK"
 
 msgid "Connected but no internet."
-msgstr "Connected but no internet."
+msgstr "Conectado pero no hay internet."
 
 msgid "WiFi Networks"
-msgstr "WiFi Networks"
+msgstr "Redes WiFi"
 
 msgid "Select a network:"
-msgstr "Select a network:"
+msgstr "Selecciona una red:"
 
 msgid "skip"
-msgstr "skip"
+msgstr "saltar"
 
 # Dual boot strings
 msgid "Other operating systems detected on this machine:"
-msgstr "Other operating systems detected on this machine:"
+msgstr "Otros sistemas operativos detectados en esta máquina:"
 
 msgid "Enabling dual-boot will add boot entries for the detected systems\nand configure systemd-boot to show the selection menu on startup."
-msgstr "Enabling dual-boot will add boot entries for the detected systems\nand configure systemd-boot to show the selection menu on startup."
+msgstr "Habilitar dual-boot agregará entradas de boot para los sistemas detectados\ny configurará systemd-boot para mostrar el menú de selección al arrancar."
 
 msgid "[dim]If Secure Boot is enabled, Microsoft OEM keys will be included\nso Windows continues to boot under Secure Boot.[/]"
-msgstr "[dim]If Secure Boot is enabled, Microsoft OEM keys will be included\nso Windows continues to boot under Secure Boot.[/]"
+msgstr "[dim]Si Secure Boot está habilitado, se incluirán las claves OEM de Microsoft\npara que Windows continúe arrancando con Secure Boot.[/]"
 
 msgid "No other operating systems were detected on the ESP.\n\nYou can still enable dual-boot support if you plan to install\nanother OS later — systemd-boot will show any new boot entries\nit finds automatically."
-msgstr "No other operating systems were detected on the ESP.\n\nYou can still enable dual-boot support if you plan to install\nanother OS later — systemd-boot will show any new boot entries\nit finds automatically."
+msgstr "No se detectaron otros sistemas operativos en el ESP.\n\nPuedes habilitar soporte dual-boot igual si planeas instalar\notro OS después — systemd-boot mostrará cualquier nueva entrada de boot\nque encuentre automáticamente."
 
 msgid "Enable dual-boot support?"
-msgstr "Enable dual-boot support?"
+msgstr "¿Habilitar soporte dual-boot?"
 
 # Remote config
 msgid "No local configuration file found.\n\nYou can provide a URL to a YAML configuration file\n(e.g. a GitHub raw URL) for unattended installation."
-msgstr "No local configuration file found.\n\nYou can provide a URL to a YAML configuration file\n(e.g. a GitHub raw URL) for unattended installation."
+msgstr "No se encontró archivo de configuración local.\n\nPuedes proporcionar una URL a un archivo de configuración YAML\n(ej. una URL raw de GitHub) para instalación no atendida."
 
 msgid "Remote Configuration"
-msgstr "Remote Configuration"
+msgstr "Configuración Remota"
 
 msgid "Use a remote configuration file?"
-msgstr "Use a remote configuration file?"
+msgstr "¿Usar archivo de configuración remoto?"
 
 msgid "Enter config URL"
-msgstr "Enter config URL"
+msgstr "Ingresa URL de configuración"
 
 msgid "Do you want to use a remote configuration file\nfor unattended installation?"
-msgstr "Do you want to use a remote configuration file\nfor unattended installation?"
+msgstr "¿Quieres usar un archivo de configuración remoto\npara instalación no atendida?"
 
 msgid "Enter the URL to the YAML configuration file\n(e.g. https://raw.githubusercontent.com/.../config.yaml):"
-msgstr "Enter the URL to the YAML configuration file\n(e.g. https://raw.githubusercontent.com/.../config.yaml):"
+msgstr "Ingresa la URL al archivo de configuración YAML\n(ej. https://raw.githubusercontent.com/.../config.yaml):"
 
 # Partition preview
 msgid "Proposed partition layout for {disk}:"
-msgstr "Proposed partition layout for {disk}:"
+msgstr "Propuesta de layout de partición para {disk}:"
 
 msgid "Partition 1:  512 MiB   ESP (FAT32)"
-msgstr "Partition 1:  512 MiB   ESP (FAT32)"
+msgstr "Partición 1:  512 MiB   ESP (FAT32)"
 
 msgid "Partition 2:  remaining  Btrfs{luks_note}"
-msgstr "Partition 2:  remaining  Btrfs{luks_note}"
+msgstr "Partición 2:  restante  Btrfs{luks_note}"
 
 msgid "Btrfs subvolumes:"
-msgstr "Btrfs subvolumes:"
+msgstr "Subvolúmenes Btrfs:"
 
 msgid "@            -> /           (read-only at boot)"
-msgstr "@            -> /           (read-only at boot)"
+msgstr "@            -> /           (solo lectura al arrancar)"
 
 msgid "@var         -> /var"
 msgstr "@var         -> /var"
@@ -385,17 +384,17 @@ msgid "@snapshots   -> /.snapshots"
 msgstr "@snapshots   -> /.snapshots"
 
 msgid "Swap: zram (no swap partition)"
-msgstr "Swap: zram (no swap partition)"
+msgstr "Swap: zram (sin partición de swap)"
 
 # Secure Boot setup
 msgid "[bold yellow]Secure Boot requires your UEFI firmware to be in Setup Mode.[/]\n\nBefore the installer continues, please:\n\n  1. [bold]Reboot[/] into your UEFI firmware settings\n     (usually [bold]Del[/], [bold]F2[/], or [bold]F12[/] during POST)\n\n  2. Navigate to [bold]Secure Boot[/] settings\n\n  3. Select [bold]\"Clear Secure Boot Keys\"[/] or\n     [bold]\"Delete All Secure Boot Variables\"[/]\n\n  4. The firmware should now show [bold green]Setup Mode[/]\n\n  5. Save and exit the firmware, then [bold]boot back into the installer[/]\n\n[dim]sbctl will create and enroll your custom keys automatically.\nUse[/] [bold]ouroboros-secureboot setup[/] [dim]after install to re-run if needed.[/]"
-msgstr "[bold yellow]Secure Boot requires your UEFI firmware to be in Setup Mode.[/]\n\nBefore the installer continues, please:\n\n  1. [bold]Reboot[/] into your UEFI firmware settings\n     (usually [bold]Del[/], [bold]F2[/], or [bold]F12[/] during POST)\n\n  2. Navigate to [bold]Secure Boot[/] settings\n\n  3. Select [bold]\"Clear Secure Boot Keys\"[/] or\n     [bold]\"Delete All Secure Boot Variables\"[/]\n\n  4. The firmware should now show [bold green]Setup Mode[/]\n\n  5. Save and exit the firmware, then [bold]boot back into the installer[/]\n\n[dim]sbctl will create and enroll your custom keys automatically.\nUse[/] [bold]ouroboros-secureboot setup[/] [dim]after install to re-run if needed.[/]"
+msgstr "[bold yellow]Secure Boot requiere que tu firmware UEFI esté en modo Setup.[/]\n\nAntes de que el instalador continúe, por favor:\n\n  1. [bold]Reinicia[/] en los ajustes de tu firmware UEFI\n     (usualmente [bold]Del[/], [bold]F2[/], o [bold]F12[/] durante POST)\n\n  2. Navega a los ajustes de [bold]Secure Boot[/]\n\n  3. Selecciona [bold]\"Clear Secure Boot Keys\"[/] o\n     [bold]\"Delete All Secure Boot Variables\"[/]\n\n  4. El firmware ahora debería mostrar [bold green]Setup Mode[/]\n\n  5. Guarda y sal del firmware, luego [bold]boot de vuelta al instalador[/]\n\n[dim]sbctl creará y registrará tus claves personalizadas automáticamente.\nUsa[/] [bold]ouroboros-secureboot setup[/] [dim]después de instalar para re-ejecutar si es necesario.[/]"
 
 msgid "[bold red]Secure Boot — Setup Mode Required[/]"
-msgstr "[bold red]Secure Boot — Setup Mode Required[/]"
+msgstr "[bold red]Secure Boot — se requiere modo Setup[/]"
 
 msgid "  I have put my firmware in Setup Mode and am ready to continue"
-msgstr "  I have put my firmware in Setup Mode and am ready to continue"
+msgstr "  Puse mi firmware en modo Setup y estoy listo para continuar"
 
 # Confirmation prompts
 msgid "  {message}"
@@ -403,40 +402,40 @@ msgstr "  {message}"
 
 # Step labels for state machine
 msgid "Initializing"
-msgstr "Initializing"
+msgstr "Iniciando"
 
 msgid "Connecting to network"
-msgstr "Connecting to network"
+msgstr "Conectando a la red"
 
 msgid "Checking requirements"
-msgstr "Checking requirements"
+msgstr "Verificando requisitos"
 
 msgid "Configuring language"
-msgstr "Configuring language"
+msgstr "Configurando idioma"
 
 msgid "Creating user"
-msgstr "Creating user"
+msgstr "Creando usuario"
 
 msgid "Selecting desktop"
-msgstr "Selecting desktop"
+msgstr "Seleccionando escritorio"
 
 msgid "Configuring Secure Boot"
-msgstr "Configuring Secure Boot"
+msgstr "Configurando Secure Boot"
 
 msgid "Selecting disk"
-msgstr "Selecting disk"
+msgstr "Seleccionando disco"
 
 msgid "Preparing disk"
-msgstr "Preparing disk"
+msgstr "Preparando disco"
 
 msgid "Installing packages"
-msgstr "Installing packages"
+msgstr "Instalando paquetes"
 
 msgid "Configuring system"
-msgstr "Configuring system"
+msgstr "Configurando sistema"
 
 msgid "Creating snapshot"
-msgstr "Creating snapshot"
+msgstr "Creando snapshot"
 
 msgid "Finishing"
-msgstr "Finishing"
+msgstr "Finalizando"

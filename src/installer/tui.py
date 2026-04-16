@@ -143,7 +143,7 @@ class TUI:
     # when this screen is shown.
     _LANGUAGE_OPTIONS: list[tuple[str, str]] = [
         ("en_US", "English (US)"),
-        ("es_AR", "Español (Argentina / Latinoamérica)"),
+        ("es_CL", "Español (Chile)"),
         ("de_DE", "Deutsch (Deutschland)"),
     ]
 
@@ -323,7 +323,7 @@ class TUI:
         self._install_progress_active = True
         pct = max(0, min(100, percent))
         self._install_progress_pct = pct
-        step_text = f"Paso {step_num}/{total_steps}: {step_label}"
+        step_text = _("Paso {step_num}/{total_steps}: {step_label}").format(step_num=step_num, total_steps=total_steps, step_label=step_label)
         if detail:
             step_text += f" — {detail}"
         self._update_install_bar(pct, step_text)
@@ -339,7 +339,7 @@ class TUI:
     def finish_install_progress(self) -> None:
         """Mark the global progress as complete (100%)."""
         self._install_progress_pct = 100
-        self._update_install_bar(100, "Instalación completa")
+        self._update_install_bar(100, _("Installation Complete"))
         self._install_progress_active = False
 
     def _update_install_bar(self, pct: int, step_text: str) -> None:

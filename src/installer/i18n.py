@@ -11,7 +11,7 @@ Usage::
 
     from installer.i18n import _, init_i18n
 
-    init_i18n("es_AR")          # call once, after language selection
+    init_i18n("es_CL")          # call once, after language selection
     print(_("Select disk:"))    # returns translated string
 """
 
@@ -30,14 +30,14 @@ _translation: gettext.NullTranslations = gettext.NullTranslations()
 # Short-form language aliases → canonical locale codes.
 _LANG_MAP: dict[str, str] = {
     "en":    "en_US",
-    "es":    "es_AR",
+    "es":    "es_CL",
     "de":    "de_DE",
 }
 
 # Languages supported by this build (matching locale/ subdirectories).
 SUPPORTED_LANGUAGES: list[tuple[str, str]] = [
     ("en_US", "English (US)"),
-    ("es_AR", "Español (Argentina / Latinoamérica)"),
+    ("es_CL", "Español (Chile)"),
     ("de_DE", "Deutsch (Deutschland)"),
 ]
 
@@ -50,7 +50,7 @@ def init_i18n(lang: str) -> None:
     language has no compiled .mo file.
 
     Args:
-        lang: Language code — canonical (``"en_US"``, ``"es_AR"``,
+        lang: Language code — canonical (``"en_US"``, ``"es_CL"``,
               ``"de_DE"``) or short alias (``"en"``, ``"es"``, ``"de"``).
     """
     global _translation

@@ -63,6 +63,26 @@ assert_block_device() {
     fi
 }
 
+# assert_root_device DEVICE — allow block devices or dm-crypt mapper devices
+assert_root_device() {
+    local device="$1"
+    # Allow physical block devices (/dev/sda, /dev/vda2, /dev/nvme0n1p2)
+    if [[ -b "$device" ]]; then
+        return 0
+    fi
+    # Allow dm-crypt mapper devices (/dev/mapper/ouroboros-root)
+    if [[ "$device" =~ ^/dev/mapper/ ]]; then
+        # Verify device exists in dmsetup
+        if dmsetup ls "$device" >/dev/null 2>&1; then
+            return 0
+        fi
+        _log_error "dm-crypt device '${device}' not found in dmsetup."
+        return 1
+    fi
+    _log_error "'${device}' is not a valid root device (block device or dm-crypt mapper)."
+    return 1
+}
+
 # --- Partitioning -----------------------------------------------------------
 
 # partition_auto DISK — wipe and partition DISK with GPT
@@ -297,7 +317,7 @@ generate_fstab() {
     local root_device="$2"
 
     check_root
-    assert_block_device "$root_device"
+    assert_root_device "$root_device"
 
     mkdir -p "${target}/etc"
     genfstab -U "$target" > "${target}/etc/fstab"

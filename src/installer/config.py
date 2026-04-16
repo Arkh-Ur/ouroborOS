@@ -213,7 +213,7 @@ def validate_config(data: dict) -> None:
     tz = _require(locale, "timezone", "locale")
     if not _TIMEZONE_RE.match(str(tz)):
         raise ConfigValidationError(f"locale.timezone format invalid: {tz!r}")
-    _valid_languages = {"en_US", "es_AR", "de_DE", "en", "es", "de"}
+    _valid_languages = {"en_US", "es_CL", "de_DE", "en", "es", "de"}
     lang = locale.get("language", "en_US")
     if lang not in _valid_languages:
         raise ConfigValidationError(
