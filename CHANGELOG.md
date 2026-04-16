@@ -5,6 +5,42 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-04-15
+
+### Added
+
+- Desktop profiles: `grim` + `slurp` added to Hyprland (screenshot backend required by `hyprshot` AUR).
+- Desktop profiles: `dunst` added to Hyprland (notification daemon).
+- Desktop profiles: `thunar` added to Hyprland (lightweight file manager, avoids KDE dep chain).
+- Desktop profiles: `waybar` + `mako` + `swaylock` + `swaybg` + `swayidle` added to Niri
+  (status bar, notifications, lock screen, wallpaper, idle daemon — all previously missing).
+- ISO: `cryptsetup` added to `packages.x86_64` — required by `disk.sh` `encrypt_partition()`;
+  any installation with `use_luks: true` previously failed with `command not found`.
+- ISO: `pciutils` + `usbutils` + `diffutils` added for hardware diagnostics in the live environment.
+- CI: Explicit verification step after `mkarchiso` awk patch — fails immediately with a clear
+  `::error::` message if the patch did not apply, instead of failing silently deep in the build.
+
+### Changed
+
+- Desktop profiles: KDE profile replaces `kde-applications-meta` (~300 packages, ~1.5 GB of
+  games, education and office suites) with a curated set: `dolphin konsole kate gwenview ark
+  ffmpegthumbs`. Reduces KDE install size from ~1.5 GB to ~400 MB.
+- CI: `actions/checkout` upgraded from `v4` to `v5` (Node.js 20 deprecates on 2026-06-02).
+- CI: `mkarchiso` awk patch hardened to use `[[:space:]]+` instead of hardcoded 4-space
+  indent, and adds a function-end guard (`}`) to prevent false matches in other functions.
+
+### Fixed
+
+- `our-rollback promote`: orphaned boot entry `ouroboros-snapshot-<name>.conf` was left on
+  the ESP after the atomic swap, pointing to `@snapshots/<name>` which no longer exists.
+  The entry is now removed and `bootctl set-default ouroborOS.conf` is called explicitly
+  to reset the default boot target to `@`.
+- ISO: `linux-zen-headers` removed from the live ISO — only needed for DKMS on the installed
+  system; already installed via `pacstrap` (-30 MB).
+- ISO: `flatpak` removed from the live ISO — installed on-demand post-install via `our-flat` (-15 MB).
+- `os-release`: `VERSION_ID` and `PRETTY_NAME` were frozen at `0.1.0` since initial release.
+  Updated to `0.4.5`. Also corrects `HOME_URL` to `Arkh-Ur` (was `Arkhur-Vo`).
+
 ## [0.4.4] - 2026-04-15
 
 ### Fixed
