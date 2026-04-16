@@ -85,10 +85,10 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 log_ok "Running as root"
 
-for cmd in mkarchiso mksquashfs xorriso; do
+for cmd in mkarchiso mkfs.erofs xorriso; do
     if ! command -v "$cmd" &>/dev/null; then
         log_error "Required command not found: $cmd"
-        log_error "Install with: pacman -S archiso squashfs-tools libisoburn"
+        log_error "Install with: pacman -S archiso erofs-utils libisoburn"
         exit 1
     fi
 done
@@ -242,12 +242,34 @@ fi
 inject_version() {
     [[ -z "$VERSION" ]] && return 0
     local profiledef="${PROFILE_DIR}/profiledef.sh"
+    local osrelease="${PROFILE_DIR}/airootfs/etc/os-release"
+    local entry1="${PROFILE_DIR}/efiboot/loader/entries/01-ouroborOS.conf"
+    local entry2="${PROFILE_DIR}/efiboot/loader/entries/02-ouroborOS-accessibility.conf"
+
     if [[ ! -f "$profiledef" ]]; then
         log_error "profiledef.sh not found: $profiledef"
         exit 1
     fi
+
     sed -i "s/^iso_version=.*/iso_version=\"${VERSION}\"/" "$profiledef"
-    log_ok "ISO version set to: ${VERSION}"
+    log_ok "profiledef.sh: iso_version → ${VERSION}"
+
+    if [[ -f "$osrelease" ]]; then
+        sed -i "s/^VERSION_ID=.*/VERSION_ID=\"${VERSION}\"/" "$osrelease"
+        sed -i "s/^PRETTY_NAME=.*/PRETTY_NAME=\"ouroborOS ${VERSION}\"/" "$osrelease"
+        log_ok "os-release: VERSION_ID + PRETTY_NAME → ${VERSION}"
+    fi
+
+    if [[ -f "$entry1" ]]; then
+        sed -i "s/^title   ouroborOS [^(]*/title   ouroborOS ${VERSION} /" "$entry1"
+        sed -i 's/  $//' "$entry1"
+        log_ok "boot entry 01: title → ouroborOS ${VERSION}"
+    fi
+
+    if [[ -f "$entry2" ]]; then
+        sed -i "s/^title   ouroborOS [0-9.]* (accessibility)/title   ouroborOS ${VERSION} (accessibility)/" "$entry2"
+        log_ok "boot entry 02: title → ouroborOS ${VERSION} (accessibility)"
+    fi
 }
 inject_version
 

@@ -4,11 +4,11 @@
 # Base system
 base
 linux-zen
-linux-zen-headers
 linux-firmware
 
-# Filesystem
+# Filesystem + disk encryption
 btrfs-progs
+cryptsetup
 dosfstools
 util-linux
 parted
@@ -61,6 +61,11 @@ wget
 curl
 git
 
+# Hardware diagnostics (live env + SSH debug)
+pciutils
+usbutils
+diffutils
+
 # Shellcheck (for dev/CI usage inside live)
 shellcheck
 
@@ -70,5 +75,4 @@ debootstrap
 # Secure Boot key management (ouroboros-secureboot)
 sbctl
 
-# Flatpak (our-flat: sandboxed app delivery, Flathub opt-in)
-flatpak
+# Flatpak is installed on-demand post-install via our-flat, not needed in the live ISO

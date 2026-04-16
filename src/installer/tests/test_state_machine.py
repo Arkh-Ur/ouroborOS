@@ -738,6 +738,21 @@ class TestHandleLocale:
         assert installer.config.locale.locale == "es_AR.UTF-8"
         assert installer.config.network.hostname == "mi-maquina"
 
+    @patch("installer.state_machine.subprocess.run")
+    def test_applies_keymap_to_live_env(self, mock_run: MagicMock) -> None:
+        installer = Installer()
+        installer._update_progress = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_locale_menu.return_value = {
+            "locale": "es_AR.UTF-8",
+            "keymap": "es",
+            "timezone": "America/Argentina/Buenos_Aires",
+        }
+        mock_tui.show_hostname_input.return_value = "mi-maquina"
+        installer.tui = mock_tui
+        installer._handle_locale()
+        mock_run.assert_any_call(["loadkeys", "es"], check=False)
+
 
 # ---------------------------------------------------------------------------
 # Installer._handle_partition

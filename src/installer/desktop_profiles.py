@@ -22,6 +22,10 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "foot",
         "wofi",
         "hyprpolkitagent",
+        "dunst",           # notifications
+        "grim",            # screenshot backend (required by hyprshot AUR)
+        "slurp",           # region selector for screenshots
+        "thunar",          # file manager (lighter than dolphin, no KDE deps)
         "qt5-wayland",
         "qt6-wayland",
     ],
@@ -31,6 +35,11 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "foot",
         "fuzzel",
         "polkit-gnome",
+        "waybar",          # status bar — essential for a tiling WM
+        "mako",            # notifications
+        "swaylock",        # lock screen
+        "swaybg",          # wallpaper setter
+        "swayidle",        # idle daemon (auto-lock)
         "qt5-wayland",
         "qt6-wayland",
     ],
@@ -41,7 +50,14 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
     ],
     "kde": [
         "plasma",
-        "kde-applications-meta",
+        # kde-applications-meta installs ~300 packages (~1.5 GB) including games,
+        # education and office suites. Replaced with a curated essential set.
+        "dolphin",          # file manager
+        "konsole",          # terminal
+        "kate",             # text editor
+        "gwenview",         # image viewer
+        "ark",              # archive manager
+        "ffmpegthumbs",     # video thumbnails in dolphin
     ],
 }
 

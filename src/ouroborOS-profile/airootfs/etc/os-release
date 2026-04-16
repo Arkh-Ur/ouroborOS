@@ -1,11 +1,11 @@
 NAME="ouroborOS"
-PRETTY_NAME="ouroborOS 0.1.0"
+PRETTY_NAME="ouroborOS 0.4.6"
 ID=ouroboros
 ID_LIKE=arch
 BUILD_ID=rolling
 ANSI_COLOR="38;2;23;147;209"
-HOME_URL="https://github.com/Arkhur-Vo/ouroborOS"
-SUPPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
-BUG_REPORT_URL="https://github.com/Arkhur-Vo/ouroborOS/issues"
+HOME_URL="https://github.com/Arkh-Ur/ouroborOS"
+SUPPORT_URL="https://github.com/Arkh-Ur/ouroborOS/issues"
+BUG_REPORT_URL="https://github.com/Arkh-Ur/ouroborOS/issues"
 LOGO=ouroboros
-VERSION_ID="0.1.0"
+VERSION_ID="0.4.6"

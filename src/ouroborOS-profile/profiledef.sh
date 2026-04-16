@@ -5,16 +5,16 @@ set -euo pipefail
 
 iso_name="ouroborOS"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="ouroborOS <https://github.com/Arkhur-Vo/ouroborOS>"
+iso_publisher="ouroborOS <https://github.com/Arkh-Ur/ouroborOS>"
 iso_application="ouroborOS ArchLinux-based immutable Linux distribution"
-iso_version="0.4.3"
+iso_version="0.4.6"
 install_dir="arch"
 buildmodes=('iso')
 bootmodes=('uefi.systemd-boot')
 arch="x86_64"
 pacman_conf="pacman.conf"
-airootfs_image_type="squashfs"
-airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '15')
+airootfs_image_type="erofs"
+airootfs_image_tool_options=('-zlzma' '-E' 'ztailpacking')
 bootstrap_tarball_compression=('zstd' '-c' '-T0' '--auto-threads=logical' '--long' '-19')
 file_permissions=(
   ["/etc/shadow"]="0:0:400"
