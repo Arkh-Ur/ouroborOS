@@ -503,6 +503,95 @@ class TestLoadConfigBranches:
         assert cfg.desktop.profile == "hyprland"
         assert cfg.desktop.dm == "sddm"
 
+    def test_kde_flavor_validation_plasma_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "kde", "kde_flavor": "plasma"}
+        validate_config(data)  # must not raise
+
+    def test_kde_flavor_validation_plasma_meta_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "kde", "kde_flavor": "plasma-meta"}
+        validate_config(data)  # must not raise
+
+    def test_kde_flavor_validation_plasma_desktop_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "kde", "kde_flavor": "plasma-desktop"}
+        validate_config(data)  # must not raise
+
+    def test_kde_flavor_validation_invalid_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "kde", "kde_flavor": "invalid"}
+        with pytest.raises(ConfigValidationError, match="kde_flavor"):
+            validate_config(data)
+
+    def test_gpu_driver_validation_auto_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "auto"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_mesa_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "mesa"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_amdgpu_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "amdgpu"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_nvidia_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "nvidia"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_nvidia_open_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "nvidia-open"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_none_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "none"}
+        validate_config(data)  # must not raise
+
+    def test_gpu_driver_validation_invalid_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "minimal", "gpu_driver": "invalid"}
+        with pytest.raises(ConfigValidationError, match="gpu_driver"):
+            validate_config(data)
+
+    def test_tpm2_unlock_without_luks_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["security"] = {"tpm2_unlock": True}
+        data["disk"]["use_luks"] = False
+        with pytest.raises(ConfigValidationError, match="tpm2_unlock requires disk.use_luks"):
+            validate_config(data)
+
+    def test_tpm2_unlock_with_luks_accepted(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["security"] = {"tpm2_unlock": True}
+        data["disk"]["use_luks"] = True
+        validate_config(data)  # must not raise
+
+    def test_dual_boot_loaded(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["security"] = {"dual_boot": True}
+        validate_config(data)  # must not raise
+
+    def test_cosmic_profile_in_config(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["desktop"] = {"profile": "cosmic"}
+        validate_config(data)  # must not raise
+
+    def test_cosmic_profile_loads_empty_aur_packages(self, tmp_path: Path) -> None:
+        import textwrap as _tw
+        content = _tw.dedent(VALID_CONFIG) + "\ndesktop:\n  profile: cosmic\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.desktop.profile == "cosmic"
+        assert cfg.extra_packages == []
+
 
 # ---------------------------------------------------------------------------
 # Phase 3 — find_unattended_config tests

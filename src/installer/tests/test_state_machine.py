@@ -669,7 +669,7 @@ class TestHandleInit:
         """INIT: show_language_selection → config.locale.language + init_i18n called."""
         installer = Installer()
         mock_tui = MagicMock()
-        mock_tui.show_language_selection.return_value = "es_AR"
+        mock_tui.show_language_selection.return_value = "es_CL"
         mock_tui.show_remote_config_prompt.return_value = None
 
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
@@ -677,8 +677,8 @@ class TestHandleInit:
              patch("installer.state_machine.init_i18n") as mock_init_i18n:
             installer._handle_init()
 
-        assert installer.config.locale.language == "es_AR"
-        mock_init_i18n.assert_called_once_with("es_AR")
+        assert installer.config.locale.language == "es_CL"
+        mock_init_i18n.assert_called_once_with("es_CL")
 
     def test_remote_config_downloads_and_loads(self, tmp_path: Path) -> None:
         """INIT: remote URL prompt → download → unattended mode."""
@@ -752,14 +752,14 @@ class TestHandleLocale:
         installer._update_progress = MagicMock()
         mock_tui = MagicMock()
         mock_tui.show_locale_menu.return_value = {
-            "locale": "es_AR.UTF-8",
+            "locale": "es_CL.UTF-8",
             "keymap": "la-latin1",
             "timezone": "America/Argentina/Buenos_Aires",
         }
         mock_tui.show_hostname_input.return_value = "mi-maquina"
         installer.tui = mock_tui
         installer._handle_locale()
-        assert installer.config.locale.locale == "es_AR.UTF-8"
+        assert installer.config.locale.locale == "es_CL.UTF-8"
         assert installer.config.network.hostname == "mi-maquina"
 
     @patch("installer.state_machine.subprocess.run")
@@ -768,7 +768,7 @@ class TestHandleLocale:
         installer._update_progress = MagicMock()
         mock_tui = MagicMock()
         mock_tui.show_locale_menu.return_value = {
-            "locale": "es_AR.UTF-8",
+            "locale": "es_CL.UTF-8",
             "keymap": "es",
             "timezone": "America/Argentina/Buenos_Aires",
         }
@@ -1200,6 +1200,74 @@ class TestHandleSecureBoot:
             installer._handle_secure_boot()
         assert installer.config.security.sbctl_include_ms_keys is True
 
+    def test_tpm2_prompt_called_in_interactive_mode_with_luks(self) -> None:
+        """Test show_tpm2_prompt is called during PARTITION state when using LUKS."""
+        installer = self._make_installer()
+        installer.config.disk.use_luks = True
+        
+        # Mock TUI methods that are called in sequence during _handle_partition
+        mock_tui = MagicMock()
+        mock_tui.show_disk_selection.return_value = "/dev/vda"
+        mock_tui.show_luks_prompt.return_value = True
+        mock_tui.show_passphrase_input.return_value = "testpass"
+        mock_tui.show_tpm2_prompt.return_value = True  # TPM2 enabled
+        mock_tui.show_partition_preview.return_value = None
+        mock_tui.show_confirmation.return_value = True
+        installer.tui = mock_tui
+        
+        # Mock other required methods
+        with patch.object(installer, "_run_op"), \
+             patch.object(installer, "_update_progress"):
+            installer._handle_partition()
+        
+        # Verify show_tpm2_prompt was called and tpm2_unlock is set
+        mock_tui.show_tpm2_prompt.assert_called_once()
+        assert installer.config.security.tpm2_unlock is True
+
+    def test_tpm2_prompt_not_called_when_luks_disabled(self) -> None:
+        """Test show_tpm2_prompt is NOT called when LUKS is disabled."""
+        installer = self._make_installer()
+        installer.config.disk.use_luks = False
+        
+        mock_tui = MagicMock()
+        mock_tui.show_disk_selection.return_value = "/dev/vda"
+        mock_tui.show_luks_prompt.return_value = False
+        mock_tui.show_partition_preview.return_value = None
+        mock_tui.show_confirmation.return_value = True
+        installer.tui = mock_tui
+        
+        # Mock other required methods
+        with patch.object(installer, "_run_op"), \
+             patch.object(installer, "_update_progress"):
+            installer._handle_partition()
+        
+        # Verify show_tpm2_prompt was NOT called and tpm2_unlock remains False
+        mock_tui.show_tpm2_prompt.assert_not_called()
+        assert installer.config.security.tpm2_unlock is False
+
+    def test_tpm2_prompt_false_sets_tpm2_unlock_false(self) -> None:
+        """Test that show_tpm2_prompt returning False sets tpm2_unlock to False."""
+        installer = self._make_installer()
+        installer.config.disk.use_luks = True
+        
+        mock_tui = MagicMock()
+        mock_tui.show_disk_selection.return_value = "/dev/vda"
+        mock_tui.show_luks_prompt.return_value = True
+        mock_tui.show_passphrase_input.return_value = "testpass"
+        mock_tui.show_tpm2_prompt.return_value = False  # TPM2 disabled
+        mock_tui.show_partition_preview.return_value = None
+        mock_tui.show_confirmation.return_value = True
+        installer.tui = mock_tui
+        
+        # Mock other required methods
+        with patch.object(installer, "_run_op"), \
+             patch.object(installer, "_update_progress"):
+            installer._handle_partition()
+        
+        # Verify show_tpm2_prompt was called and tpm2_unlock is False
+        mock_tui.show_tpm2_prompt.assert_called_once()
+        assert installer.config.security.tpm2_unlock is False
+
 
 class TestDetectExistingOs:
     def test_no_esp_returns_empty(self, tmp_path: Path) -> None:
@@ -1258,3 +1326,65 @@ class TestCheckRam:
         with patch("installer.state_machine.Path.read_text", side_effect=OSError("no file")):
             with pytest.raises(InstallerError, match="Insufficient RAM"):
                 installer._check_ram()
+
+
+class TestHandleDesktop:
+    def _make_installer(self) -> Installer:
+        installer = Installer()
+        installer.config.disk.use_luks = False
+        installer.config.security.secure_boot = False
+        installer._update_progress = MagicMock()
+        return installer
+
+    def test_calls_detect_gpu_in_interactive_mode(self) -> None:
+        """Test _detect_gpu is called during DESKTOP state in interactive mode."""
+        installer = self._make_installer()
+        installer.config.unattended = False
+
+        mock_tui = MagicMock()
+        mock_tui.show_desktop_selection.return_value = "hyprland"
+        mock_tui.show_dm_selection.return_value = "sddm"
+        mock_tui.show_kde_flavor.return_value = "plasma-meta"
+        mock_tui.show_gpu_selection.return_value = "auto"
+        installer.tui = mock_tui
+
+        # Mock _detect_gpu to return a specific GPU
+        with patch.object(Installer, "_detect_gpu", return_value="nvidia") as mock_gpu:
+            installer._handle_desktop()
+            mock_gpu.assert_called_once()
+
+        assert installer.config.desktop.gpu_driver == "auto"  # User selected auto, not detected
+
+    def test_uses_detected_gpu_for_gpu_selection(self) -> None:
+        """Test that _detect_gpu result is passed to show_gpu_selection."""
+        installer = self._make_installer()
+        installer.config.unattended = False
+
+        mock_tui = MagicMock()
+        mock_tui.show_desktop_selection.return_value = "gnome"
+        mock_tui.show_dm_selection.return_value = "gdm"
+        mock_tui.show_gpu_selection.return_value = "mesa"  # User selected mesa
+        installer.tui = mock_tui
+
+        # Mock _detect_gpu to return a specific GPU
+        with patch.object(Installer, "_detect_gpu", return_value="amdgpu") as mock_gpu:
+            installer._handle_desktop()
+            mock_gpu.assert_called_once()
+
+        assert installer.config.desktop.gpu_driver == "mesa"
+        mock_tui.show_gpu_selection.assert_called_once_with(detected="amdgpu")
+
+    def test_no_gpu_detection_in_unattended_mode(self) -> None:
+        """Test _detect_gpu is NOT called in unattended mode."""
+        installer = self._make_installer()
+        installer.config.unattended = True
+        installer.config.desktop.profile = "minimal"
+        installer.config.desktop.dm = "none"
+        installer.config.desktop.gpu_driver = "auto"
+        installer.tui = None
+
+        with patch.object(Installer, "_detect_gpu") as mock_gpu:
+            installer._handle_desktop()
+            mock_gpu.assert_not_called()
+
+        assert installer.config.desktop.gpu_driver == "auto"

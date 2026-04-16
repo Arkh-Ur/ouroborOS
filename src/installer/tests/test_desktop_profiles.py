@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from installer.desktop_profiles import (
+    aur_packages_for,
     display_manager_for,
     dm_package,
     dm_service,
@@ -30,6 +31,9 @@ class TestDmPackage:
     def test_plm_package(self) -> None:
         assert dm_package("plm") == "plasma-login-manager"
 
+    def test_greetd_package(self) -> None:
+        assert dm_package("greetd") == "greetd"
+
     def test_dm_service_gdm(self) -> None:
         assert dm_service("gdm") == "gdm"
 
@@ -38,6 +42,9 @@ class TestDmPackage:
 
     def test_dm_service_plm(self) -> None:
         assert dm_service("plm") == "plasmalogin"
+
+    def test_dm_service_greetd(self) -> None:
+        assert dm_service("greetd") == "greetd"
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +70,10 @@ class TestResolveDm:
     def test_unknown_dm_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown display manager"):
             resolve_dm("minimal", "lightdm")
+
+    def test_resolve_dm_cosmic_auto(self) -> None:
+        result = resolve_dm("cosmic", "auto")
+        assert result == "greetd"
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +117,9 @@ class TestProfileHelpers:
     def test_hyprland_is_valid(self) -> None:
         assert is_valid_profile("hyprland") is True
 
+    def test_cosmic_is_valid(self) -> None:
+        assert is_valid_profile("cosmic") is True
+
     def test_unknown_profile_is_invalid(self) -> None:
         assert is_valid_profile("lxqt") is False
 
@@ -117,6 +131,26 @@ class TestProfileHelpers:
         pkgs = packages_for("gnome")
         assert any("gnome" in p for p in pkgs)
 
+    def test_packages_for_cosmic_includes_cosmic_session(self) -> None:
+        pkgs = packages_for("cosmic")
+        assert "cosmic-session" in pkgs
+
+    def test_packages_for_kde_plasma_starts_with_plasma(self) -> None:
+        pkgs = packages_for("kde", kde_flavor="plasma")
+        assert pkgs[0] == "plasma"
+
+    def test_packages_for_kde_plasma_meta_starts_with_plasma_meta(self) -> None:
+        pkgs = packages_for("kde", kde_flavor="plasma-meta")
+        assert pkgs[0] == "plasma-meta"
+
+    def test_packages_for_kde_plasma_desktop_starts_with_plasma_desktop(self) -> None:
+        pkgs = packages_for("kde", kde_flavor="plasma-desktop")
+        assert pkgs[0] == "plasma-desktop"
+
+    def test_packages_for_kde_default_starts_with_plasma_meta(self) -> None:
+        pkgs = packages_for("kde")
+        assert pkgs[0] == "plasma-meta"
+
     def test_packages_for_unknown_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown desktop profile"):
             packages_for("lxqt")
@@ -124,5 +158,31 @@ class TestProfileHelpers:
     def test_display_manager_for_gnome(self) -> None:
         assert display_manager_for("gnome") == "gdm"
 
+    def test_display_manager_for_cosmic(self) -> None:
+        assert display_manager_for("cosmic") == "greetd"
+
     def test_display_manager_for_unknown_returns_empty(self) -> None:
         assert display_manager_for("lxqt") == ""
+
+
+# ---------------------------------------------------------------------------
+# aur_packages_for
+# ---------------------------------------------------------------------------
+
+
+class TestAurPackagesFor:
+    def test_aur_packages_for_hyprland(self) -> None:
+        pkgs = aur_packages_for("hyprland")
+        assert pkgs == ["quickshell"]
+
+    def test_aur_packages_for_cosmic(self) -> None:
+        pkgs = aur_packages_for("cosmic")
+        assert pkgs == []
+
+    def test_aur_packages_for_minimal(self) -> None:
+        pkgs = aur_packages_for("minimal")
+        assert pkgs == []
+
+    def test_aur_packages_for_unknown_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown desktop profile"):
+            aur_packages_for("lxqt")

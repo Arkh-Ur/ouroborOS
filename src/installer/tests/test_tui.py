@@ -1365,9 +1365,9 @@ class TestLanguageSelectionRich:
     """show_language_selection() — rich backend."""
 
     def test_returns_selected_language_code(self, rich_tui: TUI) -> None:
-        with patch.object(rich_tui, "_rich_select", return_value="es_AR") as mock_sel:
+        with patch.object(rich_tui, "_rich_select", return_value="es_CL") as mock_sel:
             result = rich_tui.show_language_selection()
-        assert result == "es_AR"
+        assert result == "es_CL"
         mock_sel.assert_called_once()
 
     def test_default_is_en_us(self, rich_tui: TUI) -> None:
@@ -1378,7 +1378,7 @@ class TestLanguageSelectionRich:
     def test_language_options_include_all_supported(self, rich_tui: TUI) -> None:
         codes = [code for code, _ in rich_tui._LANGUAGE_OPTIONS]
         assert "en_US" in codes
-        assert "es_AR" in codes
+        assert "es_CL" in codes
         assert "de_DE" in codes
 
 

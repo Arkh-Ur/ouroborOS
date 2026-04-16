@@ -77,7 +77,7 @@ class TestSupportedLanguages:
 
     def test_contains_spanish(self) -> None:
         codes = [code for code, _label in i18n_mod.SUPPORTED_LANGUAGES]
-        assert "es_AR" in codes
+        assert "es_CL" in codes
 
     def test_contains_german(self) -> None:
         codes = [code for code, _label in i18n_mod.SUPPORTED_LANGUAGES]
@@ -116,12 +116,12 @@ class TestInitI18nWithMoFile:
             'msgid ""\n'
             'msgstr ""\n'
             '"Content-Type: text/plain; charset=UTF-8\\n"\n'
-            '"Language: es_AR\\n"\n'
+            '"Language: es_CL\\n"\n'
             "\n"
             'msgid "Welcome to the ouroborOS installer."\n'
             'msgstr "Bienvenido al instalador de ouroborOS."\n'
         )
-        po_path = tmp_path / "es_AR" / "LC_MESSAGES" / "installer.po"
+        po_path = tmp_path / "es_CL" / "LC_MESSAGES" / "installer.po"
         po_path.parent.mkdir(parents=True)
         po_path.write_text(po_content, encoding="utf-8")
 
@@ -135,7 +135,7 @@ class TestInitI18nWithMoFile:
 
         # Point the i18n module at our temp locale dir and init
         with patch.object(i18n_mod, "_LOCALE_DIR", tmp_path):
-            init_i18n("es_AR")
+            init_i18n("es_CL")
             translated = _("Welcome to the ouroborOS installer.")
 
         assert translated == "Bienvenido al instalador de ouroborOS."
