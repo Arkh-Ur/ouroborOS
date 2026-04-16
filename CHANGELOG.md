@@ -5,6 +5,33 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-04-15
+
+### Added
+
+- Multi-language TUI (Milestone 4.3): installer now shows a language selection
+  screen as the very first step (before welcome). Language is initialised via
+  Python `gettext` (`i18n.py`) so all subsequent user-facing strings are
+  translated. Initial languages: English (US), Español (Argentina / Latinoamérica),
+  Deutsch (Deutschland).
+- `src/installer/i18n.py` — gettext wrapper with `init_i18n(lang)` + `_()`
+  function. Falls back to English passthrough if no compiled `.mo` is found.
+- `src/installer/locale/{en_US,es_AR,de_DE}/LC_MESSAGES/installer.po` — 17
+  key installer strings translated for all three locales.
+- `build-iso.sh`: compiles `.po` → `.mo` via `msgfmt` during ISO build.
+  `gettext` added to CI build dependencies.
+- `LocaleConfig.language` field (`"en_US"` by default). Available in YAML:
+  `locale.language`. Validated against supported language codes.
+- `TUI.show_language_selection()` — language picker using hardcoded strings
+  (i18n-agnostic, runs before init_i18n).
+
+### Changed
+
+- `state_machine._handle_init()`: language selection and `init_i18n()` call
+  inserted before `show_welcome()`. Language stored in `config.locale.language`.
+- Key TUI strings in welcome, locale selection, disk selection, desktop/DM/shell/
+  GPU selection, and summary are now wrapped with `_()`.
+
 ## [0.4.8] - 2026-04-16
 
 ### Added

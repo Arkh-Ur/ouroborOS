@@ -28,7 +28,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
             archiso dosfstools e2fsprogs squashfs-tools \
-            libisoburn git erofs-utils mtools
+            libisoburn git erofs-utils mtools gettext
 
       - name: Checkout
         uses: actions/checkout@v5
@@ -121,7 +121,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
             archiso dosfstools e2fsprogs squashfs-tools \
-            libisoburn git erofs-utils mtools github-cli
+            libisoburn git erofs-utils mtools gettext github-cli
 
       - name: Checkout
         uses: actions/checkout@v5

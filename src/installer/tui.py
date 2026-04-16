@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from typing import Any
 
+from installer.i18n import _
+
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -134,6 +136,39 @@ class TUI:
             self._install_progress_active = False
 
     # ------------------------------------------------------------------
+    # Language selection (must run BEFORE init_i18n — uses hardcoded strings)
+    # ------------------------------------------------------------------
+
+    # Hardcoded — not wrapped with _() because i18n is not initialised yet
+    # when this screen is shown.
+    _LANGUAGE_OPTIONS: list[tuple[str, str]] = [
+        ("en_US", "English (US)"),
+        ("es_AR", "Español (Argentina / Latinoamérica)"),
+        ("de_DE", "Deutsch (Deutschland)"),
+    ]
+
+    def show_language_selection(self) -> str:
+        """Show the language selection screen.
+
+        This is the very first screen shown — i18n is NOT yet initialised.
+        All strings here are hardcoded in English (the UI language bootstraps
+        itself).  Returns a canonical language code (e.g. ``"en_US"``).
+        """
+        if self._backend == "rich":
+            return self._rich_select(
+                "Language / Idioma / Sprache",
+                "Select the installer language:",
+                self._LANGUAGE_OPTIONS,
+                default="en_US",
+            )
+        return self._select_from_list(
+            "Language / Idioma / Sprache",
+            "Select the installer language:",
+            self._LANGUAGE_OPTIONS,
+            default="en_US",
+        )
+
+    # ------------------------------------------------------------------
     # Welcome
     # ------------------------------------------------------------------
 
@@ -150,13 +185,11 @@ class TUI:
         self._console.print(
             Panel(
                 Text.from_markup(
-                    "\n[bold cyan]Welcome to the ouroborOS installer.[/]\n\n"
-                    "ouroborOS is an ArchLinux-based distribution with an immutable\n"
+                    f"\n[bold cyan]{_('Welcome to the ouroborOS installer.')}[/]\n\n"
+                    f"{_('ouroborOS is an ArchLinux-based distribution with an immutable')}\n"
                     "Btrfs root filesystem and a fully systemd-native stack.\n\n"
-                    "This installer will guide you through "
-                    "the installation process.\n\n"
-                    "[bold red]WARNING: This will ERASE "
-                    "the target disk completely.[/]\n"
+                    f"{_('This installer will guide you through the installation process.')}\n\n"
+                    f"[bold red]{_('WARNING: This will ERASE the target disk completely.')}[/]\n"
                 ),
                 title="[bold cyan]ouroborOS Installer[/]",
                 border_style="cyan",
@@ -201,11 +234,11 @@ class TUI:
 
     def _whiptail_welcome(self) -> None:
         text = (
-            "Welcome to the ouroborOS installer.\n\n"
-            "ouroborOS is an ArchLinux-based distribution with an immutable\n"
+            f"{_('Welcome to the ouroborOS installer.')}\n\n"
+            f"{_('ouroborOS is an ArchLinux-based distribution with an immutable')}\n"
             "Btrfs root filesystem and a fully systemd-native stack.\n\n"
-            "This installer will guide you through the installation process.\n\n"
-            "WARNING: This will ERASE the target disk completely."
+            f"{_('This installer will guide you through the installation process.')}\n\n"
+            f"{_('WARNING: This will ERASE the target disk completely.')}"
         )
         _whiptail(
             *self._args(
@@ -357,32 +390,32 @@ class TUI:
 
     def _rich_locale_menu(self) -> dict[str, str]:
         locale = self._rich_select(
-            "Locale", "Select system locale:", self._LOCALE_OPTIONS,
+            "Locale", _("Select system locale:"), self._LOCALE_OPTIONS,
             default="en_US.UTF-8",
         )
         keymap = self._rich_select(
-            "Keyboard Layout", "Select keyboard layout:", self._KEYMAP_OPTIONS,
+            "Keyboard Layout", _("Select keyboard layout:"), self._KEYMAP_OPTIONS,
             default="us",
         )
         timezone = self._rich_input(
             "Timezone",
-            "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)",
+            _("Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)"),
             default="UTC",
         )
         return {"locale": locale, "keymap": keymap, "timezone": timezone}
 
     def _whiptail_locale_menu(self) -> dict[str, str]:
         locale = self._select_from_list(
-            "Locale", "Select system locale:", self._LOCALE_OPTIONS,
+            "Locale", _("Select system locale:"), self._LOCALE_OPTIONS,
             default="en_US.UTF-8",
         )
         keymap = self._select_from_list(
-            "Keyboard Layout", "Select keyboard layout:", self._KEYMAP_OPTIONS,
+            "Keyboard Layout", _("Select keyboard layout:"), self._KEYMAP_OPTIONS,
             default="us",
         )
         timezone = self._input_box(
             "Timezone",
-            "Enter timezone (e.g. America/New_York, Europe/Madrid, UTC):",
+            _("Enter timezone (e.g. America/New_York, Europe/Madrid, UTC)") + ":",
             default="UTC",
         )
         return {"locale": locale, "keymap": keymap, "timezone": timezone}
@@ -419,16 +452,17 @@ class TUI:
 
     def show_desktop_selection(self) -> str:
         """Prompt for a desktop profile. Returns the profile name."""
+        prompt = _("Select a desktop profile for the installed system:")
         if self._backend == "rich":
             return self._rich_select(
                 "Desktop Profile",
-                "Select a desktop profile for the installed system:",
+                prompt,
                 self._DESKTOP_PROFILES,
                 default="minimal",
             )
         return self._select_from_list(
             "Desktop Profile",
-            "Select a desktop profile for the installed system:",
+            prompt,
             self._DESKTOP_PROFILES,
             default="minimal",
         )
@@ -449,7 +483,7 @@ class TUI:
     def show_dm_selection(self, profile: str = "") -> str:
         """Prompt for a display manager. Returns 'auto', 'gdm', 'sddm', 'greetd', or 'none'."""
         label = f"Display Manager (profile: {profile})" if profile else "Display Manager"
-        prompt = "Select a display manager:"
+        prompt = _("Select a display manager:")
         if self._backend == "rich":
             return self._rich_select(label, prompt, self._DM_OPTIONS, default="auto")
         return self._select_from_list(label, prompt, self._DM_OPTIONS, default="auto")
@@ -497,9 +531,9 @@ class TUI:
         """Prompt for GPU driver choice. *detected* is shown as the auto-detect result."""
         label = "GPU Driver"
         prompt = (
-            f"Detected GPU family: {detected}. Select the driver to install:"
+            f"Detected GPU family: {detected}. {_('Select the GPU driver to install:')}"
             if detected != "auto"
-            else "Select the GPU driver to install:"
+            else _("Select the GPU driver to install:")
         )
         if self._backend == "rich":
             return self._rich_select(label, prompt, self._GPU_OPTIONS, default="auto")
@@ -517,16 +551,17 @@ class TUI:
 
     def show_shell_selection(self) -> str:
         """Prompt for a login shell. Returns the shell name ('bash', 'zsh', 'fish')."""
+        prompt = _("Select the login shell for your user account:")
         if self._backend == "rich":
             return self._rich_select(
                 "Login Shell",
-                "Select the login shell for your user account:",
+                prompt,
                 self._SHELL_OPTIONS,
                 default="bash",
             )
         return self._select_from_list(
             "Login Shell",
-            "Select the login shell for your user account:",
+            prompt,
             self._SHELL_OPTIONS,
             default="bash",
         )
@@ -550,8 +585,7 @@ class TUI:
         ]
         return self._rich_select(
             "Disk Selection",
-            "Select the target disk for installation.\n"
-            "[bold red]WARNING: All data on the selected disk will be ERASED.[/]",
+            _("Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."),
             items,
         )
 
@@ -564,8 +598,7 @@ class TUI:
         ]
         return self._select_from_list(
             "Disk Selection",
-            "Select the target disk for installation.\n"
-            "WARNING: All data on the selected disk will be ERASED.",
+            _("Select the target disk for installation.\nWARNING: All data on the selected disk will be ERASED."),
             items,
         )
 
@@ -1361,23 +1394,23 @@ class TUI:
         self._console.print(
             Panel(
                 table,
-                title="[bold green]Installation Complete[/]",
+                title=f"[bold green]{_('Installation Complete')}[/]",
                 border_style="green",
                 padding=(1, 2),
             )
         )
-        self._console.print("\n  Remove the installation media.\n")
+        self._console.print(f"\n  {_('Remove the installation media.')}\n")
 
     def _whiptail_summary(self, config: Any) -> None:
         text = (
-            "Installation Complete!\n\n"
+            f"{_('Installation Complete')}!\n\n"
             f"  Disk:      {config.disk.device}\n"
             f"  LUKS:      {'Yes' if config.disk.use_luks else 'No'}\n"
             f"  Hostname:  {config.network.hostname}\n"
             f"  User:      {config.user.username}\n"
             f"  Locale:    {config.locale.locale}\n"
             f"  Timezone:  {config.locale.timezone}\n\n"
-            "Remove the installation media."
+            f"{_('Remove the installation media.')}"
         )
         _whiptail(
             *self._args(

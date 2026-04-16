@@ -100,6 +100,7 @@ class LocaleConfig:
     locale: str = "en_US.UTF-8"
     keymap: str = "us"
     timezone: str = "UTC"
+    language: str = "en_US"  # TUI language; one of SUPPORTED_LANGUAGES in i18n.py
 
 
 @dataclass
@@ -205,6 +206,12 @@ def validate_config(data: dict) -> None:
     tz = _require(locale, "timezone", "locale")
     if not _TIMEZONE_RE.match(str(tz)):
         raise ConfigValidationError(f"locale.timezone format invalid: {tz!r}")
+    _valid_languages = {"en_US", "es_AR", "de_DE", "en", "es", "de"}
+    lang = locale.get("language", "en_US")
+    if lang not in _valid_languages:
+        raise ConfigValidationError(
+            f"locale.language must be one of {sorted(_valid_languages)}, got: {lang!r}"
+        )
 
     # network section
     network = data["network"]
@@ -350,6 +357,7 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.locale.locale = str(loc.get("locale", "en_US.UTF-8"))
     cfg.locale.keymap = str(loc.get("keymap", "us"))
     cfg.locale.timezone = str(loc["timezone"])
+    cfg.locale.language = str(loc.get("language", "en_US"))
 
     # Network
     net = data["network"]

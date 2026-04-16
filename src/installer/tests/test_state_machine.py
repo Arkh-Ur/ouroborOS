@@ -656,21 +656,41 @@ class TestHandleInit:
     def test_interactive_mode_creates_tui(self) -> None:
         installer = Installer()
         mock_tui = MagicMock()
+        mock_tui.show_language_selection.return_value = "en_US"
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
-             patch("installer.state_machine.TUI", return_value=mock_tui):
+             patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.init_i18n"):
             installer._handle_init()
         assert installer.tui is mock_tui
+        mock_tui.show_language_selection.assert_called_once()
         mock_tui.show_welcome.assert_called_once()
+
+    def test_language_selection_sets_config_and_calls_init_i18n(self) -> None:
+        """INIT: show_language_selection → config.locale.language + init_i18n called."""
+        installer = Installer()
+        mock_tui = MagicMock()
+        mock_tui.show_language_selection.return_value = "es_AR"
+        mock_tui.show_remote_config_prompt.return_value = None
+
+        with patch("installer.state_machine.find_unattended_config", return_value=None), \
+             patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.init_i18n") as mock_init_i18n:
+            installer._handle_init()
+
+        assert installer.config.locale.language == "es_AR"
+        mock_init_i18n.assert_called_once_with("es_AR")
 
     def test_remote_config_downloads_and_loads(self, tmp_path: Path) -> None:
         """INIT: remote URL prompt → download → unattended mode."""
         installer = Installer()
         mock_tui = MagicMock()
+        mock_tui.show_language_selection.return_value = "en_US"
         mock_tui.show_remote_config_prompt.return_value = "https://example.com/config.yaml"
         mock_config = MagicMock()
 
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
              patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.init_i18n"), \
              patch("installer.state_machine.load_config_from_url", return_value=mock_config) as mock_load:
             installer._handle_init()
 
@@ -683,10 +703,12 @@ class TestHandleInit:
         """INIT: user declines remote config → interactive mode."""
         installer = Installer()
         mock_tui = MagicMock()
+        mock_tui.show_language_selection.return_value = "en_US"
         mock_tui.show_remote_config_prompt.return_value = None
 
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
-             patch("installer.state_machine.TUI", return_value=mock_tui):
+             patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.init_i18n"):
             installer._handle_init()
 
         assert installer.tui is mock_tui  # still interactive
@@ -696,11 +718,13 @@ class TestHandleInit:
         """INIT: download fails → fall back to interactive mode."""
         installer = Installer()
         mock_tui = MagicMock()
+        mock_tui.show_language_selection.return_value = "en_US"
         mock_tui.show_remote_config_prompt.return_value = "https://example.com/bad.yaml"
         mock_error = Exception("Network error")
 
         with patch("installer.state_machine.find_unattended_config", return_value=None), \
              patch("installer.state_machine.TUI", return_value=mock_tui), \
+             patch("installer.state_machine.init_i18n"), \
              patch("installer.state_machine.load_config_from_url", side_effect=mock_error):
             installer._handle_init()
 
