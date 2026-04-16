@@ -8,9 +8,7 @@ from unittest.mock import patch
 import pytest
 
 import installer.i18n as i18n_mod
-from installer.i18n import _
-from installer.i18n import init_i18n
-
+from installer.i18n import _, init_i18n
 
 # ---------------------------------------------------------------------------
 # Helpers
