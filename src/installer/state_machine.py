@@ -27,7 +27,6 @@ from enum import Enum, auto
 from pathlib import Path
 
 from installer.config import InstallerConfig, find_unattended_config, load_config, load_config_from_url
-from installer.i18n import init_i18n
 from installer.desktop_profiles import (
     aur_packages_for,
     dm_package,
@@ -37,6 +36,7 @@ from installer.desktop_profiles import (
     shell_package,
     shell_path,
 )
+from installer.i18n import init_i18n
 from installer.tui import TUI
 
 # ---------------------------------------------------------------------------
