@@ -45,7 +45,8 @@ jobs:
           MKARCHISO="$(command -v mkarchiso)"
           awk '
           /^_make_efibootimg\(\)/ { in_func=1 }
-          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          in_func && /^\}[[:space:]]*$/  { in_func=0 }
+          in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
           if ! grep -q '|| true' "$MKARCHISO"; then
@@ -140,7 +141,8 @@ jobs:
           MKARCHISO="$(command -v mkarchiso)"
           awk '
           /^_make_efibootimg\(\)/ { in_func=1 }
-          in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
+          in_func && /^\}[[:space:]]*$/  { in_func=0 }
+          in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
           if ! grep -q '|| true' "$MKARCHISO"; then
