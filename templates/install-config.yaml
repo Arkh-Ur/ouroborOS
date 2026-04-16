@@ -60,6 +60,15 @@ desktop:
   kde_flavor: plasma-meta
   gpu_driver: auto
 
+# Security settings. All optional; defaults to false.
+# tpm2_unlock: bind LUKS to TPM2 PCR 7+14 for auto-unlock at boot.
+#   Requires disk.use_luks: true. Falls back to passphrase if TPM2 absent.
+# security:
+#   secure_boot: false
+#   tpm2_unlock: false
+#   sbctl_include_ms_keys: false
+#   fido2_pam: false
+
 extra_packages:
   - openssh
 

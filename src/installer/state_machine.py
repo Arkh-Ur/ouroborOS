@@ -518,6 +518,7 @@ class Installer:
             self.config.disk.use_luks = use_luks
             if use_luks:
                 self.config.disk.luks_passphrase = self.tui.show_passphrase_input()
+                self.config.security.tpm2_unlock = self.tui.show_tpm2_prompt()
             self.tui.show_partition_preview(disk, use_luks)
             confirmed = self.tui.show_confirmation(
                 f"WARNING: All data on {disk} will be destroyed. Continue?"
@@ -829,6 +830,8 @@ class Installer:
                 "USER_SHELL": self.config.user.shell,
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
+                "ENABLE_TPM2": "1" if self.config.security.tpm2_unlock else "0",
+                "LUKS_PARTITION": self._root_partition_device() if self.config.disk.use_luks else "",
                 "DESKTOP_DM": dm_service(
                     resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
                 ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",

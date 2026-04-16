@@ -614,6 +614,56 @@ class TUI:
         return rc == 0
 
     # ------------------------------------------------------------------
+    # TPM2 unlock
+    # ------------------------------------------------------------------
+
+    def show_tpm2_prompt(self) -> bool:
+        """Ask whether to enable TPM2 auto-unlock for LUKS. Warns if no TPM2 detected."""
+        import os
+        tpm_available = os.path.exists("/sys/class/tpm/tpm0")
+        warning = (
+            ""
+            if tpm_available
+            else "\n\n[yellow]WARNING: No TPM2 device detected (/sys/class/tpm/tpm0 absent).\n"
+            "You can still enable this — it will be configured but will fall\n"
+            "back to passphrase if TPM2 is not present at boot.[/yellow]"
+        )
+        if self._backend == "rich":
+            assert self._console is not None
+            self._stop_progress()
+            self._console.print(
+                Panel(
+                    Text.from_markup(
+                        "Enable TPM2 auto-unlock for LUKS?\n\n"
+                        "Binds the LUKS slot to TPM2 PCR 7+14 (Secure Boot state +\n"
+                        "measured boot). The disk unlocks automatically at boot\n"
+                        "without a passphrase — as long as the boot chain is unmodified.\n"
+                        "Falls back to passphrase if measurements change."
+                        + warning
+                    ),
+                    title="[bold]TPM2 Auto-Unlock[/]",
+                    border_style="cyan",
+                )
+            )
+            return Confirm.ask(
+                "  Enable TPM2 auto-unlock?",
+                default=False,
+                console=self._console,
+            )
+        # whiptail fallback
+        msg = (
+            "Enable TPM2 auto-unlock for LUKS?\n\n"
+            "Binds LUKS to TPM2 PCR 7+14 (Secure Boot + measured boot).\n"
+            "Auto-unlocks at boot if the boot chain is unmodified."
+        )
+        if not tpm_available:
+            msg += "\n\nWARNING: No TPM2 device detected. Will fall back to passphrase."
+        rc, _ = _whiptail(
+            *self._args("--yesno", msg, str(self._HEIGHT), str(self._WIDTH))
+        )
+        return rc == 0
+
+    # ------------------------------------------------------------------
     # Passphrase
     # ------------------------------------------------------------------
 
