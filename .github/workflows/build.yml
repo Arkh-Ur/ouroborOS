@@ -48,6 +48,10 @@ jobs:
           in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          if ! grep -q '|| true' "$MKARCHISO"; then
+            echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
+            exit 1
+          fi
 
       - name: Build ISO
         run: |
@@ -139,6 +143,10 @@ jobs:
           in_func && /^    \)"$/ { sub(/^    \)"$/, "    )\" || true"); in_func=0 }
           { print }
           ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          if ! grep -q '|| true' "$MKARCHISO"; then
+            echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
+            exit 1
+          fi
 
       - name: Build ISO
         run: |
