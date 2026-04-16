@@ -505,13 +505,52 @@ class Installer:
         )
         self._update_progress(State.DESKTOP, 100)
 
+    @staticmethod
+    def _detect_existing_os(esp_path: str = "/boot") -> list[str]:
+        """Scan the ESP for known OS boot entries.
+
+        Returns a list of human-readable OS names found, e.g. ``["Windows Boot Manager"]``.
+        The ESP is typically mounted at /boot or /boot/efi on the live system.
+        """
+        detected: list[str] = []
+        efi_dir = Path(esp_path) / "EFI"
+        if not efi_dir.is_dir():
+            return detected
+
+        # Windows: look for the Windows Boot Manager EFI binary
+        win_efi = efi_dir / "Microsoft" / "Boot" / "bootmgfw.efi"
+        if win_efi.exists():
+            detected.append("Windows Boot Manager")
+
+        # Other Linux distros: any EFI sub-directory that isn't ours or BOOT
+        skip = {"ouroborOS", "ouroboros", "BOOT", "Microsoft", "systemd"}
+        for entry in sorted(efi_dir.iterdir()):
+            if entry.is_dir() and entry.name not in skip:
+                detected.append(f"Linux — {entry.name}")
+
+        return detected
+
     def _handle_secure_boot(self) -> None:
-        """SECURE_BOOT — show Secure Boot setup instructions if enabled in config."""
+        """SECURE_BOOT — dual-boot detection + Secure Boot setup instructions."""
         self._update_progress(State.SECURE_BOOT, 0)
+
+        # --- Dual-boot detection (interactive mode only) ---
+        if self.tui and not self.config.unattended:
+            detected = self._detect_existing_os()
+            enable_dual_boot = self.tui.show_dual_boot_prompt(detected)
+            self.config.security.dual_boot = enable_dual_boot
+            if enable_dual_boot:
+                # When dual-booting with Windows + Secure Boot, include MS OEM keys
+                if self.config.security.secure_boot and "Windows Boot Manager" in detected:
+                    self.config.security.sbctl_include_ms_keys = True
+                    log.info("Dual-boot + Secure Boot: sbctl_include_ms_keys set to True (Windows detected).")
+            log.info("Dual-boot: %s (detected: %s)", enable_dual_boot, detected)
+
         if not self.config.security.secure_boot:
-            log.info("Secure Boot disabled in config — skipping state.")
+            log.info("Secure Boot disabled in config — skipping Secure Boot prompt.")
             self._update_progress(State.SECURE_BOOT, 100)
             return
+
         if self.tui:
             self.tui.show_secure_boot_prompt()
         log.info("Secure Boot: sbctl setup will run during CONFIGURE (sbctl create-keys + enroll-keys + sign-all).")
@@ -853,6 +892,9 @@ class Installer:
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
                 "BLUETOOTH_ENABLE": "1" if self.config.network.bluetooth_enable else "0",
                 "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
+                "ENABLE_DUAL_BOOT": "1" if self.config.security.dual_boot else "0",
+                "SECURE_BOOT": "1" if self.config.security.secure_boot else "0",
+                "SBCTL_INCLUDE_MS_KEYS": "1" if self.config.security.sbctl_include_ms_keys else "0",
                 "ISO_VERSION": _read_iso_version(),
             }
         )

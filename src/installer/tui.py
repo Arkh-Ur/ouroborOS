@@ -1718,3 +1718,73 @@ class TUI:
         if rc != 0:
             return None
         return url.strip() or None
+
+    # ------------------------------------------------------------------
+    # Dual-boot detection
+    # ------------------------------------------------------------------
+
+    def show_dual_boot_prompt(self, detected_os: list[str]) -> bool:
+        """Show detected OS list and ask whether to enable dual-boot support.
+
+        Returns ``True`` if the user confirms dual-boot, ``False`` otherwise.
+        """
+        if self._backend == "rich":
+            return self._rich_dual_boot_prompt(detected_os)
+        return self._whiptail_dual_boot_prompt(detected_os)
+
+    def _rich_dual_boot_prompt(self, detected_os: list[str]) -> bool:
+        assert self._console is not None
+        self._stop_progress()
+        if detected_os:
+            os_list = "\n".join(f"  • {name}" for name in detected_os)
+            body = (
+                "[bold]Other operating systems detected on this machine:[/]\n\n"
+                f"{os_list}\n\n"
+                "Enabling dual-boot will add boot entries for the detected systems\n"
+                "and configure systemd-boot to show the selection menu on startup.\n\n"
+                "[dim]If Secure Boot is enabled, Microsoft OEM keys will be included\n"
+                "so Windows continues to boot under Secure Boot.[/]"
+            )
+        else:
+            body = (
+                "No other operating systems were detected on the ESP.\n\n"
+                "You can still enable dual-boot support if you plan to install\n"
+                "another OS later — systemd-boot will show any new boot entries\n"
+                "it finds automatically."
+            )
+        self._console.print(
+            Panel(
+                Text.from_markup(body),
+                title="[bold cyan]Dual-Boot Detection[/]",
+                border_style="cyan",
+            )
+        )
+        return Confirm.ask(
+            "  Enable dual-boot support?",
+            default=bool(detected_os),
+            console=self._console,
+        )
+
+    def _whiptail_dual_boot_prompt(self, detected_os: list[str]) -> bool:
+        if detected_os:
+            os_list = "\n".join(f"  • {name}" for name in detected_os)
+            msg = (
+                "Other operating systems detected:\n\n"
+                f"{os_list}\n\n"
+                "Enable dual-boot? systemd-boot will show a selection menu on startup.\n"
+                "If Secure Boot is enabled, Microsoft OEM keys will be included."
+            )
+        else:
+            msg = (
+                "No other operating systems detected on the ESP.\n\n"
+                "Enable dual-boot support? (Useful if you plan to install another OS later.)"
+            )
+        rc, _ = _whiptail(
+            *self._args(
+                "--yesno",
+                msg,
+                str(self._HEIGHT),
+                str(self._WIDTH),
+            )
+        )
+        return rc == 0

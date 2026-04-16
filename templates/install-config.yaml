@@ -65,11 +65,16 @@ desktop:
 # Security settings. All optional; defaults to false.
 # tpm2_unlock: bind LUKS to TPM2 PCR 7+14 for auto-unlock at boot.
 #   Requires disk.use_luks: true. Falls back to passphrase if TPM2 absent.
+# dual_boot: scan the ESP for other OS boot entries and configure systemd-boot
+#   to show a selection menu. If Windows is detected, a boot entry is generated
+#   automatically. When combined with secure_boot: true, Microsoft OEM keys are
+#   included in the Secure Boot key enrollment (sbctl enroll-keys --microsoft).
 # security:
 #   secure_boot: false
 #   tpm2_unlock: false
 #   sbctl_include_ms_keys: false
 #   fido2_pam: false
+#   dual_boot: false
 
 extra_packages:
   - openssh

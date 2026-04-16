@@ -1143,6 +1143,67 @@ class TestSecureBootPrompt:
 
 
 # ---------------------------------------------------------------------------
+# Dual-boot prompt
+# ---------------------------------------------------------------------------
+
+
+class TestDualBootPrompt:
+    def test_rich_dispatches_to_rich_impl(self, rich_tui: TUI) -> None:
+        with patch.object(rich_tui, "_rich_dual_boot_prompt", return_value=False) as mock_impl:
+            rich_tui.show_dual_boot_prompt([])
+        mock_impl.assert_called_once_with([])
+
+    def test_whiptail_dispatches_to_whiptail_impl(self, whiptail_tui: TUI) -> None:
+        with patch.object(whiptail_tui, "_whiptail_dual_boot_prompt", return_value=False) as mock_impl:
+            whiptail_tui.show_dual_boot_prompt([])
+        mock_impl.assert_called_once_with([])
+
+    def test_rich_returns_true_when_confirmed(self) -> None:
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = True
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            result = tui._rich_dual_boot_prompt(["Windows Boot Manager"])
+        assert result is True
+
+    def test_rich_returns_false_when_declined(self) -> None:
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            result = tui._rich_dual_boot_prompt([])
+        assert result is False
+
+    def test_whiptail_returns_true_on_yes(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(0, "")) as mock_w:
+            result = whiptail_tui._whiptail_dual_boot_prompt(["Windows Boot Manager"])
+        assert result is True
+        args = mock_w.call_args[0]
+        assert "--yesno" in args
+
+    def test_whiptail_returns_false_on_no(self, whiptail_tui: TUI) -> None:
+        with patch("installer.tui._whiptail", return_value=(1, "")) as _mock_w:
+            result = whiptail_tui._whiptail_dual_boot_prompt([])
+        assert result is False
+
+    def test_rich_shows_detected_os_list(self) -> None:
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            tui._rich_dual_boot_prompt(["Windows Boot Manager", "Linux — ubuntu"])
+        mocks["Console"].return_value.print.assert_called_once()
+
+    def test_rich_no_os_detected_shows_informational(self) -> None:
+        with _patch_rich() as mocks:
+            mocks["Confirm"].ask.return_value = False
+            tui = TUI(title="Test")
+            tui._console = mocks["Console"].return_value
+            tui._rich_dual_boot_prompt([])
+        mocks["Console"].return_value.print.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Rich WiFi connect
 # ---------------------------------------------------------------------------
 

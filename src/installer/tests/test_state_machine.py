@@ -1143,7 +1143,9 @@ class TestHandleSecureBoot:
     def test_skipped_when_disabled(self) -> None:
         installer = self._make_installer()
         installer.config.security.secure_boot = False
-        installer.tui = MagicMock()
+        mock_tui = MagicMock()
+        mock_tui.show_dual_boot_prompt.return_value = False
+        installer.tui = mock_tui
         installer._handle_secure_boot()
         installer.tui.show_secure_boot_prompt.assert_not_called()
 
@@ -1151,6 +1153,7 @@ class TestHandleSecureBoot:
         installer = self._make_installer()
         installer.config.security.secure_boot = True
         mock_tui = MagicMock()
+        mock_tui.show_dual_boot_prompt.return_value = False
         installer.tui = mock_tui
         installer._handle_secure_boot()
         mock_tui.show_secure_boot_prompt.assert_called_once()
@@ -1160,6 +1163,71 @@ class TestHandleSecureBoot:
         installer.config.security.secure_boot = True
         installer.tui = None
         installer._handle_secure_boot()  # must not raise
+
+    def test_dual_boot_prompt_called_in_interactive_mode(self) -> None:
+        installer = self._make_installer()
+        installer.config.unattended = False
+        mock_tui = MagicMock()
+        mock_tui.show_dual_boot_prompt.return_value = True
+        installer.tui = mock_tui
+        installer._handle_secure_boot()
+        mock_tui.show_dual_boot_prompt.assert_called_once()
+        assert installer.config.security.dual_boot is True
+
+    def test_dual_boot_prompt_skipped_in_unattended_mode(self) -> None:
+        installer = self._make_installer()
+        installer.config.unattended = True
+        installer.config.security.dual_boot = False
+        mock_tui = MagicMock()
+        installer.tui = mock_tui
+        installer._handle_secure_boot()
+        mock_tui.show_dual_boot_prompt.assert_not_called()
+        assert installer.config.security.dual_boot is False
+
+    def test_windows_plus_secure_boot_sets_ms_keys(self) -> None:
+        installer = self._make_installer()
+        installer.config.unattended = False
+        installer.config.security.secure_boot = True
+        installer.config.security.sbctl_include_ms_keys = False
+        mock_tui = MagicMock()
+        mock_tui.show_dual_boot_prompt.return_value = True
+        installer.tui = mock_tui
+        with patch.object(
+            Installer,
+            "_detect_existing_os",
+            return_value=["Windows Boot Manager"],
+        ):
+            installer._handle_secure_boot()
+        assert installer.config.security.sbctl_include_ms_keys is True
+
+
+class TestDetectExistingOs:
+    def test_no_esp_returns_empty(self, tmp_path: Path) -> None:
+        result = Installer._detect_existing_os(str(tmp_path / "nonexistent"))
+        assert result == []
+
+    def test_detects_windows(self, tmp_path: Path) -> None:
+        win_efi = tmp_path / "EFI" / "Microsoft" / "Boot"
+        win_efi.mkdir(parents=True)
+        (win_efi / "bootmgfw.efi").touch()
+        result = Installer._detect_existing_os(str(tmp_path))
+        assert "Windows Boot Manager" in result
+
+    def test_detects_other_linux(self, tmp_path: Path) -> None:
+        other = tmp_path / "EFI" / "ubuntu"
+        other.mkdir(parents=True)
+        result = Installer._detect_existing_os(str(tmp_path))
+        assert any("ubuntu" in entry for entry in result)
+
+    def test_skips_own_and_boot_directories(self, tmp_path: Path) -> None:
+        for name in ("ouroborOS", "ouroboros", "BOOT", "Microsoft", "systemd"):
+            (tmp_path / "EFI" / name).mkdir(parents=True)
+        result = Installer._detect_existing_os(str(tmp_path))
+        assert result == []
+
+    def test_no_efi_dir_returns_empty(self, tmp_path: Path) -> None:
+        result = Installer._detect_existing_os(str(tmp_path))
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
