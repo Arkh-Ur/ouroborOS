@@ -74,15 +74,15 @@ class TestInitI18nFallback:
 
 class TestSupportedLanguages:
     def test_contains_english(self) -> None:
-        codes = [code for code, _ in i18n_mod.SUPPORTED_LANGUAGES]
+        codes = [code for code, _label in i18n_mod.SUPPORTED_LANGUAGES]
         assert "en_US" in codes
 
     def test_contains_spanish(self) -> None:
-        codes = [code for code, _ in i18n_mod.SUPPORTED_LANGUAGES]
+        codes = [code for code, _label in i18n_mod.SUPPORTED_LANGUAGES]
         assert "es_AR" in codes
 
     def test_contains_german(self) -> None:
-        codes = [code for code, _ in i18n_mod.SUPPORTED_LANGUAGES]
+        codes = [code for code, _label in i18n_mod.SUPPORTED_LANGUAGES]
         assert "de_DE" in codes
 
     def test_each_entry_is_two_tuple(self) -> None:
@@ -90,7 +90,7 @@ class TestSupportedLanguages:
             assert len(entry) == 2
 
     def test_labels_are_non_empty(self) -> None:
-        for _, label in i18n_mod.SUPPORTED_LANGUAGES:
+        for _code, label in i18n_mod.SUPPORTED_LANGUAGES:
             assert label
 
 
@@ -107,8 +107,8 @@ class TestInitI18nWithMoFile:
 
     def test_es_ar_translation_with_compiled_mo(self, tmp_path: Path) -> None:
         """Build a minimal .mo from a known msgid/msgstr pair and verify translation."""
-        import subprocess
         import shutil
+        import subprocess
 
         if not shutil.which("msgfmt"):
             pytest.skip("msgfmt not available — gettext not installed")
