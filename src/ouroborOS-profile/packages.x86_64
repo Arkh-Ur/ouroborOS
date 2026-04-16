@@ -75,4 +75,7 @@ debootstrap
 # Secure Boot key management (ouroboros-secureboot)
 sbctl
 
+# TPM2 tools (tpm2-unlock via systemd-cryptenroll)
+tpm2-tools
+
 # Flatpak is installed on-demand post-install via our-flat, not needed in the live ISO

@@ -5,6 +5,24 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-04-16
+
+### Added
+
+- TPM2 auto-unlock for LUKS (`disk.tpm2_unlock: true` in YAML). Binds the LUKS
+  slot to TPM2 PCR 7+14 (Secure Boot state + measured boot) using
+  `systemd-cryptenroll`. The disk unlocks automatically at boot if the boot chain
+  is unmodified. Falls back to passphrase if TPM2 is absent or measurements change.
+- Installer TUI: TPM2 prompt shown after LUKS passphrase input. Detects
+  `/sys/class/tpm/tpm0` and warns if no TPM2 is present.
+- `ouroboros-secureboot tpm2-enroll [DEVICE]` — enroll LUKS partition with TPM2
+  post-install. Auto-detects device from `/etc/crypttab` if not specified.
+- `ouroboros-secureboot tpm2-status` — show TPM2 presence, PCR 7+14 values,
+  and current LUKS slot enrollment.
+- `tpm2-tools` added to `packages.x86_64` (live ISO).
+- `SecurityConfig.tpm2_unlock` field in `config.py` with YAML validation
+  (requires `disk.use_luks: true`).
+
 ## [0.4.7] - 2026-04-16
 
 ### Added
@@ -278,6 +296,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 93% pytest coverage.
 - Developer tooling scripts.
 
+[0.4.8]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.8
 [0.4.7]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.7
 [0.4.6]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.6
 [0.4.5]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.5

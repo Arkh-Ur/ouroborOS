@@ -42,6 +42,8 @@ set -euo pipefail
 : "${DESKTOP_AUR_PACKAGES:=''}"
 : "${DESKTOP_KDE_FLAVOR:='plasma-meta'}"
 : "${GPU_DRIVER:='auto'}"
+: "${ENABLE_TPM2:='0'}"
+: "${LUKS_PARTITION:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -507,7 +509,41 @@ BT_CONF
     log_ok "Network configured."
 }
 
-# --- Step 6b: FIDO2 PAM integration ----------------------------------------
+# --- Step 6b: TPM2 auto-unlock (systemd-cryptenroll) -------------------------
+
+configure_tpm2() {
+    # Bind LUKS slot to TPM2 PCR 7+14.
+    # PCR 7  = Secure Boot state (firmware + signing authority).
+    # PCR 14 = systemd-boot measured boot entries.
+    # Falls back to passphrase if TPM2 absent or measurements change.
+    #
+    # Requires: ENABLE_LUKS=1, LUKS_PARTITION set to raw device (e.g. /dev/vda2).
+
+    [[ "${ENABLE_TPM2:-0}" == "1" ]] || return 0
+
+    if [[ -z "${LUKS_PARTITION:-}" ]]; then
+        log_warn "TPM2 unlock requested but LUKS_PARTITION is unset — skipping."
+        return 0
+    fi
+
+    log_info "Enrolling LUKS partition ${LUKS_PARTITION} with TPM2 (PCR 7+14)..."
+
+    if ! arch-chroot "${TARGET}" \
+        systemd-cryptenroll \
+            --tpm2-device=auto \
+            --tpm2-pcrs=7+14 \
+            "${LUKS_PARTITION}" 2>/dev/null; then
+        log_warn "systemd-cryptenroll failed — TPM2 may not be available in this environment."
+        log_warn "You can enroll manually after reboot:"
+        log_warn "  sudo ouroboros-secureboot tpm2-enroll"
+        return 0
+    fi
+
+    log_ok "TPM2 slot enrolled on ${LUKS_PARTITION} (PCR 7+14)."
+    log_ok "The disk will unlock automatically at boot if the boot chain is unmodified."
+}
+
+# --- Step 6c: FIDO2 PAM integration ----------------------------------------
 
 configure_fido2_pam() {
     # Install pam-u2f and pre-configure PAM for FIDO2 sudo + login.
@@ -993,6 +1029,7 @@ main() {
     configure_hostname
     configure_initramfs
     configure_bootloader
+    configure_tpm2
     configure_network
     configure_fido2_pam
     configure_zram

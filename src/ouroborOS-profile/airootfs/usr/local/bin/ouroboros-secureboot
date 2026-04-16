@@ -183,6 +183,69 @@ cmd_rotate_keys() {
     _warn "  ${PROGRAM} setup   (after enabling Setup Mode in UEFI)"
 }
 
+cmd_tpm2_enroll() {
+    # Enroll TPM2 slot on a LUKS partition using PCR 7+14.
+    # Usage: ouroboros-secureboot tpm2-enroll [DEVICE]
+    # If DEVICE is omitted, reads from /etc/crypttab.
+    local device="${1:-}"
+
+    command -v systemd-cryptenroll &>/dev/null || \
+        _die "systemd-cryptenroll not found (install systemd)."
+    command -v tpm2_pcrread &>/dev/null || \
+        _die "tpm2-tools not found. Install: sudo our-pac -S tpm2-tools"
+
+    if [[ -z "$device" ]]; then
+        if [[ -f /etc/crypttab ]]; then
+            local uuid_field
+            uuid_field=$(awk 'NF && !/^#/ {print $2; exit}' /etc/crypttab)
+            device=$(blkid -t "UUID=${uuid_field#UUID=}" -o device 2>/dev/null || true)
+        fi
+        [[ -n "$device" ]] || \
+            _die "Cannot find LUKS device. Pass it explicitly: ${PROGRAM} tpm2-enroll /dev/sdX2"
+    fi
+
+    _info "Enrolling ${device} with TPM2 (PCR 7+14)..."
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7+14 "$device"
+    _ok "TPM2 slot enrolled on ${device}."
+    _ok "Disk will auto-unlock at boot if the boot chain is unmodified."
+}
+
+cmd_tpm2_status() {
+    command -v tpm2_pcrread &>/dev/null || \
+        _die "tpm2-tools not found. Install: sudo our-pac -S tpm2-tools"
+
+    echo "=== TPM2 Status ==="
+    if [[ -e /sys/class/tpm/tpm0 ]]; then
+        _ok "TPM2 device present: /sys/class/tpm/tpm0"
+    else
+        _warn "No TPM2 device detected (/sys/class/tpm/tpm0 absent)."
+    fi
+
+    echo ""
+    echo "=== PCR 7 (Secure Boot State) ==="
+    tpm2_pcrread sha256:7 2>/dev/null || _warn "Failed to read PCR 7."
+
+    echo ""
+    echo "=== PCR 14 (Boot Entries) ==="
+    tpm2_pcrread sha256:14 2>/dev/null || _warn "Failed to read PCR 14."
+
+    echo ""
+    echo "=== LUKS TPM2 Slots ==="
+    if [[ -f /etc/crypttab ]]; then
+        local uuid_field
+        uuid_field=$(awk 'NF && !/^#/ {print $2; exit}' /etc/crypttab)
+        local device
+        device=$(blkid -t "UUID=${uuid_field#UUID=}" -o device 2>/dev/null || true)
+        if [[ -n "$device" ]]; then
+            _info "LUKS device: ${device}"
+            systemd-cryptenroll --list "$device" 2>/dev/null || \
+                _warn "Could not list LUKS slots for ${device}."
+        fi
+    else
+        _info "No /etc/crypttab found — not a LUKS installation."
+    fi
+}
+
 cmd_help() {
     cat << EOF
 ${PROGRAM} — Secure Boot key management for ouroborOS
@@ -198,6 +261,9 @@ COMMANDS
   sign-all                   Re-sign all tracked EFI binaries
   verify                     Verify signatures on tracked binaries
   rotate-keys                Replace keys (backup + new keys + re-sign)
+  tpm2-enroll [DEVICE]       Enroll LUKS partition with TPM2 (PCR 7+14)
+                             If DEVICE is omitted, reads from /etc/crypttab
+  tpm2-status                Show TPM2 presence, PCR 7+14 values, LUKS slots
   help                       Show this help
 
 WORKFLOW
@@ -205,6 +271,11 @@ WORKFLOW
   2. sudo ${PROGRAM} setup
   3. Reboot — firmware should activate Secure Boot
   4. sudo ${PROGRAM} status   — verify Secure Boot is enabled
+
+TPM2 AUTO-UNLOCK
+  Enabled at install time (disk.tpm2_unlock: true) or post-install:
+    sudo ${PROGRAM} tpm2-enroll         # enroll TPM2 on the LUKS partition
+    sudo ${PROGRAM} tpm2-status         # check TPM2 and PCR values
 
 AFTER SYSTEMD UPGRADES
   systemd-boot-update.service overwrites the bootloader EFI on reboot.
@@ -231,6 +302,8 @@ case "$command" in
     sign-all)    cmd_sign_all ;;
     verify)      cmd_verify ;;
     rotate-keys) cmd_rotate_keys ;;
+    tpm2-enroll) cmd_tpm2_enroll "$@" ;;
+    tpm2-status) cmd_tpm2_status ;;
     help|--help|-h) cmd_help ;;
     *)
         _err "Unknown command: ${command}"

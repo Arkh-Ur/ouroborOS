@@ -104,12 +104,18 @@ class LocaleConfig:
 
 @dataclass
 class SecurityConfig:
-    """Security configuration: Secure Boot + FIDO2 PAM integration."""
+    """Security configuration: Secure Boot + TPM2 + FIDO2 PAM integration."""
 
     secure_boot: bool = False
     # Include Microsoft OEM keys when enrolling (sbctl enroll-keys -m).
     # Required for dual-boot systems or hardware with pre-signed Option ROMs.
     sbctl_include_ms_keys: bool = False
+
+    # TPM2 auto-unlock for LUKS.
+    # When true, binds the LUKS slot to TPM2 PCRs 7+14 (Secure Boot state +
+    # systemd-boot measured boot). Requires use_luks: true.
+    # Falls back to passphrase if TPM2 is absent or measurements change.
+    tpm2_unlock: bool = False
 
     # FIDO2 PAM integration.
     # When true, installs pam-u2f and configures /etc/pam.d/sudo + login
@@ -257,6 +263,15 @@ def validate_config(data: dict) -> None:
             raise ConfigValidationError(
                 "security.fido2_pam must be a boolean (true/false)"
             )
+        tpm2_unlock = security.get("tpm2_unlock", False)
+        if not isinstance(tpm2_unlock, bool):
+            raise ConfigValidationError(
+                "security.tpm2_unlock must be a boolean (true/false)"
+            )
+        if tpm2_unlock and not data.get("disk", {}).get("use_luks", False):
+            raise ConfigValidationError(
+                "security.tpm2_unlock requires disk.use_luks: true"
+            )
 
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})
@@ -380,6 +395,7 @@ def load_config(path: Path) -> InstallerConfig:
     sec = data.get("security", {}) or {}
     cfg.security.secure_boot = bool(sec.get("secure_boot", False))
     cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
+    cfg.security.tpm2_unlock = bool(sec.get("tpm2_unlock", False))
     cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
 
     # Extra packages
