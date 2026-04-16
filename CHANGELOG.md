@@ -5,6 +5,37 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] - 2026-04-16
+
+### Added
+
+- Dual-boot support (Milestone 4.6): the installer now scans the ESP for
+  existing OS boot entries during the SECURE_BOOT state. If other operating
+  systems are detected (Windows or other Linux distros), the user is offered
+  a dual-boot prompt. When enabled, a `windows.conf` systemd-boot entry is
+  generated automatically and the loader timeout is set to 5 s.
+- Dual-boot + Secure Boot integration: when both features are enabled and
+  Windows is detected, `sbctl enroll-keys --microsoft` is used automatically
+  so Microsoft OEM keys are included (required for Windows to boot under SB).
+- `configure_dual_boot()` in `configure.sh` — scans ESP, writes
+  `windows.conf`, adjusts `loader.conf` timeout.
+- `configure_secure_boot()` in `configure.sh` — runs `sbctl create-keys`,
+  `sbctl enroll-keys` (with optional `--microsoft`), and signs all EFI
+  binaries on the ESP.
+- `Installer._detect_existing_os()` — static method; scans `/boot/EFI` for
+  known vendor directories and returns a list of human-readable OS names.
+- `TUI.show_dual_boot_prompt()` — Rich and whiptail backends; shows detected
+  OS list and asks the user to confirm dual-boot support.
+- `SecurityConfig.dual_boot: bool` — new config field; supported in both
+  YAML unattended config and interactive TUI flow.
+
+### Changed
+
+- `_handle_secure_boot()` now also drives the dual-boot detection and prompt
+  step before showing Secure Boot instructions.
+- In unattended mode the dual-boot prompt is skipped; `dual_boot` is read
+  directly from `install-config.yaml`.
+
 ## [0.4.9] - 2026-04-15
 
 ### Added

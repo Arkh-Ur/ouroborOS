@@ -125,6 +125,13 @@ class SecurityConfig:
     #   our-fido2 pam register --system
     fido2_pam: bool = False
 
+    # Dual-boot support.
+    # When true, the installer scans the ESP for existing OS boot entries and
+    # generates a systemd-boot entry for Windows (if found).
+    # When combined with secure_boot=true, sbctl enroll-keys --microsoft is used
+    # so Microsoft OEM keys are included (required for Windows to boot under SB).
+    dual_boot: bool = False
+
 
 @dataclass
 class InstallerConfig:
@@ -279,6 +286,11 @@ def validate_config(data: dict) -> None:
             raise ConfigValidationError(
                 "security.tpm2_unlock requires disk.use_luks: true"
             )
+        dual_boot = security.get("dual_boot", False)
+        if not isinstance(dual_boot, bool):
+            raise ConfigValidationError(
+                "security.dual_boot must be a boolean (true/false)"
+            )
 
     # desktop section (optional — defaults to 'minimal')
     desktop = data.get("desktop", {})
@@ -405,6 +417,7 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
     cfg.security.tpm2_unlock = bool(sec.get("tpm2_unlock", False))
     cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
+    cfg.security.dual_boot = bool(sec.get("dual_boot", False))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))

@@ -343,6 +343,7 @@ class TestSecurityConfig:
         sec = SecurityConfig()
         assert sec.secure_boot is False
         assert sec.sbctl_include_ms_keys is False
+        assert sec.dual_boot is False
 
     def test_security_section_optional(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
@@ -374,6 +375,21 @@ class TestSecurityConfig:
         cfg = load_config(path)
         assert cfg.security.secure_boot is False
         assert cfg.security.sbctl_include_ms_keys is False
+        assert cfg.security.dual_boot is False
+
+    def test_security_dual_boot_loaded(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\nsecurity:\n  dual_boot: true\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.security.dual_boot is True
+
+    def test_security_dual_boot_non_bool_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["security"] = {"dual_boot": "yes"}
+        with pytest.raises(ConfigValidationError, match="boolean"):
+            validate_config(data)
 
 
 # ---------------------------------------------------------------------------

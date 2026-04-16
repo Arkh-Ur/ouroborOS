@@ -44,6 +44,9 @@ set -euo pipefail
 : "${GPU_DRIVER:='auto'}"
 : "${ENABLE_TPM2:='0'}"
 : "${LUKS_PARTITION:=''}"
+: "${ENABLE_DUAL_BOOT:='0'}"
+: "${SECURE_BOOT:='0'}"
+: "${SBCTL_INCLUDE_MS_KEYS:='0'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -592,6 +595,103 @@ configure_fido2_pam() {
     log_ok "FIDO2 PAM integration configured."
 }
 
+# --- Step 6d: Dual-boot — add Windows boot entry if detected -----------------
+
+configure_dual_boot() {
+    [[ "${ENABLE_DUAL_BOOT:-0}" == "1" ]] || return 0
+
+    log_info "Dual-boot: scanning ESP for existing OS boot entries..."
+
+    local esp_loader_dir="${TARGET}/boot/loader/entries"
+
+    # Detect Windows Boot Manager
+    local win_efi="${TARGET}/boot/EFI/Microsoft/Boot/bootmgfw.efi"
+    if [[ -f "${win_efi}" ]]; then
+        log_info "Dual-boot: Windows Boot Manager detected — generating windows.conf"
+        mkdir -p "${esp_loader_dir}"
+        cat > "${esp_loader_dir}/windows.conf" <<'WINDOWS_EOF'
+title   Windows Boot Manager
+efi     /EFI/Microsoft/Boot/bootmgfw.efi
+WINDOWS_EOF
+        log_ok "Dual-boot: windows.conf written to ${esp_loader_dir}."
+    else
+        log_info "Dual-boot: no Windows Boot Manager found — skipping windows.conf."
+    fi
+
+    # Ensure systemd-boot shows the menu long enough to make a selection
+    local loader_conf="${TARGET}/boot/loader/loader.conf"
+    if [[ -f "${loader_conf}" ]]; then
+        # Set timeout to 5s if it's currently 0 or missing
+        if grep -q "^timeout" "${loader_conf}"; then
+            local current_timeout
+            current_timeout=$(grep "^timeout" "${loader_conf}" | awk '{print $2}')
+            if [[ "${current_timeout}" == "0" ]]; then
+                sed -i 's/^timeout.*/timeout 5/' "${loader_conf}"
+                log_ok "Dual-boot: loader.conf timeout updated to 5s."
+            fi
+        else
+            echo "timeout 5" >> "${loader_conf}"
+            log_ok "Dual-boot: loader.conf timeout set to 5s."
+        fi
+    fi
+
+    log_ok "Dual-boot configuration complete."
+}
+
+# --- Step 6e: Secure Boot — sbctl key creation and enrollment ----------------
+
+configure_secure_boot() {
+    [[ "${SECURE_BOOT:-0}" == "1" ]] || return 0
+
+    log_info "Secure Boot: creating and enrolling keys with sbctl..."
+
+    # sbctl must be installed (added to pacstrap packages by the installer)
+    if ! arch-chroot "${TARGET}" command -v sbctl &>/dev/null; then
+        log_warn "sbctl not found in chroot — skipping Secure Boot key enrollment."
+        log_warn "Install sbctl and run 'sudo ouroboros-secureboot setup' after reboot."
+        return 0
+    fi
+
+    # Create Secure Boot keys (Platform Key, Key Exchange Key, Signature DB)
+    if ! arch-chroot "${TARGET}" sbctl create-keys; then
+        log_warn "sbctl create-keys failed — Secure Boot keys not created."
+        return 0
+    fi
+    log_ok "Secure Boot: custom keys created."
+
+    # Enroll keys — include Microsoft OEM keys when dual-boot or MS keys requested
+    if [[ "${SBCTL_INCLUDE_MS_KEYS:-0}" == "1" ]]; then
+        if arch-chroot "${TARGET}" sbctl enroll-keys --microsoft; then
+            log_ok "Secure Boot: keys enrolled (including Microsoft OEM keys)."
+        else
+            log_warn "sbctl enroll-keys --microsoft failed — Secure Boot not fully configured."
+            log_warn "Run 'sudo ouroboros-secureboot setup' after reboot."
+        fi
+    else
+        if arch-chroot "${TARGET}" sbctl enroll-keys; then
+            log_ok "Secure Boot: custom-only keys enrolled."
+        else
+            log_warn "sbctl enroll-keys failed — Secure Boot not fully configured."
+            log_warn "Run 'sudo ouroboros-secureboot setup' after reboot."
+        fi
+    fi
+
+    # Sign the kernel and bootloader binaries
+    local esp_boot="${TARGET}/boot"
+    local signed=0
+    while IFS= read -r -d '' bin; do
+        if arch-chroot "${TARGET}" sbctl sign "${bin#"${TARGET}"}"; then
+            (( signed++ )) || true
+        fi
+    done < <(find "${esp_boot}" -name "*.efi" -print0 2>/dev/null)
+
+    if [[ "${signed}" -gt 0 ]]; then
+        log_ok "Secure Boot: ${signed} EFI binary(ies) signed."
+    else
+        log_warn "Secure Boot: no EFI binaries found to sign — check ESP layout."
+    fi
+}
+
 # --- Step 7: zram swap ------------------------------------------------------
 
 configure_zram() {
@@ -1030,6 +1130,8 @@ main() {
     configure_initramfs
     configure_bootloader
     configure_tpm2
+    configure_dual_boot
+    configure_secure_boot
     configure_network
     configure_fido2_pam
     configure_zram
