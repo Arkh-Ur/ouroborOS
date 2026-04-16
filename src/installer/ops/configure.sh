@@ -85,8 +85,11 @@ write_to_root_subvolume() {
     local tmp_root
     tmp_root=$(mktemp -d)
 
-    mount -t btrfs -o "subvolid=5,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
-        log_warn "Could not temp-mount top-level subvolume on ${tmp_root}"
+    # Mount the @ subvolume directly (subvol=/@), not the top-level (subvolid=5).
+    # Previous bug: mounting subvolid=5 meant callbacks wrote to top-level/etc/
+    # instead of @/etc/, causing "Missing /etc/machine-id" on boot.
+    mount -t btrfs -o "subvol=/@,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
+        log_warn "Could not temp-mount @ subvolume on ${tmp_root}"
         rmdir "$tmp_root" 2>/dev/null || true
         return 1
     }

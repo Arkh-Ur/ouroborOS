@@ -573,7 +573,7 @@ post_install_action: reboot
 - [x] `our-container enter <name> --isolated` usa `--network-veth`
 - [x] `our-container enter <name> --gui` bind-mount wayland + DRI
 - [x] homectl falla → fallback a classic useradd sin crash
-- [ ] Todos los scripts: shellcheck 0 warnings
+- [x] Todos los scripts: shellcheck 0 warnings
 - [x] pytest coverage ≥ 93%
 
 ---
