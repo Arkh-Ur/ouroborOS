@@ -19,6 +19,7 @@ import yaml
 
 from installer.desktop_profiles import (
     VALID_DMS,
+    VALID_KDE_FLAVORS,
     VALID_PROFILES,
     VALID_SHELLS,
     aur_packages_for,
@@ -71,8 +72,10 @@ class UserConfig:
 class DesktopConfig:
     """Desktop environment profile — package set only, no curation."""
 
-    profile: str = "minimal"  # minimal | hyprland | niri | gnome | kde
-    dm: str = "auto"          # auto | gdm | sddm | none
+    profile: str = "minimal"      # minimal | hyprland | niri | gnome | kde | cosmic
+    dm: str = "auto"              # auto | gdm | sddm | plm | greetd | none
+    kde_flavor: str = "plasma-meta"  # plasma | plasma-meta | plasma-desktop (KDE only)
+    gpu_driver: str = "auto"      # auto | mesa | amdgpu | nvidia | nvidia-open | none
     # AUR packages resolved from the profile at load time (not stored in YAML).
     # Populated by load_config() / _build_config() from desktop_profiles.
     # Passed to ouroboros-firstboot for lazy build via our-aur.
@@ -270,6 +273,19 @@ def validate_config(data: dict) -> None:
                 f"desktop.dm must be one of {sorted(VALID_DMS)} or 'auto', "
                 f"got: {dm!r}"
             )
+        kde_flavor = desktop.get("kde_flavor", "plasma-meta")
+        if kde_flavor not in VALID_KDE_FLAVORS:
+            raise ConfigValidationError(
+                f"desktop.kde_flavor must be one of {sorted(VALID_KDE_FLAVORS)}, "
+                f"got: {kde_flavor!r}"
+            )
+        gpu_driver = desktop.get("gpu_driver", "auto")
+        _valid_gpu = {"auto", "mesa", "amdgpu", "nvidia", "nvidia-open", "none"}
+        if gpu_driver not in _valid_gpu:
+            raise ConfigValidationError(
+                f"desktop.gpu_driver must be one of {sorted(_valid_gpu)}, "
+                f"got: {gpu_driver!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +372,8 @@ def load_config(path: Path) -> InstallerConfig:
     desk = data.get("desktop", {}) or {}
     cfg.desktop.profile = str(desk.get("profile", "minimal"))
     cfg.desktop.dm = str(desk.get("dm", "auto"))
+    cfg.desktop.kde_flavor = str(desk.get("kde_flavor", "plasma-meta"))
+    cfg.desktop.gpu_driver = str(desk.get("gpu_driver", "auto"))
     cfg.desktop.aur_packages = aur_packages_for(cfg.desktop.profile)
 
     # Security (optional)

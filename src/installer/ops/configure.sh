@@ -40,6 +40,8 @@ set -euo pipefail
 : "${BLUETOOTH_ENABLE:='0'}"
 : "${FIDO2_PAM:='0'}"
 : "${DESKTOP_AUR_PACKAGES:=''}"
+: "${DESKTOP_KDE_FLAVOR:='plasma-meta'}"
+: "${GPU_DRIVER:='auto'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -1008,10 +1010,24 @@ main() {
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
 
-    # Display manager — enabled only for desktop profiles that ship one
-    # (gnome → gdm, kde → sddm). Minimalist profiles (minimal/hyprland/niri)
-    # leave DESKTOP_DM empty and log in from tty.
+    # Display manager — enabled only for desktop profiles that ship one.
+    # greetd (COSMIC) requires extra setup: cosmic-greeter config + greeter user.
     if [[ -n "${DESKTOP_DM:-}" ]]; then
+        if [[ "${DESKTOP_DM}" == "greetd" ]]; then
+            arch-chroot "${TARGET}" pacman -S --noconfirm cosmic-greeter
+            mkdir -p "${TARGET}/etc/greetd"
+            cat > "${TARGET}/etc/greetd/config.toml" <<'GREETD_EOF'
+[terminal]
+vt = 1
+
+[default_session]
+command = "cosmic-greeter"
+user = "greeter"
+GREETD_EOF
+            arch-chroot "${TARGET}" useradd --system --no-create-home \
+                --shell /sbin/nologin greeter 2>/dev/null || true
+            log_ok "greetd configured with cosmic-greeter."
+        fi
         in_chroot systemctl enable "${DESKTOP_DM}.service"
         in_chroot systemctl daemon-reload
         in_chroot systemctl set-default graphical.target
@@ -1019,6 +1035,40 @@ main() {
     else
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
     fi
+
+    # GPU driver installation
+    case "${GPU_DRIVER:-auto}" in
+        nvidia)
+            arch-chroot "${TARGET}" pacman -S --noconfirm nvidia nvidia-utils
+            log_ok "GPU: NVIDIA proprietary driver installed."
+            ;;
+        nvidia-open)
+            arch-chroot "${TARGET}" pacman -S --noconfirm nvidia-open nvidia-utils
+            log_ok "GPU: NVIDIA open kernel module installed."
+            ;;
+        amdgpu|mesa)
+            arch-chroot "${TARGET}" pacman -S --noconfirm mesa vulkan-radeon xf86-video-amdgpu
+            log_ok "GPU: Mesa + AMD open source driver installed."
+            ;;
+        auto)
+            # auto: detect via lspci and install the best driver
+            if lspci 2>/dev/null | grep -qi "nvidia"; then
+                arch-chroot "${TARGET}" pacman -S --noconfirm nvidia nvidia-utils
+                log_ok "GPU: auto-detected NVIDIA — proprietary driver installed."
+            elif lspci 2>/dev/null | grep -qiE "amd|radeon"; then
+                arch-chroot "${TARGET}" pacman -S --noconfirm mesa vulkan-radeon xf86-video-amdgpu
+                log_ok "GPU: auto-detected AMD — mesa + vulkan-radeon installed."
+            elif lspci 2>/dev/null | grep -qi "intel"; then
+                arch-chroot "${TARGET}" pacman -S --noconfirm mesa vulkan-intel
+                log_ok "GPU: auto-detected Intel — mesa + vulkan-intel installed."
+            else
+                log_info "GPU: auto-detect found no known GPU — skipping driver install."
+            fi
+            ;;
+        none)
+            log_info "GPU: driver install skipped (none selected)."
+            ;;
+    esac
 
     # our-container autostart — copy default config and enable service if containers are listed.
     # The autostart.conf shipped in the ISO is empty (comments only); users add container

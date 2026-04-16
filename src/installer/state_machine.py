@@ -458,8 +458,20 @@ class Installer:
         )
         self._update_progress(State.USER, 100)
 
+    def _detect_gpu(self) -> str:
+        """Detect the GPU family via lspci. Returns 'nvidia', 'amdgpu', 'mesa', or 'auto'."""
+        result = subprocess.run(["lspci"], capture_output=True, text=True, check=False)
+        output = result.stdout.lower()
+        if "nvidia" in output:
+            return "nvidia"
+        if "amd" in output or "radeon" in output:
+            return "amdgpu"
+        if "intel" in output:
+            return "mesa"
+        return "auto"
+
     def _handle_desktop(self) -> None:
-        """DESKTOP — pick a desktop profile and display manager."""
+        """DESKTOP — pick a desktop profile, display manager, and GPU driver."""
         self._update_progress(State.DESKTOP, 0)
         if self.tui:
             profile = self.tui.show_desktop_selection()
@@ -467,11 +479,20 @@ class Installer:
             dm_choice = self.tui.show_dm_selection(profile=profile)
             self.config.desktop.dm = dm_choice
             self.config.desktop.aur_packages = aur_packages_for(profile)
+
+            if profile == "kde":
+                self.config.desktop.kde_flavor = self.tui.show_kde_flavor()
+
+            detected_gpu = self._detect_gpu()
+            self.config.desktop.gpu_driver = self.tui.show_gpu_selection(detected=detected_gpu)
+
         log.info(
-            "Desktop profile: %s (dm: %s → %s)",
+            "Desktop profile: %s (dm: %s → %s, gpu: %s, kde_flavor: %s)",
             self.config.desktop.profile,
             self.config.desktop.dm,
             resolve_dm(self.config.desktop.profile, self.config.desktop.dm),
+            self.config.desktop.gpu_driver,
+            self.config.desktop.kde_flavor,
         )
         self._update_progress(State.DESKTOP, 100)
 
@@ -671,7 +692,10 @@ class Installer:
             "which",
             # systemd-nspawn + machinectl ship with the `systemd` package
             # (already in base), used by `our-container` for container workflows.
-        ] + self.config.extra_packages + packages_for(self.config.desktop.profile)
+        ] + self.config.extra_packages + packages_for(
+            self.config.desktop.profile,
+            kde_flavor=self.config.desktop.kde_flavor,
+        )
 
         # Add sbctl when Secure Boot is enabled
         if self.config.security.secure_boot and "sbctl" not in packages:
@@ -809,6 +833,8 @@ class Installer:
                     resolve_dm(self.config.desktop.profile, self.config.desktop.dm)
                 ) if resolve_dm(self.config.desktop.profile, self.config.desktop.dm) != "none" else "",
                 "DESKTOP_PROFILE": self.config.desktop.profile,
+                "DESKTOP_KDE_FLAVOR": self.config.desktop.kde_flavor,
+                "GPU_DRIVER": self.config.desktop.gpu_driver,
                 "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
                 "HOMED_STORAGE": self.config.user.homed_storage,
                 "WIFI_SSID": self.config.network.wifi_ssid,
