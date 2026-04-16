@@ -166,7 +166,7 @@ sudo our-flat -Su
 | Limitation | Status |
 |-----------|--------|
 | UEFI only | By design — no plans to change |
-| x86_64 only | ARM/aarch64 deferred |
+| x86_64 only | By design — no plans to add ARM |
 | No GUI installer | TUI + unattended YAML only |
 | No Secure Boot by default | TPM2/MOK deferred to Phase 5 |
 | English only | Multi-language deferred |

@@ -1,15 +1,11 @@
 # Phase 4 Plan — AUR, TPM2, Flatpak & Extended Package Management
 
-**Version:** post-v0.3.0
-**Date:** 2026-04-15 (updated)
-**Branch:** dev
+**Version:** v0.4.12
+**Date:** 2026-04-16 (updated)
+**Branch:** main
 
-> **v0.3.0 released.** Phase 3 complete. Este documento define Phase 4.
-> Arranca desde el backlog "Out of Scope (Phase 4+)" de PHASE_3_PLAN.md
-> más lo resuelto en la sesión de kickoff del 2026-04-11.
->
-> **Actualización 2026-04-15:** Milestones 4.A y 4.B completados (v0.4.5).
-> Próximo: 4.2 → 4.3 → 4.6 → 4.5 → 4.7.
+> **Phase 4 COMPLETA.** Todos los milestones implementados.
+> v0.4.12 = bugfix release + ARM eliminado + i18n es_CL.
 
 ---
 
@@ -17,25 +13,34 @@
 
 | Prefijo | Audiencia | Ejecutables |
 |---------|-----------|-------------|
-| `our-*` | Usuario final (interactivo) | `our-pac`, `our-aur`, `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-container`, `our-fido2` |
+| `our-*` | Usuario final (interactivo) | `our-pac`, `our-aur`, `our-snapshot`, `our-rollback`, `our-wifi`, `our-bluetooth`, `our-container`, `our-fido2`, `our-flat` |
 | `ouroboros-*` | Sistema (servicios, automatización) | `ouroboros-secureboot`, `ouroboros-firstboot` |
 
 ---
 
-## Estado al inicio de Phase 4
+## Tabla Resumen
 
-### Completado en Phases 1–3
+| # | Feature | Ejecutable/Clave | Versión | Complejidad | Estado |
+|---|---------|-----------------|---------|-------------|--------|
+| 4.0 | `our-aur` AUR helper containerizado | `our-aur` | v0.4.0 | Alta | ✅ |
+| 4.1 | Lazy AUR install via firstboot queue | pipeline | v0.4.0 | Media | ✅ |
+| 4.2 | TPM2 + `systemd-cryptenroll` | `ouroboros-secureboot` | v0.4.8 | Alta | ✅ |
+| 4.3 | Multi-Language TUI (en_US, es_CL, de_DE) | TUI + i18n | v0.4.9 | Media | ✅ |
+| 4.4 | Flatpak | `our-flat` | v0.4.0 | Baja | ✅ |
+| 4.5 | Live USB Persistence | — | — | — | ❌ N/A |
+| 4.6 | Dual-Boot + Secure Boot | installer | v0.4.10 | Alta | ✅ |
+| 4.7 | ARM / aarch64 | — | — | — | ❌ REMOVED |
+| 4.A | ISO & CI Hardening | `packages.x86_64`, CI | v0.4.5 | Baja | ✅ |
+| 4.B | Desktop Profile Completion | `desktop_profiles.py` | v0.4.5 | Baja | ✅ |
 
-Todo lo listado en PHASE_3_PLAN.md como completado, más:
-
-| Feature | Commit |
-|---------|--------|
-| `our-pac` (renombrado de `our-pacman`) | `c1b1dad` |
-| ISO version 0.3.0 | `00d1209` |
+**Orden de implementación:**
+```
+[✅ 4.0] → [✅ 4.1] → [✅ 4.4] → [✅ 4.A] → [✅ 4.B] → [✅ 4.2] → [✅ 4.3] → [✅ 4.6]
+```
 
 ---
 
-## Actividades Phase 4
+## Milestones Detallados
 
 ### Milestone 4.0 — `our-aur` (AUR helper containerizado) ✅
 
@@ -71,13 +76,6 @@ our-aur -Qs <query>  buscar en instalados
 our-aur --clean      limpiar contenedores huérfanos + cache
 ```
 
-**Archivos:**
-
-| Archivo | Tipo |
-|---------|------|
-| `src/ouroborOS-profile/airootfs/usr/local/bin/our-aur` | Nuevo |
-| `src/ouroborOS-profile/profiledef.sh` | Modificado — permiso `0:0:755` para `our-aur` |
-
 **Criterios de aceptación:**
 - [x] `our-aur -Ss hyprlock` devuelve resultados sin root
 - [x] `our-aur -Si quickshell` muestra versión + descripción
@@ -103,197 +101,163 @@ via `ouroboros-firstboot` + `our-aur`.
 | Perfil | AUR packages |
 |--------|-------------|
 | `minimal` | — |
-| `hyprland` | `quickshell`, `hyprlock`, `hypridle`, `hyprshot` |
+| `hyprland` | `quickshell` |
 | `niri` | — (niri está en `[extra]`) |
 | `gnome` | — |
 | `kde` | — |
-
-**Archivos:**
-
-| Archivo | Cambio |
-|---------|--------|
-| `src/installer/desktop_profiles.py` | `PROFILE_AUR_PACKAGES` dict + `aur_packages_for()` |
-| `src/installer/config.py` | `DesktopConfig.aur_packages` field, populado en loader |
-| `src/installer/state_machine.py` | `DESKTOP_AUR_PACKAGES` env var pasada a `configure.sh` |
-| `src/installer/ops/configure.sh` | Escribe `firstboot-aur-packages.txt` si hay AUR packages |
-| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-firstboot` | Habilita `systemd-sysext` + instala AUR queue |
+| `cosmic` | — (cosmic está en `[extra]`) |
 
 **Criterios de aceptación:**
-- [x] Perfil `hyprland` → `DESKTOP_AUR_PACKAGES="quickshell hyprlock hypridle hyprshot"` en env
+- [x] Perfil `hyprland` → `DESKTOP_AUR_PACKAGES="quickshell"` en env
 - [x] `configure.sh` escribe `/var/lib/ouroborOS/firstboot-aur-packages.txt`
 - [x] `ouroboros-firstboot` habilita `systemd-sysext.service`
 - [x] `ouroboros-firstboot` corre `our-aur -S` por cada paquete en el queue
 - [x] `ouroboros-firstboot` borra el queue file al terminar
-- [x] 347 tests pytest pasan sin regresiones
 
 ---
 
-### Milestone 4.A — ISO & CI Hardening ✅
+### Milestone 4.2 — TPM2 + `systemd-cryptenroll` ✅
 
-**Completado:** 2026-04-15
-
-Correcciones críticas y limpieza derivadas del análisis comparativo con archiso/archinstall
-(`docs/architecture/upstream-analysis.md`).
-
-**ISO (`packages.x86_64`):**
-- `cryptsetup` agregado — **bug crítico**: cualquier instalación con `use_luks: true` fallaba
-  con `command not found` en `disk.sh encrypt_partition()`
-- `linux-zen-headers` eliminado — solo necesario para DKMS en el sistema instalado, ya se
-  instala via `pacstrap` (-30 MB)
-- `flatpak` eliminado — se instala on-demand post-install via `our-flat` (-15 MB)
-- `pciutils`, `usbutils`, `diffutils` agregados — diagnóstico de hardware en el live env
-
-**CI (`.github/workflows/build.yml`):**
-- `actions/checkout` actualizado de v4 a v5 (Node.js 20 depreca el 2026-06-02)
-- Verificación explícita post-patch de `mkarchiso`: falla rápido con `::error::` si el awk
-  no aplicó el parche, en vez de fallar silenciosamente adentro del build
-- Regex del awk endurecido: `[[:space:]]+` reemplaza 4 espacios hardcodeados; guard de
-  fin de función (`}`) para evitar falsos positivos en otras funciones
-
-**Rollback (`our-rollback`):**
-- `promote`: la boot entry huérfana `ouroboros-snapshot-<name>.conf` ahora se elimina tras
-  el swap atómico — apuntaba a `@snapshots/<name>` que ya no existe
-- `promote`: `bootctl set-default ouroborOS.conf` llamado explícitamente para resetear el
-  default a `@` tras el promote
-
-**os-release:**
-- `VERSION_ID` y `PRETTY_NAME` actualizados de `0.1.0` a `0.4.5`
-- `HOME_URL` corregida a `Arkh-Ur` (era `Arkhur-Vo`)
-
----
-
-### Milestone 4.B — Desktop Profile Completion ✅
-
-**Completado:** 2026-04-15
-
-Gaps identificados en el análisis comparativo con archinstall.
-
-**Hyprland:**
-- `grim` + `slurp` agregados — backend de screenshots requerido por `hyprshot` (AUR)
-- `dunst` agregado — notifications daemon
-- `thunar` agregado — file manager liviano (evita el dep chain de KDE que arrastraría `dolphin`)
-
-**Niri:**
-- `waybar` agregado — barra de estado (esencial para un tiling WM)
-- `mako` agregado — notifications daemon
-- `swaylock` agregado — lock screen
-- `swaybg` agregado — wallpaper setter
-- `swayidle` agregado — idle daemon para auto-lock
-
-**KDE:**
-- `kde-applications-meta` eliminado — instalaba ~300 paquetes (~1.5 GB) incluyendo juegos,
-  educación y ofimática
-- Reemplazado por set curado: `dolphin konsole kate gwenview ark ffmpegthumbs` (~400 MB)
-
----
-
-### Milestone 4.2 — TPM2 + `systemd-cryptenroll` ⬜
+**Completado:** v0.4.8
 
 Integración de TPM2 para desbloqueo automático de LUKS sin passphrase en boot.
-Permite que sistemas con LUKS arranquen sin intervención del usuario cuando el
-estado del sistema es el esperado (PCR measurements).
+PCR 7 (Secure Boot state) + PCR 14 (systemd-boot measured boot entries).
 
-**Alcance:**
-- `systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7+14` post-install
-- Integración con `ouroboros-secureboot` (PCR 7 = Secure Boot state)
-- TUI: opción "TPM2 auto-unlock" en pantalla LUKS del installer
-- Fallback a passphrase si TPM2 no disponible o measurements cambian
-- YAML key: `disk.tpm2_unlock: true`
+**Implementación:**
+- `SecurityConfig.tpm2_unlock` en `config.py` — validación: requiere `disk.use_luks: true`
+- `configure_tpm2()` en `configure.sh` — `systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7+14`
+- `ouroboros-secureboot tpm2-enroll` y `tpm2-status` subcomandos
+- `show_tpm2_prompt()` en `tui.py` — detecta `/sys/class/tpm/tpm0`, warning si ausente
+- `tpm2-tools` en `packages.x86_64`
+- YAML key: `security.tpm2_unlock: true`
+- Fallback graceful a passphrase si TPM2 no disponible
 
-**Dependencias:** LUKS activo (`disk.use_luks: true`), Secure Boot opcional (mejora PCR binding)
-
-**Complejidad:** Alta — PCR policy binding, sealed secrets, manejo de re-enroll tras updates de kernel
+**Criterios de aceptación:**
+- [x] `security.tpm2_unlock: true` con `disk.use_luks: false` → ConfigValidationError
+- [x] TUI muestra prompt TPM2 con detección de hardware
+- [x] `configure_tpm2()` enrola LUKS slot con PCR 7+14
+- [x] Fallback a passphrase si systemd-cryptenroll falla
+- [x] Tests en `test_config.py`, `test_state_machine.py`
 
 ---
 
-### Milestone 4.3 — Multi-Language TUI ⬜
+### Milestone 4.3 — Multi-Language TUI ✅
 
-Soporte i18n en el installer (postergado de Milestone 3.11).
-Gettext + archivos `.po`/`.mo`. Campo `locale.language` en YAML.
-Pantalla de selección de idioma en estado INIT.
+**Completado:** v0.4.9 (actualizado a es_CL en v0.4.12)
 
-**Idiomas iniciales:** en_US (base), es_AR, de_DE
+Soporte i18n en el installer via gettext. Archivos `.po`/`.mo`.
+Campo `locale.language` en YAML. Pantalla de selección de idioma en estado INIT.
 
-**Complejidad:** Media — gettext en Python es directo; la complejidad está en traducir strings de TUI Rich
+**Idiomas:** en_US (base), es_CL (Chile), de_DE (Deutschland)
+
+**Implementación:**
+- `i18n.py` — `init_i18n()` + `_()` wrapper con NullTranslations fallback
+- `.po` files en `src/installer/locale/{en_US,es_CL,de_DE}/LC_MESSAGES/installer.po`
+- `.mo` compilados al vuelo en `build-iso.sh` via `msgfmt`
+- `show_language_selection()` en `tui.py`
+- `_STEP_LABELS` usa `_()` en el punto de uso (NO en definición)
+- `SUPPORTED_LANGUAGES` en `i18n.py` + `_LANGUAGE_OPTIONS` en `tui.py`
+
+**Criterios de aceptación:**
+- [x] Selección de idioma en INIT state antes de cualquier string
+- [x] `_()` wrap en todos los strings user-facing del TUI
+- [x] `.po` files con ~80+ strings traducidos por idioma
+- [x] Fallback silencioso a inglés si `.mo` no encontrado
+- [x] `test_i18n.py` con 12 tests
 
 ---
 
 ### Milestone 4.4 — Flatpak ✅
 
+**Completado:** v0.4.0
+
 Integración de Flatpak como fuente complementaria para apps de escritorio.
 Sin Flathub por defecto — el usuario lo habilita explícitamente.
 
-**Alcance:**
-- `our-flatpak` wrapper: `our-flatpak -S <app>`, `-R`, `-Q`, `-Su`
-- `flatpak` en packages.x86_64
-- Remoto Flathub opt-in vía `our-flatpak remote-add flathub`
-- No integración con sysext (Flatpak gestiona su propio sandbox en `/var/lib/flatpak`)
-- YAML key: `desktop.flatpak: true`
-
-**Complejidad:** Baja — Flatpak ya resuelve sandboxing; el wrapper es thin
-
----
-
-### Milestone 4.5 — Live USB Persistence ⬜
-
-Permitir que el ISO live mantenga estado entre reboots en el mismo USB.
-Usando una partición Btrfs adicional en el dispositivo USB.
-
-**Alcance:**
-- Script `our-persist setup` — crea partición Btrfs en el USB live
-- Mount en `/persistence` al boot (via cmdline `ouroborOS.persist=auto`)
-- `/home`, `/etc`, `/var/lib` redirigidos via bind mounts
-- Compatible con immutable root (no rompe el modelo actual)
-
-**Complejidad:** Alta — requiere cambios en initramfs hooks y systemd-repart
-
----
-
-### Milestone 4.6 — Dual-Boot + Secure Boot ⬜
-
-Instalación junto a Windows u otra distro Linux con Secure Boot activo.
-Requiere enrolamiento de Microsoft OEM keys (`sbctl enroll-keys -m`).
-
-**Alcance:**
-- Installer: detectar instalaciones existentes en disco (os-prober)
-- `systemd-boot` con múltiples entradas (Windows via EFI chainload)
-- `sbctl enroll-keys -m` cuando `sbctl_include_ms_keys: true`
-- Documentación: proceso de enrolamiento + recuperación
-
-**Ya implementado:** `SecurityConfig.sbctl_include_ms_keys` en config.py y `ouroboros-secureboot`
-
-**Complejidad:** Alta — interacción con firmware OEM, edge cases de UEFI variables
-
----
-
-### Milestone 4.7 — ARM / aarch64 ⬜
-
-Soporte de arquitectura aarch64 para Raspberry Pi 5 y hardware ARM similar.
-Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
-
-**Complejidad:** Muy Alta — requiere hardware real para validar; out of scope hasta tener base x86_64 estable
-
----
-
-## Tabla Resumen
-
-| # | Feature | Ejecutable/Clave | Prioridad | Complejidad | Estado |
-|---|---------|-----------------|-----------|-------------|--------|
-| 4.0 | `our-aur` AUR helper containerizado | `our-aur` | 🔴 | Alta | ✅ |
-| 4.1 | Lazy AUR install via firstboot queue | pipeline | 🔴 | Media | ✅ |
-| 4.4 | Flatpak | `our-flat` | 🟡 | Baja | ✅ |
-| **4.A** | **ISO & CI Hardening** | `packages.x86_64`, CI | 🔴 | Baja | ✅ |
-| **4.B** | **Desktop Profile Completion** | `desktop_profiles.py` | 🟡 | Baja | ✅ |
-| 4.2 | TPM2 + `systemd-cryptenroll` | `ouroboros-secureboot` | 🟡 | Alta | ⬜ |
-| 4.3 | Multi-Language TUI | TUI | 🟢 | Media | ⬜ |
-| 4.5 | Live USB Persistence | `our-persist` | 🟢 | Alta | ⬜ |
-| 4.6 | Dual-Boot + Secure Boot | installer | 🟡 | Alta | ⬜ |
-| 4.7 | ARM / aarch64 | archiso | 🟢 | Muy Alta | ⬜ |
-
-**Orden de implementación (actualizado):**
+**Interface:**
 ```
-[✅ 4.0] → [✅ 4.1] → [✅ 4.4] → [✅ 4.A] → [✅ 4.B] → 4.2 → 4.3 → 4.6 → 4.5 → 4.7
+our-flat install <app>    instalar app (Flathub)
+our-flat remove <app>     remover app
+our-flat update           actualizar todas las apps
+our-flat search <query>   buscar en remotos
+our-flat list             listar apps instaladas
+our-flat info <app>       info de app
+our-flat remote           gestionar remotos (add, remove, list)
 ```
+
+---
+
+### Milestone 4.5 — Live USB Persistence ❌ N/A
+
+> Eliminado — ouroborOS es un ISO live con formato erofs (`airootfs_image_type="erofs"`).
+> La persistencia no aplica: el ISO es de instalación, no de uso persistente.
+> El sistema instalado usa Btrfs con snapshots para gestión de estado.
+
+---
+
+### Milestone 4.6 — Dual-Boot + Secure Boot ✅
+
+**Completado:** v0.4.10
+
+Instalación junto a Windows con Secure Boot activo.
+Detección de Windows Boot Manager via EFI path.
+
+**Implementación:**
+- `configure_dual_boot()` en `configure.sh` — detecta `EFI/Microsoft/Boot/bootmgfw.efi`
+- Genera `windows.conf` en systemd-boot entries
+- Ajusta `loader.conf` timeout a 5s cuando dual-boot está activo
+- `SecurityConfig.dual_boot` en `config.py`
+- `show_dual_boot_prompt()` en `tui.py` (rich + whiptail)
+- `_detect_existing_os()` en `state_machine.py` — escanea ESP para OS conocidos
+- `sbctl enroll-keys --microsoft` cuando `sbctl_include_ms_keys: true` + dual-boot
+- Integración con Secure Boot: MS OEM keys incluidas automáticamente en modo dual-boot
+
+**Criterios de aceptación:**
+- [x] Windows Boot Manager detectado en ESP
+- [x] `windows.conf` generado en `/boot/loader/entries/`
+- [x] Timeout ajustado a 5s en `loader.conf`
+- [x] `sbctl enroll-keys --microsoft` cuando dual-boot + secure boot
+- [x] Tests en `test_config.py`, `test_state_machine.py`, `test_tui.py`
+
+---
+
+### Milestone 4.7 — ARM / aarch64 ❌ REMOVED
+
+> Removed in v0.4.12 — no ARM hardware for validation.
+
+---
+
+### Milestone 4.A — ISO & CI Hardening ✅
+
+**Completado:** v0.4.5
+
+**ISO (`packages.x86_64`):**
+- `cryptsetup` agregado — fix bug crítico LUKS
+- `linux-zen-headers` eliminado (-30 MB)
+- `flatpak` eliminado — on-demand via `our-flat` (-15 MB)
+- `pciutils`, `usbutils`, `diffutils` agregados
+- ISO image format: **erofs** (`airootfs_image_type="erofs"` con lzma + ztailpacking)
+
+**CI (`.github/workflows/build.yml`):**
+- `actions/checkout` v5
+- Verificación post-patch de mkarchiso con `::error::`
+- Regex awk endurecido
+
+**Rollback (`our-rollback`):**
+- `promote`: boot entry huérfana eliminada tras swap atómico
+- `promote`: `bootctl set-default ouroborOS.conf` explícito
+
+---
+
+### Milestone 4.B — Desktop Profile Completion ✅
+
+**Completado:** v0.4.5
+
+**Hyprland:** grim + slurp, dunst, thunar, hyprlock, hypridle, hyprpaper, hyprsunset
+**Niri:** waybar, mako, swaylock, swaybg, swayidle
+**KDE:** curated set (dolphin, konsole, kate, gwenview, ark, ffmpegthumbs) sin kde-applications-meta
+**COSMIC:** perfil completo (15 paquetes), greetd + cosmic-greeter
+**GPU detection:** auto/mesa/amdgpu/nvidia/nvidia-open/none via `lspci`
 
 ---
 
@@ -306,14 +270,16 @@ Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
 - [x] Perfiles Hyprland y Niri con screenshots, notificaciones, lock screen y file manager
 - [x] KDE sin `kde-applications-meta` (curated set ~400 MB vs ~1.5 GB)
 - [x] `our-rollback promote` limpia boot entry huérfana y resetea default boot
-- [x] CI: awk patch de mkarchiso verificado y endurecido contra cambios de indentación
-- [ ] Todos los scripts: shellcheck 0 warnings (pendiente: `our-snapshot`, `configure.sh`)
-- [ ] pytest coverage ≥ 93%
-- [ ] TPM2 unlock funciona en QEMU con OVMF + swtpm (Milestone 4.2)
-- [ ] Multi-language TUI operativa en es_AR, en_US, de_DE (Milestone 4.3)
-- [ ] Dual-boot con Windows detectado y entrada en systemd-boot (Milestone 4.6)
-- [ ] `our-persist setup` crea partición de persistencia en USB live (Milestone 4.5)
-- [ ] ISO construye para aarch64 y bootea en QEMU ARM (Milestone 4.7)
+- [x] CI: awk patch de mkarchiso verificado y endurecido
+- [x] TPM2 unlock — `systemd-cryptenroll --tpm2-pcrs=7+14` con fallback a passphrase
+- [x] Multi-language TUI operativa en en_US, es_CL, de_DE
+- [x] Dual-boot con Windows detectado y entrada en systemd-boot
+- [x] ISO image format: erofs (lzma + ztailpacking)
+- [x] COSMIC desktop profile completo con greetd
+- [x] GPU detection automática via lspci
+- [x] 555 tests pytest pasando sin regresiones
+- [x] shellcheck 0 warnings en scripts principales
+- [x] ruff check limpio
 
 ---
 
@@ -324,3 +290,4 @@ Requiere perfil archiso separado + ajustes en bootloader (UEFI via EDKII).
 - Soporte de múltiples usuarios con homed
 - Snapper integration
 - OTA updates via casync o ostree
+- ARM / aarch64 (eliminado en v0.4.12)

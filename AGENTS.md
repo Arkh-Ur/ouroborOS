@@ -1,7 +1,7 @@
 # BASE DE CONOCIMIENTO DEL PROYECTO
 
-**Actualizado:** 2026-04-12
-**Commit:** v0.4.0 (tag)
+**Actualizado:** 2026-04-16
+**Commit:** v0.4.12 (tag)
 **Branch:** main
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
@@ -22,9 +22,9 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Repositorios:** `Arkh-Ur/ouroborOS-dev` (privado, dev) → `Arkh-Ur/ouroborOS` (público, releases). Tag push en dev dispara build + release en público.
 
-**Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11), v0.4.0 (2026-04-12).
+**Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11), v0.4.0 (2026-04-12), v0.4.12 (2026-04-16).
 
-**Estado actual:** Phase 4 completa — `our-aur` (AUR helper containerizado), `our-flat` (Flatpak wrapper), lazy AUR queue. Ver `docs/PHASE_4_PLAN.md`.
+**Estado actual:** Phase 4 completa — `our-aur` (AUR helper containerizado), `our-flat` (Flatpak wrapper), lazy AUR queue, i18n (en_US/es_CL/de_DE), TPM2, dual-boot, COSMIC desktop, GPU detection. ARM aarch64 eliminado en v0.4.12. Ver `docs/PHASE_4_PLAN.md`.
 
 ## ESTRUCTURA
 
@@ -147,7 +147,7 @@ ouroborOS/
 | Contraseñas en texto plano en scripts/config | Hash via SHA-512 crypt; passphrase LUKS via stdin |
 | `--fastest` en reflector | Usar `--sort score` (server-side, instantáneo) |
 
-## SCHEMA YAML COMPLETO (v0.4.0)
+## SCHEMA YAML COMPLETO (v0.4.12)
 
 ```yaml
 user:
@@ -228,3 +228,9 @@ docker-compose -f tests/docker-compose.yml run --rm full-suite
 - **Password plaintext lifecycle:** `UserConfig.password_plaintext` es transitorio. Se pasa a `configure.sh` como `USER_PASSWORD`, se limpia inmediatamente después. Nunca persistido en checkpoints.
 - **E2E tests QEMU:** `setsid` para lanzar QEMU. `fuser -k 2222/tcp` antes de relanzar. Disco qcow2 en `/home/` (NO `/tmp/`). `-device e1000` (virtio-net cuelga). `-display none -vga virtio` (nunca `-nographic`).
 - **Dual-repo:** `ouroborOS-dev` (privado) para desarrollo, `ouroborOS` (público) para releases. Tag push dispara build.yml.
+- **i18n (v0.4.9+):** gettext con .po/.mo. 3 idiomas: en_US (base), es_CL (chileno), de_DE (formal). Los .mo se compilan al vuelo en build-iso.sh (msgfmt). `_STEP_LABELS` usa `_()` en el punto de uso, NO en la definición del dict.
+- **TPM2 (v0.4.8+):** `systemd-cryptenroll --tpm2-pcrs=7+14`. Requiere `disk.use_luks: true`. Fallback a passphrase si TPM2 ausente.
+- **Dual-boot (v0.4.10+):** Detecta Windows Boot Manager via EFI path. Genera `windows.conf` en systemd-boot entries. Timeout ajustado a 5s.
+- **COSMIC (v0.4.7+):** Perfil completo en `[extra]`. DM: greetd + cosmic-greeter.
+- **GPU detection (v0.4.7+):** `_detect_gpu()` via lspci. Opciones: auto/mesa/amdgpu/nvidia/nvidia-open/none.
+- **ARM aarch64:** Eliminado en v0.4.12 — no hay hardware para validar. Perfil aarch64 eliminado, build-iso.sh solo soporta x86_64.
