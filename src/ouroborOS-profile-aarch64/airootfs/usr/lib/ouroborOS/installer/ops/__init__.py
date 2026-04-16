@@ -1,1 +1,0 @@
-"""ouroborOS installer operations package."""

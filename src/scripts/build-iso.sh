@@ -30,12 +30,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$REPO_ROOT/out"
 WORK_DIR="/tmp/ouroborOS-build"
-PROFILE_DIR=""          # auto-selected based on --arch if not explicitly set
+PROFILE_DIR=""
 CLEAN_BUILD=false
 SIGN_ISO=false
 E2E_CONFIG=""
 VERSION=""
-TARGET_ARCH="x86_64"   # default architecture
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -70,8 +69,6 @@ while [[ $# -gt 0 ]]; do
         -c|--clean)          CLEAN_BUILD=true; shift ;;
         -s|--sign)           SIGN_ISO=true; shift ;;
         --version=*)         VERSION="${1#*=}"; shift ;;
-        --arch=*)            TARGET_ARCH="${1#*=}"; shift ;;
-        --arch)              TARGET_ARCH="$2"; shift 2 ;;
         --e2e-config=*)      E2E_CONFIG="${1#*=}"; shift ;;
         --e2e-config)        E2E_CONFIG="$2"; shift 2 ;;
         -h|--help)           usage ;;
@@ -79,24 +76,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── Architecture-specific defaults ────────────────────────────────────────────
-case "$TARGET_ARCH" in
-    x86_64)
-        [[ -z "$PROFILE_DIR" ]] && PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile"
-        ;;
-    aarch64)
-        [[ -z "$PROFILE_DIR" ]] && PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile-aarch64"
-        ;;
-    *)
-        log_error "Unsupported architecture: ${TARGET_ARCH}. Must be x86_64 or aarch64."
-        exit 1
-        ;;
-esac
+# ── Profile directory ──────────────────────────────────────────────────────────
+[[ -z "$PROFILE_DIR" ]] && PROFILE_DIR="$REPO_ROOT/src/ouroborOS-profile"
 
 # ── Preflight checks ──────────────────────────────────────────────────────────
 log_section "Preflight Checks"
 
-log_info "Target architecture: ${TARGET_ARCH}"
 log_info "Profile directory: ${PROFILE_DIR}"
 
 if [[ "$EUID" -ne 0 ]]; then
