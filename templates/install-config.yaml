@@ -43,14 +43,22 @@ shell: bash
 
 # Desktop profile — a starting-point package set. Optional; defaults to
 # "minimal" (no extra packages, TTY-only base) if omitted.
-# Options: minimal | hyprland | niri | gnome | kde
+# Options: minimal | hyprland | niri | gnome | kde | cosmic
 #
 # dm: display manager (Wayland-native). "auto" picks the canonical DM for
-# the profile (gnome→gdm, hyprland→sddm, niri→sddm, kde→plm, rest→none).
-# Override with gdm, sddm, plm, or none (TTY login).
+# the profile (gnome→gdm, hyprland→sddm, niri→sddm, kde→plm, cosmic→greetd, rest→none).
+# Override with: gdm | sddm | plm | greetd | none (TTY login).
+#
+# kde_flavor: Plasma meta-package (KDE profile only).
+# Options: plasma-meta (default, ~1 GB) | plasma (full, ~1.5 GB) | plasma-desktop (minimal, ~400 MB)
+#
+# gpu_driver: GPU driver to install. "auto" detects via lspci.
+# Options: auto | mesa | amdgpu | nvidia | nvidia-open | none
 desktop:
   profile: minimal
   dm: auto
+  kde_flavor: plasma-meta
+  gpu_driver: auto
 
 extra_packages:
   - openssh

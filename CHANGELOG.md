@@ -5,6 +5,45 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-04-16
+
+### Added
+
+- Desktop profiles: COSMIC Desktop profile — fully in `[extra]`, no AUR required.
+  Includes `cosmic-session`, `cosmic-comp`, `cosmic-terminal`, `cosmic-files`,
+  `cosmic-launcher`, `cosmic-settings`, `cosmic-applets`, `cosmic-notifications`,
+  `cosmic-bg`, `cosmic-idle`, `cosmic-panel`, `cosmic-osd`, `cosmic-app-library`,
+  `xdg-desktop-portal-cosmic`.
+- Desktop profiles: `greetd` display manager option — used by COSMIC profile with
+  `cosmic-greeter`. `configure.sh` writes `/etc/greetd/config.toml` and creates
+  the `greeter` system user automatically.
+- Desktop profiles: KDE flavor selector — `kde_flavor` field in YAML and TUI.
+  Options: `plasma-meta` (recommended, ~1 GB), `plasma` (full, ~1.5 GB),
+  `plasma-desktop` (minimal, ~400 MB). Dynamically injected as first package
+  in `packages_for()`.
+- Desktop profiles: GPU driver detection and selection — `gpu_driver` field in YAML
+  and TUI. `_detect_gpu()` probes `lspci` and suggests the appropriate driver.
+  `configure.sh` installs: `nvidia` (proprietary), `nvidia-open`, `mesa`/`amdgpu`,
+  or `vulkan-intel` for auto-detected Intel. `none` skips install.
+- `config.py`: `DesktopConfig.kde_flavor` and `DesktopConfig.gpu_driver` fields
+  with YAML loading and validation.
+
+### Changed
+
+- Desktop profiles: Hyprland profile migrated to the Hypr ecosystem.
+  `wofi` replaced by `hyprlauncher` (Hypr ecosystem launcher, in `[extra]`).
+  `hyprlock`, `hypridle` moved from AUR to regular packages (now in `[extra]`).
+  Added `hyprpaper`, `hyprsunset`, `hyprland-qt-support`.
+  `hyprshot` removed from AUR defaults — `grim`+`slurp` already provide screenshot
+  capability; `quickshell` remains as the only AUR package for this profile.
+- `desktop_profiles.py`: `packages_for()` accepts optional `kde_flavor` parameter.
+  `VALID_DMS` and DM tables updated to include `greetd`.
+
+### Fixed
+
+- CI: dry-run test was failing after erofs migration: `mksquashfs` mock replaced
+  with `mkfs.erofs` mock to match the updated preflight check in `build-iso.sh`.
+
 ## [0.4.6] - 2026-04-15
 
 ### Added
@@ -239,6 +278,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 93% pytest coverage.
 - Developer tooling scripts.
 
+[0.4.7]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.7
 [0.4.6]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.6
 [0.4.5]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.4

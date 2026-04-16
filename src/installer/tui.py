@@ -410,10 +410,11 @@ class TUI:
 
     _DESKTOP_PROFILES: list[tuple[str, str]] = [
         ("minimal",  "Nothing extra — TTY-only base (you install the DE yourself)"),
-        ("hyprland", "Hyprland + waybar + foot + wofi (Wayland tiling)"),
+        ("hyprland", "Hyprland + Hypr ecosystem (waybar, foot, hyprlauncher, hyprlock…)"),
         ("niri",     "Niri + foot + fuzzel (scrollable-tiling Wayland)"),
         ("gnome",    "GNOME desktop (gdm by default)"),
-        ("kde",      "KDE Plasma (sddm by default)"),
+        ("kde",      "KDE Plasma — flavor selector next (plm by default)"),
+        ("cosmic",   "COSMIC Desktop by System76 — Wayland-native, greetd"),
     ]
 
     def show_desktop_selection(self) -> str:
@@ -437,20 +438,72 @@ class TUI:
     # ------------------------------------------------------------------
 
     _DM_OPTIONS: list[tuple[str, str]] = [
-        ("auto", "Recommended for this profile (default)"),
-        ("gdm",  "GNOME Display Manager — Wayland-native"),
-        ("sddm", "Simple Desktop Display Manager — Wayland support"),
-        ("plm",  "Plasma Login Manager — KDE native, fork of SDDM"),
-        ("none", "TTY login — launch your session manually"),
+        ("auto",   "Recommended for this profile (default)"),
+        ("gdm",    "GNOME Display Manager — Wayland-native"),
+        ("sddm",   "Simple Desktop Display Manager — Wayland support"),
+        ("plm",    "Plasma Login Manager — KDE native, fork of SDDM"),
+        ("greetd", "greetd — generic greeter daemon (COSMIC uses cosmic-greeter)"),
+        ("none",   "TTY login — launch your session manually"),
     ]
 
     def show_dm_selection(self, profile: str = "") -> str:
-        """Prompt for a display manager. Returns 'auto', 'gdm', 'sddm', or 'none'."""
+        """Prompt for a display manager. Returns 'auto', 'gdm', 'sddm', 'greetd', or 'none'."""
         label = f"Display Manager (profile: {profile})" if profile else "Display Manager"
         prompt = "Select a display manager:"
         if self._backend == "rich":
             return self._rich_select(label, prompt, self._DM_OPTIONS, default="auto")
         return self._select_from_list(label, prompt, self._DM_OPTIONS, default="auto")
+
+    # ------------------------------------------------------------------
+    # KDE flavor selection
+    # ------------------------------------------------------------------
+
+    _KDE_FLAVOR_OPTIONS: list[tuple[str, str]] = [
+        ("plasma-meta",    "plasma-meta    — curated set, recommended (~1 GB)"),
+        ("plasma",         "plasma         — full group, all components (~1.5 GB)"),
+        ("plasma-desktop", "plasma-desktop — minimal shell only (~400 MB)"),
+    ]
+
+    def show_kde_flavor(self) -> str:
+        """Prompt for a KDE Plasma flavor. Returns 'plasma-meta', 'plasma', or 'plasma-desktop'."""
+        if self._backend == "rich":
+            return self._rich_select(
+                "KDE Plasma Flavor",
+                "Select which Plasma meta-package to install:",
+                self._KDE_FLAVOR_OPTIONS,
+                default="plasma-meta",
+            )
+        return self._select_from_list(
+            "KDE Plasma Flavor",
+            "Select which Plasma meta-package to install:",
+            self._KDE_FLAVOR_OPTIONS,
+            default="plasma-meta",
+        )
+
+    # ------------------------------------------------------------------
+    # GPU driver selection
+    # ------------------------------------------------------------------
+
+    _GPU_OPTIONS: list[tuple[str, str]] = [
+        ("auto",         "Auto-detect GPU and install recommended driver (default)"),
+        ("mesa",         "Mesa — Intel / AMD open source (xf86-video-amdgpu + vulkan-radeon)"),
+        ("amdgpu",       "AMD GPU — mesa + vulkan-radeon explicitly"),
+        ("nvidia",       "NVIDIA — proprietary driver (recommended for NVIDIA hardware)"),
+        ("nvidia-open",  "NVIDIA Open — open kernel module (Turing/Ampere+)"),
+        ("none",         "Skip — install GPU drivers manually after reboot"),
+    ]
+
+    def show_gpu_selection(self, detected: str = "auto") -> str:
+        """Prompt for GPU driver choice. *detected* is shown as the auto-detect result."""
+        label = "GPU Driver"
+        prompt = (
+            f"Detected GPU family: {detected}. Select the driver to install:"
+            if detected != "auto"
+            else "Select the GPU driver to install:"
+        )
+        if self._backend == "rich":
+            return self._rich_select(label, prompt, self._GPU_OPTIONS, default="auto")
+        return self._select_from_list(label, prompt, self._GPU_OPTIONS, default="auto")
 
     # ------------------------------------------------------------------
     # Shell selection

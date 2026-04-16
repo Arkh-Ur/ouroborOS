@@ -20,12 +20,17 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "xdg-desktop-portal-hyprland",
         "waybar",
         "foot",
-        "wofi",
+        "hyprlauncher",         # Hypr ecosystem launcher (replaces wofi)
         "hyprpolkitagent",
-        "dunst",           # notifications
-        "grim",            # screenshot backend (required by hyprshot AUR)
-        "slurp",           # region selector for screenshots
-        "thunar",          # file manager (lighter than dolphin, no KDE deps)
+        "hyprlock",             # lock screen — Hypr ecosystem (in extra)
+        "hypridle",             # idle daemon — Hypr ecosystem (in extra)
+        "hyprpaper",            # wallpaper setter — Hypr ecosystem (in extra)
+        "hyprsunset",           # color temperature — Hypr ecosystem (in extra)
+        "hyprland-qt-support",  # Qt6 Wayland integration
+        "dunst",                # notifications (no Hypr-native notif daemon in extra)
+        "grim",                 # screenshot backend
+        "slurp",                # region selector for screenshots
+        "thunar",               # file manager (lighter than dolphin, no KDE deps)
         "qt5-wayland",
         "qt6-wayland",
     ],
@@ -49,15 +54,33 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "xdg-user-dirs",
     ],
     "kde": [
-        "plasma",
-        # kde-applications-meta installs ~300 packages (~1.5 GB) including games,
-        # education and office suites. Replaced with a curated essential set.
+        # Plasma flavor is selected at install time (plasma / plasma-meta / plasma-desktop).
+        # The flavor package is added dynamically by packages_for() based on kde_flavor.
+        # Curated essential apps are always included on top.
         "dolphin",          # file manager
         "konsole",          # terminal
         "kate",             # text editor
         "gwenview",         # image viewer
         "ark",              # archive manager
         "ffmpegthumbs",     # video thumbnails in dolphin
+    ],
+    "cosmic": [
+        # COSMIC is fully in [extra] as of 2026-04-15 — no AUR needed.
+        "cosmic-session",           # session manager
+        "cosmic-comp",              # Wayland compositor
+        "cosmic-terminal",          # terminal emulator
+        "cosmic-files",             # file manager
+        "cosmic-launcher",          # app launcher
+        "cosmic-settings",          # settings UI
+        "cosmic-settings-daemon",   # settings daemon
+        "cosmic-applets",           # system applets
+        "cosmic-notifications",     # notification daemon
+        "cosmic-bg",                # wallpaper/background
+        "cosmic-idle",              # idle management
+        "cosmic-panel",             # panel/taskbar
+        "cosmic-osd",               # on-screen display
+        "cosmic-app-library",       # app library/grid
+        "xdg-desktop-portal-cosmic",
     ],
 }
 
@@ -68,51 +91,74 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
 PROFILE_AUR_PACKAGES: dict[str, list[str]] = {
     "minimal":  [],
     "hyprland": [
-        "quickshell",    # Qt6/QML Wayland shell (hyprland-native, not in repos)
-        "hyprlock",      # Hyprland screen locker
-        "hypridle",      # Idle daemon for hyprland
-        "hyprshot",      # Screenshot tool for hyprland
+        "quickshell",    # Qt6/QML Wayland shell (not in official repos)
+        # hyprlock, hypridle — moved to PROFILE_PACKAGES (now in [extra])
+        # hyprshot — removed; grim+slurp already cover screenshots
     ],
-    "niri":     [],      # niri ya está en [extra]; no AUR needed
+    "niri":     [],      # niri is in [extra]; no AUR needed
     "gnome":    [],
     "kde":      [],
+    "cosmic":   [],      # cosmic is fully in [extra]; no AUR needed
 }
+
+# ---------------------------------------------------------------------------
+# KDE flavor selector
+# ---------------------------------------------------------------------------
+#
+# Three plasma meta-packages are offered:
+#   plasma         — full group (~1.5 GB, all Plasma components)
+#   plasma-meta    — curated meta (~1 GB, recommended)
+#   plasma-desktop — minimal (~400 MB, power users only)
+#
+# The flavor package is injected by packages_for() as the first entry.
+
+_KDE_FLAVOR_PACKAGES: dict[str, str] = {
+    "plasma":         "plasma",
+    "plasma-meta":    "plasma-meta",
+    "plasma-desktop": "plasma-desktop",
+}
+
+VALID_KDE_FLAVORS: frozenset[str] = frozenset(_KDE_FLAVOR_PACKAGES.keys())
 
 # ---------------------------------------------------------------------------
 # Display manager options (Wayland-native only)
 # ---------------------------------------------------------------------------
 #
-# Four options are offered — all Wayland-native:
-#   gdm   — GNOME Display Manager.  Full Wayland compositor.
-#   sddm  — Simple Desktop Display Manager.  Wayland support via Qt.
-#   plm   — Plasma Login Manager.  Fork of SDDM, native KDE integration.
-#   none  — TTY login.  User launches their session manually.
+# Five options are offered — all Wayland-native:
+#   gdm    — GNOME Display Manager.  Full Wayland compositor.
+#   sddm   — Simple Desktop Display Manager.  Wayland support via Qt.
+#   plm    — Plasma Login Manager.  Fork of SDDM, native KDE integration.
+#   greetd — Generic greeter daemon.  Used with cosmic-greeter for COSMIC.
+#   none   — TTY login.  User launches their session manually.
 #
 # The "auto" value (default) resolves to the canonical DM for each profile,
 # falling back to "none" for profiles that don't ship one.
 
-VALID_DMS: frozenset[str] = frozenset({"gdm", "sddm", "plm", "none"})
+VALID_DMS: frozenset[str] = frozenset({"gdm", "sddm", "plm", "greetd", "none"})
 
 # Canonical DM for each profile (used when dm="auto")
 _PROFILE_DEFAULT_DM: dict[str, str] = {
-    "gnome": "gdm",
-    "kde": "plm",
+    "gnome":   "gdm",
+    "kde":     "plm",
     "hyprland": "sddm",
-    "niri": "sddm",
+    "niri":    "sddm",
+    "cosmic":  "greetd",
 }
 
 # Pacman package for each DM (installed by pacstrap when needed)
 _DM_PACKAGE: dict[str, str] = {
-    "gdm": "gdm",
-    "sddm": "sddm",
-    "plm": "plasma-login-manager",
+    "gdm":    "gdm",
+    "sddm":   "sddm",
+    "plm":    "plasma-login-manager",
+    "greetd": "greetd",
 }
 
 # systemd service unit for each DM (used by configure.sh)
 _DM_SERVICE: dict[str, str] = {
-    "gdm": "gdm",
-    "sddm": "sddm",
-    "plm": "plasmalogin",
+    "gdm":    "gdm",
+    "sddm":   "sddm",
+    "plm":    "plasmalogin",
+    "greetd": "greetd",
 }
 
 
@@ -131,7 +177,7 @@ def resolve_dm(profile: str, dm_choice: str = "auto") -> str:
 
     Args:
         profile: Desktop profile name.
-        dm_choice: 'gdm', 'sddm', 'plasmalogin', 'none', or 'auto'.
+        dm_choice: 'gdm', 'sddm', 'plasmalogin', 'greetd', 'none', or 'auto'.
 
     Returns:
         The resolved DM name.
@@ -206,14 +252,22 @@ def is_valid_profile(profile: str) -> bool:
     return profile in VALID_PROFILES
 
 
-def packages_for(profile: str) -> list[str]:
-    """Return the package list for *profile*, or raise ValueError."""
+def packages_for(profile: str, kde_flavor: str = "plasma-meta") -> list[str]:
+    """Return the package list for *profile*, or raise ValueError.
+
+    For the 'kde' profile, the *kde_flavor* parameter controls which Plasma
+    meta-package is prepended (plasma / plasma-meta / plasma-desktop).
+    """
     if profile not in PROFILE_PACKAGES:
         raise ValueError(
             f"Unknown desktop profile: {profile!r}. "
             f"Valid profiles: {sorted(VALID_PROFILES)}"
         )
-    return list(PROFILE_PACKAGES[profile])
+    pkgs = list(PROFILE_PACKAGES[profile])
+    if profile == "kde":
+        flavor_pkg = _KDE_FLAVOR_PACKAGES.get(kde_flavor, "plasma-meta")
+        pkgs = [flavor_pkg] + pkgs
+    return pkgs
 
 
 def aur_packages_for(profile: str) -> list[str]:
