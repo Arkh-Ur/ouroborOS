@@ -5,6 +5,19 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-04-15
+
+### Fixed
+
+- CI: `mkarchiso` patch pipeline failing due to non-zero `du` exit code in
+  `_make_efibootimg()`. Added `|| true` to prevent pipefail from aborting the build.
+- CI: `python3` not available in the Arch Linux base container image.
+  Replaced Python-based mkarchiso patch with `awk`.
+- CI: `mkarchiso` losing execute permission after `awk` patch (temp file via redirect
+  drops original permissions). Fixed by adding `chmod +x` after `mv`.
+- CI: `head -1` interpreted as an invalid flag by `sh` (dash) in the runner.
+  Changed to POSIX-compliant `head -n 1` throughout the workflow.
+
 ## [0.4.3] - 2026-04-13
 
 ### Fixed

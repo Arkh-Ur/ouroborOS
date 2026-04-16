@@ -31,7 +31,7 @@ jobs:
             libisoburn git erofs-utils mtools
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up loop devices
         run: |
@@ -119,7 +119,7 @@ jobs:
             libisoburn git erofs-utils mtools github-cli
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
