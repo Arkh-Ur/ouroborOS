@@ -603,7 +603,6 @@ configure_dual_boot() {
     log_info "Dual-boot: scanning ESP for existing OS boot entries..."
 
     local esp_loader_dir="${TARGET}/boot/loader/entries"
-    local esp_efi_dir="${TARGET}/boot/EFI"
 
     # Detect Windows Boot Manager
     local win_efi="${TARGET}/boot/EFI/Microsoft/Boot/bootmgfw.efi"
