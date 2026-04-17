@@ -1488,6 +1488,16 @@ GREETD_EOF
     }
     write_to_root_subvolume _write_systemd_enables_to_root || true
 
+    # Install system.yaml if the Python installer already wrote it to TARGET.
+    # _write_system_yaml() in state_machine.py writes it during FINISH state;
+    # this step ensures /etc/ouroboros/ has the correct permissions.
+    if [[ -f "${TARGET}/etc/ouroboros/system.yaml" ]]; then
+        chmod 644 "${TARGET}/etc/ouroboros/system.yaml"
+        log_ok "system.yaml present at ${TARGET}/etc/ouroboros/system.yaml (chmod 644)."
+    else
+        log_warn "system.yaml not found at ${TARGET}/etc/ouroboros/system.yaml — will be written by installer at FINISH state."
+    fi
+
     log_ok "All configuration steps complete."
 }
 

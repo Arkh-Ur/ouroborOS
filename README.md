@@ -4,7 +4,7 @@
 [![Test Suite](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml)
 [![Lint](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml)
 
-[![Donate](https://nowpayments.io/images/embeds/donation-button-white.svg)](https://nowpayments.io/donation/arkh_ur)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61XEME9)
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**. Includes `our-aur` (containerized AUR helper) and `our-flat` (Flatpak wrapper).
 
@@ -218,9 +218,11 @@ All shell scripts must pass `shellcheck`. Python code must pass `ruff`. Tests mu
 
 ## Support the project
 
-ouroborOS is an independent open-source project. If it saves you time or you want to see it grow, consider donating — crypto accepted via NOWPayments:
+ouroborOS is an independent open-source project. If it saves you time or you want to see it grow, consider supporting it on Ko-Fi:
 
-[![Donate with crypto](https://nowpayments.io/images/embeds/donation-button-black.svg)](https://nowpayments.io/donations/arkh_ur)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61XEME9)
+
+<iframe id='kofiframe' src='https://ko-fi.com/arkhur/?hidefeed=true&widget=true&embed=true&preview=true' style='border:none;width:100%;padding:4px;background:#f9f9f9;' height='712' title='arkhur'></iframe>
 
 ---
 
