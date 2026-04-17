@@ -342,3 +342,105 @@ echo "Teardown complete"
 |-------|--------|
 | `homectl create --identity=JSON` fails in QEMU | Under investigation — use `homed_storage: classic` in E2E config |
 | homed-migrate.sh rollback leaves user as classic | Expected — system functional, home encryption disabled |
+| mkarchiso patch must be applied locally before build | `sudo sed -i '537s/^    )"$/    )" \|\| true/' /usr/bin/mkarchiso` — CI applies it automatically but local builds don't |
+
+---
+
+## Phase 5 — Additional Verifications
+
+Run these after the standard Phase 3 verifications for Phase 5 milestones.
+
+### v0.5.0 — system.yaml
+
+```bash
+# system.yaml exists and is valid YAML
+$SSH 'test -f /etc/ouroboros/system.yaml' && echo "✓ system.yaml" || echo "✗ system.yaml MISSING"
+$SSH 'python3 -c "import yaml; yaml.safe_load(open(\"/etc/ouroboros/system.yaml\"))" 2>/dev/null' \
+    && echo "✓ YAML válido" || echo "✗ YAML inválido"
+$SSH 'grep -q "channel:" /etc/ouroboros/system.yaml' && echo "✓ channel field" || echo "✗"
+$SSH 'grep -q "base_packages:" /etc/ouroboros/system.yaml' && echo "✓ base_packages" || echo "✗"
+$SSH 'grep -q "users:" /etc/ouroboros/system.yaml' && echo "✓ users" || echo "✗"
+```
+
+### v0.5.1 — .snapshot.yaml
+
+```bash
+# install snapshot has .snapshot.yaml
+$SSH 'echo changeme | sudo -S test -f /.snapshots/install/.snapshot.yaml' \
+    && echo "✓ install .snapshot.yaml" || echo "✗"
+$SSH 'echo changeme | sudo -S grep -q "type: install" /.snapshots/install/.snapshot.yaml' \
+    && echo "✓ type: install" || echo "✗"
+
+# Create snapshot and verify .snapshot.yaml generated
+$SSH 'echo changeme | sudo -S our-snapshot create --name phase5-test'
+$SSH 'echo changeme | sudo -S test -f /.snapshots/phase5-test/.snapshot.yaml' \
+    && echo "✓ .snapshot.yaml creado" || echo "✗"
+
+# ouroboros-rebase --dry-run
+$SSH 'echo changeme | sudo -S ouroboros-rebase --dry-run 2>&1' | grep -qiE "nothing|up.to.date|dry" \
+    && echo "✓ rebase dry-run OK" || echo "✗"
+```
+
+### v0.5.3 — ouroboros-health
+
+```bash
+# Health reports clean system
+HEALTH=$($SSH 'echo changeme | sudo -S ouroboros-health 2>&1')
+echo "$HEALTH" | grep -q "0 failed" && echo "✓ 0 failed units" || echo "✗"
+echo "$HEALTH" | grep -q "read-only\|ro=true" && echo "✓ root RO" || echo "✗"
+echo "$HEALTH" | grep -q "system.yaml" && echo "✓ system.yaml check" || echo "✗"
+
+# Doctor finds nothing to fix on clean install
+$SSH 'echo changeme | sudo -S ouroboros-health --doctor 2>&1' \
+    | grep -qi "all.*ok\|nothing\|clean" && echo "✓ doctor clean" || echo "✗"
+```
+
+### v0.5.4 — Multi-usuario (E2E YAML: phase5-e2e.yaml con 2 usuarios)
+
+```bash
+# Both users exist
+for user in admin testuser; do
+    $SSH "id $user 2>/dev/null" | grep -q "uid=" \
+        && echo "✓ user $user exists" || echo "✗ user $user MISSING"
+done
+
+# admin in wheel, testuser not
+$SSH 'id admin' | grep -q "wheel" && echo "✓ admin in wheel" || echo "✗"
+$SSH 'id testuser' | grep -v "wheel" > /dev/null && echo "✓ testuser not in wheel" || echo "✗"
+
+# Homes exist
+for user in admin testuser; do
+    $SSH "test -d /home/$user" && echo "✓ /home/$user" || echo "✗ /home/$user MISSING"
+done
+
+# system.yaml lists both users
+$SSH 'grep -c "username:" /etc/ouroboros/system.yaml' | grep -q "2" \
+    && echo "✓ 2 users in system.yaml" || echo "✗"
+```
+
+### v0.5.6 — ouroboros-rebase + our-snapshot diff
+
+```bash
+# our-snapshot diff (requires 2+ snapshots)
+$SSH 'echo changeme | sudo -S our-snapshot diff install phase5-test 2>&1' \
+    | grep -qiE "added|modified|deleted|no.diff|identical" && echo "✓ diff OK" || echo "✗"
+
+# pending-verification created by our-pac (mock test)
+$SSH 'echo changeme | sudo -S our-pac --dry-run -Syu 2>/dev/null || true'
+```
+
+## Pass/Fail Summary — Phase 5
+
+| Tag | Check | Expected |
+|-----|-------|----------|
+| v0.5.0 | system.yaml exists and valid | ✓ |
+| v0.5.0 | base_packages + users in system.yaml | ✓ |
+| v0.5.1 | .snapshot.yaml in install snapshot | ✓ |
+| v0.5.1 | our-snapshot create generates .snapshot.yaml | ✓ |
+| v0.5.1 | ouroboros-rebase --dry-run runs without error | ✓ |
+| v0.5.3 | ouroboros-health reports 0 failed units | ✓ |
+| v0.5.3 | ouroboros-health --doctor reports clean | ✓ |
+| v0.5.4 | 2+ users created and functional | ✓ |
+| v0.5.4 | Correct wheel membership per user | ✓ |
+| v0.5.4 | system.yaml lists all users | ✓ |
+| v0.5.6 | our-snapshot diff runs without error | ✓ |
