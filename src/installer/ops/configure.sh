@@ -1507,6 +1507,24 @@ GREETD_EOF
         log_warn "system.yaml not found at ${TARGET}/etc/ouroboros/system.yaml — will be written by installer at FINISH state."
     fi
 
+    # Seal @ as immutable — this is the critical step that activates the
+    # our-pac flow on first boot. Without this, our-pac detects a writable
+    # root and falls back to plain pacman (no snapshot, no lock cycle).
+    # Must run LAST — after all writes to TARGET are complete.
+    local _top_mount
+    _top_mount=$(mktemp -d)
+    if mount -o subvolid=5 "${DEVICE}" "${_top_mount}" 2>/dev/null; then
+        if btrfs property set "${_top_mount}/@" ro true 2>/dev/null; then
+            log_ok "Root subvolume @ sealed as immutable (ro=true)."
+        else
+            log_warn "Could not seal @ as immutable — our-pac will run in unlocked mode on first boot."
+        fi
+        umount "${_top_mount}" 2>/dev/null || true
+    else
+        log_warn "Could not mount Btrfs top-level to seal @."
+    fi
+    rmdir "${_top_mount}" 2>/dev/null || true
+
     log_ok "All configuration steps complete."
 }
 
