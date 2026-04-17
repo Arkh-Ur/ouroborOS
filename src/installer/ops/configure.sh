@@ -1275,10 +1275,19 @@ GREETD_EOF
     local SNAP_ON_BOOT_SRC="/usr/local/bin/ouroboros-snapshot-on-boot"
     local SNAP_ON_BOOT_UNIT_SRC="/etc/systemd/system/ouroboros-snapshot-on-boot.service"
     if [[ -f "${SNAP_ON_BOOT_SRC}" && -f "${SNAP_ON_BOOT_UNIT_SRC}" ]]; then
+        # @ may be ro=true at this point (set by zzz-post-upgrade pacman hook during
+        # configure_gpu). Temporarily clear ro before copying directly to TARGET.
+        local _snap_ro
+        _snap_ro=$(btrfs property get "${TARGET}" ro 2>/dev/null | grep -oP '(?<=ro=)\w+' || echo "false")
+        [[ "$_snap_ro" == "true" ]] && btrfs property set "${TARGET}" ro false 2>/dev/null || true
+
         cp "${SNAP_ON_BOOT_SRC}" "${TARGET}/usr/local/bin/ouroboros-snapshot-on-boot"
         chmod 0755 "${TARGET}/usr/local/bin/ouroboros-snapshot-on-boot"
         mkdir -p "${TARGET}/etc/systemd/system"
         cp "${SNAP_ON_BOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-snapshot-on-boot.service"
+
+        [[ "$_snap_ro" == "true" ]] && btrfs property set "${TARGET}" ro true 2>/dev/null || true
+
         in_chroot systemctl enable ouroboros-snapshot-on-boot.service
         log_ok "ouroboros-snapshot-on-boot.service installed and enabled."
     else
