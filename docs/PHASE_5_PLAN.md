@@ -146,7 +146,7 @@ disk:
 - [x] `users:` lista el usuario creado con su configuración
 - [x] `our-pac -S vim` → agrega `vim` a `user_packages`
 - [x] `our-pac -R vim` → elimina `vim` de `user_packages`
-- [x] Tests: `test_system_yaml.py`
+- [x] Tests: `test_state_machine.py::TestSystemYaml` (8 tests)
 
 ---
 

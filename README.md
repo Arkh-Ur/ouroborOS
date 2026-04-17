@@ -222,8 +222,6 @@ ouroborOS is an independent open-source project. If it saves you time or you wan
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61XEME9)
 
-<iframe id='kofiframe' src='https://ko-fi.com/arkhur/?hidefeed=true&widget=true&embed=true&preview=true' style='border:none;width:100%;padding:4px;background:#f9f9f9;' height='712' title='arkhur'></iframe>
-
 ---
 
 ## License
