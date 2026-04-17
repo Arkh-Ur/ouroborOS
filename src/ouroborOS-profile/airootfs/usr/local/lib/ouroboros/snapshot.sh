@@ -271,12 +271,23 @@ pre_upgrade_snapshot() {
 
     _log_info "Pre-upgrade snapshot: ${timestamp}"
     create_snapshot "/" "$snap_path" --readonly
-    generate_snapshot_boot_entry "$timestamp" "/boot" "quiet ro"
+    generate_snapshot_boot_entry "$timestamp" "/boot" "quiet"
 
     # Prune old snapshots after creating the new one
     prune_snapshots "$snapshots_dir" 5 30
 
     _log_ok "Pre-upgrade snapshot complete."
+}
+
+# _detect_current_subvol — returns the Btrfs subvolume currently mounted at /
+# Output: "@", "@snapshots/install", "@snapshots/A", etc.
+# Returns 1 (prints "@") if detection fails.
+_detect_current_subvol() {
+    local opts subvol
+    opts=$(findmnt -n -o OPTIONS / 2>/dev/null) || { echo "@"; return 1; }
+    subvol=$(printf '%s' "$opts" | tr ',' '\n' | grep '^subvol=' | head -1 | cut -d= -f2-)
+    [[ -z "$subvol" ]] && { echo "@"; return 1; }
+    echo "$subvol"
 }
 
 # --- CLI dispatcher ---------------------------------------------------------
@@ -300,7 +311,7 @@ if [[ "${1:-}" == "--action" ]]; then
                 exit 1
             fi
             create_install_snapshot "$target"
-            generate_snapshot_boot_entry "install" "${target}/boot" "quiet ro"
+            generate_snapshot_boot_entry "install" "${target}/boot" "quiet"
             ;;
         *)
             _log_error "Unknown action: $action"

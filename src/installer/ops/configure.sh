@@ -82,12 +82,26 @@ write_to_root_subvolume() {
     local callback="$1"; shift
     _discover_root_device
 
-    local tmp_root
+    local tmp_root tmp_top _was_ro=0
     tmp_root=$(mktemp -d)
+    tmp_top=$(mktemp -d)
+
+    # The pacman PostTransaction hook (99-post-upgrade) runs inside the chroot
+    # during GPU/package installs and sets btrfs property ro=true on @.
+    # Even with the rw mount option, Btrfs enforces the subvolume ro property
+    # at the VFS level — writes fail with EROFS. We must temporarily clear it.
+    # Use subvolid=5 (top-level) to manipulate the property on the @ subvolume.
+    if mount -t btrfs -o "subvolid=5,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_top" 2>/dev/null; then
+        if btrfs property get "${tmp_top}/@" ro 2>/dev/null | grep -q "ro=true"; then
+            _was_ro=1
+            btrfs property set "${tmp_top}/@" ro false 2>/dev/null || true
+        fi
+        umount "$tmp_top" 2>/dev/null || true
+    fi
+    rmdir "$tmp_top" 2>/dev/null || true
 
     # Mount the @ subvolume directly (subvol=/@), not the top-level (subvolid=5).
-    # Previous bug: mounting subvolid=5 meant callbacks wrote to top-level/etc/
-    # instead of @/etc/, causing "Missing /etc/machine-id" on boot.
+    # This ensures callbacks write to @/etc/ (correct), not top-level/etc/.
     mount -t btrfs -o "subvol=/@,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_root" || {
         log_warn "Could not temp-mount @ subvolume on ${tmp_root}"
         rmdir "$tmp_root" 2>/dev/null || true
@@ -100,6 +114,17 @@ write_to_root_subvolume() {
 
     umount "$tmp_root" 2>/dev/null || true
     rmdir "$tmp_root" 2>/dev/null || true
+
+    # Restore ro=true if @ was read-only before (pacman hook had already set it)
+    if (( _was_ro )); then
+        tmp_top=$(mktemp -d)
+        if mount -t btrfs -o "subvolid=5,compress=zstd,noatime,rw" "$_ROOT_DEVICE" "$tmp_top" 2>/dev/null; then
+            btrfs property set "${tmp_top}/@" ro true 2>/dev/null || true
+            umount "$tmp_top" 2>/dev/null || true
+        fi
+        rmdir "$tmp_top" 2>/dev/null || true
+    fi
+
     return "$rc"
 }
 
@@ -1242,6 +1267,22 @@ GREETD_EOF
         log_ok "our-snapshot-prune.timer enabled (daily snapshot rotation)."
     else
         log_warn "our-snapshot-prune units not found on live ISO — skipping."
+    fi
+
+    # ouroboros-snapshot-on-boot — early-boot service that auto-creates and promotes
+    # a new snapshot when the system boots from @snapshots/X instead of @.
+    # This preserves all existing snapshots as restore points.
+    local SNAP_ON_BOOT_SRC="/usr/local/bin/ouroboros-snapshot-on-boot"
+    local SNAP_ON_BOOT_UNIT_SRC="/etc/systemd/system/ouroboros-snapshot-on-boot.service"
+    if [[ -f "${SNAP_ON_BOOT_SRC}" && -f "${SNAP_ON_BOOT_UNIT_SRC}" ]]; then
+        cp "${SNAP_ON_BOOT_SRC}" "${TARGET}/usr/local/bin/ouroboros-snapshot-on-boot"
+        chmod 0755 "${TARGET}/usr/local/bin/ouroboros-snapshot-on-boot"
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${SNAP_ON_BOOT_UNIT_SRC}" "${TARGET}/etc/systemd/system/ouroboros-snapshot-on-boot.service"
+        in_chroot systemctl enable ouroboros-snapshot-on-boot.service
+        log_ok "ouroboros-snapshot-on-boot.service installed and enabled."
+    else
+        log_warn "ouroboros-snapshot-on-boot not found on live ISO — skipping."
     fi
 
     # ouroboros-firstboot — one-shot service that runs on the first real boot.

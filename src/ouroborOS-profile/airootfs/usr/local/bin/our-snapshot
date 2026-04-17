@@ -62,6 +62,11 @@ _validate_name() {
 
 cmd_list() {
     _check_snapshots_dir
+    _load_lib
+
+    local current_subvol active_snap=""
+    current_subvol=$(_detect_current_subvol) || current_subvol="@"
+    [[ "$current_subvol" == @snapshots/* ]] && active_snap="${current_subvol#@snapshots/}"
 
     local snaps=()
     while IFS= read -r -d '' entry; do
@@ -73,21 +78,38 @@ cmd_list() {
         return 0
     fi
 
-    printf '%-30s  %-10s  %s\n' "NAME" "TYPE" "SIZE"
-    printf '%-30s  %-10s  %s\n' "----" "----" "----"
+    printf '%-2s  %-30s  %-10s  %s\n' "" "NAME" "TYPE" "SIZE"
+    printf '%-2s  %-30s  %-10s  %s\n' "" "----" "----" "----"
     for name in "${snaps[@]}"; do
-        local path="${SNAPSHOTS_DIR}/${name}"
-        local type="rw"
+        local path="${SNAPSHOTS_DIR}/${name}" type="rw" marker="  "
         btrfs property get "$path" ro 2>/dev/null | grep -q 'ro=true' && type="ro"
         local size
         size=$(btrfs filesystem du --raw -s "$path" 2>/dev/null \
                | awk 'NR==2{printf "%.1f MiB", $1/1048576}' || echo "?")
-        printf '%-30s  %-10s  %s\n' "$name" "$type" "$size"
+        [[ "$name" == "$active_snap" ]] && marker="* "
+        printf '%-2s  %-30s  %-10s  %s\n' "$marker" "$name" "$type" "$size"
     done
+
+    if [[ "$current_subvol" == "@" ]]; then
+        echo ""; _info "Running from @ (active root)."
+    elif [[ -n "$active_snap" ]]; then
+        echo ""; _info "* = currently running from this snapshot."
+    fi
 }
 
 cmd_create() {
-    local name="${1:-}"
+    local name="" do_promote=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name|-n) name="${2:?--name requires a value}"; shift 2 ;;
+            --promote) do_promote=true; shift ;;
+            --*)       _die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$name" ]]; then name="$1"; shift
+                else _die "Unexpected argument: $1"; fi
+                ;;
+        esac
+    done
     _load_lib
     _check_snapshots_dir
 
@@ -98,15 +120,27 @@ cmd_create() {
     fi
 
     local dest="${SNAPSHOTS_DIR}/${name}"
-    if [[ -d "$dest" ]]; then
-        _die "Snapshot '${name}' already exists."
+    [[ -d "$dest" ]] && _die "Snapshot '${name}' already exists."
+
+    # Warn if running from a snapshot without --promote
+    local current_subvol
+    current_subvol=$(_detect_current_subvol) || current_subvol="@"
+    if [[ "$current_subvol" != "@" && "$do_promote" == false ]]; then
+        _warn "Running from snapshot '${current_subvol}' (not from @)."
+        _warn "Snapshot will be created but will NOT become the active root."
+        _warn "Use --promote to make it the new permanent root."
     fi
 
     _info "Creating snapshot '${name}'..."
     create_snapshot "/" "$dest" --readonly
     _info "Writing boot entry for '${name}'..."
-    generate_snapshot_boot_entry "$name" "$ESP" "quiet ro"
+    generate_snapshot_boot_entry "$name" "$ESP" "quiet"
     _ok "Snapshot '${name}' created."
+
+    if [[ "$do_promote" == true ]]; then
+        _info "Promoting snapshot '${name}' to active root (snapshot preserved)..."
+        /usr/local/bin/our-rollback promote "$name" --force
+    fi
 }
 
 cmd_delete() {
@@ -189,7 +223,7 @@ cmd_sync_boot_entries() {
         local entry="${ESP}/loader/entries/ouroboros-snapshot-${name}.conf"
         if [[ ! -f "$entry" ]]; then
             _info "  Writing missing entry for '${name}'..."
-            generate_snapshot_boot_entry "$name" "$ESP" "quiet ro"
+            generate_snapshot_boot_entry "$name" "$ESP" "quiet"
             (( synced++ )) || true
         fi
     done < <(find "$SNAPSHOTS_DIR" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
@@ -241,7 +275,7 @@ shift || true
 
 case "$command" in
     list)               cmd_list ;;
-    create)             cmd_create "${1:-}" ;;
+    create)             cmd_create "$@" ;;
     delete)             cmd_delete "${1:-}" ;;
     info)               cmd_info "${1:-}" ;;
     prune)              cmd_prune "$@" ;;

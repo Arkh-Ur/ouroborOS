@@ -149,42 +149,48 @@ cmd_try() {
 
 cmd_promote() {
     local name="${1:?Usage: ${PROGRAM} promote <SNAPSHOT_NAME>}"
+    local force=false
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-y) force=true; shift ;;
+            *) _die "Unknown option for promote: $1" ;;
+        esac
+    done
     _validate_name "$name"
     _check_snapshots_dir
     _check_snapshot_exists "$name"
 
-    local snap_path="${SNAPSHOTS_DIR}/${name}"
     local dev
     dev=$(_root_device)
 
-    _warn "PROMOTE is a permanent operation."
-    _warn "Snapshot '${name}' will become the new root (@)."
-    _warn "The current @ will be saved as @.old (auto-deleted after success)."
-    echo ""
-    read -r -p "Type 'yes' to continue: " confirm
-    [[ "$confirm" == "yes" ]] || _die "Aborted."
+    _warn "PROMOTE will make snapshot '${name}' the new active root (@)."
+    _warn "Snapshot '${name}' will be KEPT as a restore point."
+    if [[ "$force" == false ]]; then
+        echo ""
+        read -r -p "Type 'yes' to continue: " confirm
+        [[ "$confirm" == "yes" ]] || _die "Aborted."
+    else
+        _warn "(--force: skipping confirmation)"
+    fi
 
-    # Step 1: Create a pre-promote snapshot of current @ for safety
+    # Step 1: Create a pre-promote safety snapshot of current @ for recovery
     local pre_promote_name
     pre_promote_name="pre-promote-$(date +%Y-%m-%dT%H%M%S)"
     _info "Creating pre-promote safety snapshot '${pre_promote_name}'..."
     _load_lib
     create_snapshot "/" "${SNAPSHOTS_DIR}/${pre_promote_name}" --readonly
-    generate_snapshot_boot_entry "$pre_promote_name" "$ESP" "quiet ro"
+    generate_snapshot_boot_entry "$pre_promote_name" "$ESP" "quiet"
     _ok "Safety snapshot created: ${pre_promote_name}"
 
-    # Step 2: Make the snapshot read-write (promote requires rw)
-    _info "Making snapshot '${name}' read-write for promotion..."
-    btrfs property set "$snap_path" ro false
-
-    # Step 3: Mount top-level and perform atomic swap via rename
-    _info "Mounting Btrfs top-level for atomic swap..."
+    # Step 2: Mount top-level for atomic operations
+    _info "Mounting Btrfs top-level..."
     local toplevel
     toplevel=$(_mount_toplevel "$dev")
 
-    # Cleanup trap: if anything fails, unmount and abort cleanly
     cleanup() {
         local exit_code=$?
+        btrfs property set "${toplevel}/@snapshots/${name}" ro true 2>/dev/null || true
         umount "$toplevel" 2>/dev/null || true
         rmdir "$toplevel" 2>/dev/null || true
         if [[ $exit_code -ne 0 ]]; then
@@ -194,51 +200,45 @@ cmd_promote() {
     trap cleanup EXIT
 
     local tl_root="${toplevel}/@"
-    local tl_old="${toplevel}/@.old"
     local tl_snap="${toplevel}/@snapshots/${name}"
+    local tl_new="${toplevel}/@_new"
 
     [[ -d "$tl_root" ]] || _die "@ subvolume not found at ${tl_root}."
     [[ -d "$tl_snap" ]] || _die "@snapshots/${name} not found at ${tl_snap}."
 
-    if [[ -d "$tl_old" ]]; then
-        _warn "@.old already exists — deleting previous rollback remnant..."
-        btrfs subvolume delete "$tl_old"
-    fi
+    # Step 3: Copy-promote — snapshot @snapshots/NAME into @_new (SOURCE IS KEPT)
+    # This preserves @snapshots/NAME as a restore point, unlike a rename.
+    _info "Creating copy of '${name}' as @_new..."
+    btrfs property set "$tl_snap" ro false 2>/dev/null || true
+    btrfs subvolume snapshot "$tl_snap" "$tl_new" || _die "btrfs subvolume snapshot failed."
+    btrfs property set "$tl_snap" ro true 2>/dev/null || true
+    btrfs property set "$tl_new" ro false 2>/dev/null || true
 
-    # Atomic swap: @→@.old, snapshot→@
-    _info "Performing atomic subvolume swap..."
-    mv "${tl_root}" "${tl_old}"
-    mv "${tl_snap}" "${tl_root}"
-
-    # Step 4: Lock the new @ (was rw for the move)
-    btrfs property set "${tl_root}" ro true
+    # Step 4: Atomically replace @ with @_new
+    _info "Replacing @ with copy of '${name}'..."
+    btrfs property set "$tl_root" ro false 2>/dev/null || true
+    btrfs subvolume delete "$tl_root" || _die "Could not delete old @."
+    mv "$tl_new" "$tl_root" || _die "Could not rename @_new to @."
+    btrfs property set "$tl_root" ro true 2>/dev/null || true
     _ok "New @ is read-only."
-
-    # Step 5: Delete @.old
-    _info "Deleting @.old..."
-    btrfs subvolume delete "${tl_old}"
-
-    # Step 6: Remove orphaned snapshot boot entry and set default to @
-    local old_entry="${ENTRIES_DIR}/ouroboros-snapshot-${name}.conf"
-    if [[ -f "$old_entry" ]]; then
-        rm -f "$old_entry"
-        _ok "Removed orphaned boot entry: ouroboros-snapshot-${name}.conf"
-    fi
-
-    if [[ -f "${ENTRIES_DIR}/ouroborOS.conf" ]]; then
-        if bootctl set-default "ouroborOS.conf" 2>/dev/null; then
-            _ok "Default boot entry reset to ouroborOS.conf (boots from @)."
-        else
-            _warn "bootctl set-default failed — update loader.conf manually if needed."
-        fi
-    fi
 
     umount "$toplevel"
     rmdir "$toplevel"
     trap - EXIT
 
-    _ok "Promote complete. Snapshot '${name}' is now the root (@)."
-    _ok "Reboot to activate the new root."
+    # Step 5: Set default boot to ouroborOS.conf (@)
+    # Boot entry for @snapshots/NAME is KEPT — it remains a valid restore point.
+    if [[ -f "${ENTRIES_DIR}/ouroborOS.conf" ]]; then
+        if bootctl set-default "ouroborOS.conf" 2>/dev/null; then
+            _ok "Default boot entry set to ouroborOS.conf (active @)."
+        else
+            _warn "bootctl set-default failed — update loader.conf manually if needed."
+        fi
+    fi
+
+    _ok "Promote complete. @ now has the state of snapshot '${name}'."
+    _ok "Snapshot '${name}' is preserved as a restore point."
+    _ok "Reboot to activate the new @."
     _info "Safety snapshot available: ${pre_promote_name}"
 }
 
@@ -331,7 +331,7 @@ case "$command" in
     list)     cmd_list ;;
     status)   cmd_status ;;
     try)      cmd_try "${1:-}" ;;
-    promote)  cmd_promote "${1:-}" ;;
+    promote)  cmd_promote "${1:-}" "${@:2}" ;;
     undo)     cmd_undo ;;
     help|--help|-h) cmd_help ;;
     *)

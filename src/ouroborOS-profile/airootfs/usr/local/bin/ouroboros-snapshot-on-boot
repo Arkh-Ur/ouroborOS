@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# ouroboros-snapshot-on-boot — auto-create and promote snapshot when booting from a snapshot.
+#
+# Runs early-boot (After=local-fs.target, Before=sysinit.target).
+# Detects if the system booted from @snapshots/X (not @).
+# If so: creates @snapshots/boot-TIMESTAMP from current / and promotes it to @.
+# The source snapshot is preserved as a restore point.
+#
+# This enables the flow:
+#   select snapA in bootloader → auto-create snapD from snapA → @ = snapD
+#   snapA, snapB, snapC all remain accessible as restore points.
+
+SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
+OUR_SNAPSHOT="/usr/local/bin/our-snapshot"
+
+# shellcheck source=/dev/null
+source "$SNAPSHOT_LIB"
+
+_boot_log()  { echo "[snapshot-on-boot] $*"; }
+_boot_ok()   { echo "[snapshot-on-boot] OK: $*"; }
+_boot_warn() { echo "[snapshot-on-boot] WARN: $*"; }
+
+current_subvol=$(_detect_current_subvol) || current_subvol="@"
+
+# Only act when running from a snapshot (not from @)
+if [[ "$current_subvol" == "@" ]]; then
+    exit 0
+fi
+
+_boot_log "Booted from snapshot '${current_subvol}'. Auto-creating and promoting new snapshot..."
+
+snap_name="boot-$(date +%Y-%m-%dT%H%M%S)"
+
+# Create snapshot from current / (= snapshot state) and promote to @.
+# --promote uses copy-promote: @snapshots/snap_name is kept as restore point.
+"$OUR_SNAPSHOT" create --name "$snap_name" --promote
+
+_boot_ok "@ now has the state of '${current_subvol}' (via snapshot '${snap_name}')."
+_boot_ok "All previous snapshots are preserved as restore points."
