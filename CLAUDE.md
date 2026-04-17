@@ -86,12 +86,18 @@ ouroborOS/
 
 | Branch | Purpose | Rules |
 |--------|---------|-------|
-| `master` | Stable production releases | Never commit directly; only merge from `dev` via PR |
-| `dev` | Active development | Main working branch |
-| `feature/NAME` | Individual features | Branch from `dev`, merge back via PR |
-| `fix/NAME` | Bug fixes | Branch from `dev` (or `master` for hotfixes) |
+| `main` | Stable releases only | **NEVER commit or push directly.** Only receives merges from `dev` when tagging a release. |
+| `dev` | Active development | All day-to-day work happens here. Default working branch. |
+| `feature/NAME` | Individual features | Branch from `dev`, merge back to `dev` via PR. |
+| `fix/NAME` | Bug fixes | Branch from `dev`, merge back to `dev` via PR. |
 
-**Always develop on `dev` or a `feature/` branch. Never push directly to `master`.**
+**Workflow:**
+1. All development → `dev` (or `feature/`/`fix/` branched from `dev`)
+2. When a milestone is complete and gate passes → merge `dev` → `main` → tag release
+3. Tag format: `vX.Y.Z` pushed from `main` only
+4. CI runs on both `dev` (lint + build) and `main` (lint + build + release)
+
+**Claude Code rule: ALWAYS work on `dev`. Never checkout or push to `main` directly.**
 
 ---
 
@@ -260,7 +266,7 @@ When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds th
 - Do not add NetworkManager to any package list
 - Do not use `/dev/sdX` paths in any configuration (always UUID)
 - Do not mount root read-write in production (only during updates, via `our-pac`)
-- Do not commit directly to `master`
+- Do not commit or push directly to `main` — always work on `dev`
 - Do not add packages to the ISO without justification (bloat)
 - Do not use PreTransaction pacman hooks for remounting (pacman checks writability before hooks)
 - Do not write files only to `@etc` if systemd needs them at early boot (mirror to `@` too)
