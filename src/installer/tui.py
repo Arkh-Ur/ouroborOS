@@ -378,7 +378,7 @@ class TUI:
         ("es", "Spanish"),
         ("fr", "French AZERTY"),
         ("de", "German QWERTZ"),
-        ("latam", "Latin American"),
+        ("la-latin1", "Latin American"),
         ("br-abnt2", "Brazilian ABNT2"),
         ("jp106", "Japanese 106-key"),
         ("dvorak", "US Dvorak"),
