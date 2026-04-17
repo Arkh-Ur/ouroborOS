@@ -1511,9 +1511,10 @@ GREETD_EOF
     # our-pac flow on first boot. Without this, our-pac detects a writable
     # root and falls back to plain pacman (no snapshot, no lock cycle).
     # Must run LAST — after all writes to TARGET are complete.
+    _discover_root_device
     local _top_mount
     _top_mount=$(mktemp -d)
-    if mount -o subvolid=5 "${DEVICE}" "${_top_mount}" 2>/dev/null; then
+    if mount -t btrfs -o "subvolid=5,rw" "$_ROOT_DEVICE" "${_top_mount}" 2>/dev/null; then
         if btrfs property set "${_top_mount}/@" ro true 2>/dev/null; then
             log_ok "Root subvolume @ sealed as immutable (ro=true)."
         else
