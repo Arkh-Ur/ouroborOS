@@ -827,7 +827,7 @@ Target = *
 [Action]
 Description = Restore root immutability after package changes...
 When = PostTransaction
-Exec = /usr/local/bin/our-post-upgrade
+Exec = /usr/local/bin/ouroboros-post-upgrade
 EOF
 
     # Install wrapper and helper scripts
@@ -1036,10 +1036,10 @@ STUB
         log_ok "our-container-autostart.service installed."
     fi
 
-    cat > "${TARGET}/usr/local/bin/our-post-upgrade" << 'SCRIPT'
+    cat > "${TARGET}/usr/local/bin/ouroboros-post-upgrade" << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
-# our-post-upgrade — restore root immutability after a package transaction.
+# ouroboros-post-upgrade — restore root immutability after a package transaction.
 #
 # Called by the 99-post-upgrade pacman hook (PostTransaction).
 #
@@ -1052,15 +1052,15 @@ set -euo pipefail
 #      are active SSH sessions or open file handles — that is expected and safe
 #      because btrfs property ro=true already protects the subvolume.
 if btrfs property set / ro true 2>/dev/null; then
-    echo "[our-post-upgrade] Root subvolume set read-only (Btrfs property)"
+    echo "[ouroboros-post-upgrade] Root subvolume set read-only (Btrfs property)"
 else
-    echo "[our-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
+    echo "[ouroboros-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
 fi
 # Best-effort VFS-layer remount (non-fatal)
-mount -o remount,ro / 2>/dev/null && echo "[our-post-upgrade] Root remounted ro (VFS)" || \
-    echo "[our-post-upgrade] Root busy — Btrfs property protects immutability regardless"
+mount -o remount,ro / 2>/dev/null && echo "[ouroboros-post-upgrade] Root remounted ro (VFS)" || \
+    echo "[ouroboros-post-upgrade] Root busy — Btrfs property protects immutability regardless"
 SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/our-post-upgrade"
+    chmod 0755 "${TARGET}/usr/local/bin/ouroboros-post-upgrade"
 
     # Install snapshot library to installed system
     mkdir -p "${TARGET}/usr/local/lib/ouroboros"

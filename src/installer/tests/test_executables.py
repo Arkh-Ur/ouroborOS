@@ -36,11 +36,11 @@ INSTALLED_TOOLS = [
 # Scripts installed inline (written via heredoc) in configure.sh
 INLINE_TOOLS = [
     "our-pac",
-    "our-post-upgrade",
+    "ouroboros-post-upgrade",
 ]
 
 # Scripts that are inline-only (written via heredoc in configure.sh, NOT in airootfs)
-INLINE_ONLY_TOOLS = ["our-post-upgrade"]
+INLINE_ONLY_TOOLS = ["ouroboros-post-upgrade"]
 
 # Scripts copied individually (not in the _p3_tools loop)
 INDIVIDUALLY_COPIED_TOOLS = [
