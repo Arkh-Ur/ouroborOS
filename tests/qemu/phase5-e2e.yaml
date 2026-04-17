@@ -20,8 +20,8 @@ disk:
   swap_type: zram
 
 locale:
-  locale: en_US.UTF-8
-  keymap: us
+  locale: es_AR.UTF-8
+  keymap: la-latin1
   timezone: America/Santiago
 
 network:
