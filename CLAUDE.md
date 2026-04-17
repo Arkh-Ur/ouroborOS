@@ -27,7 +27,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
 - **Installer:** Python state machine + Rich TUI (primary) + Bash ops
-- **Status:** v0.4.0 released — Phase 4 complete
+- **Status:** v0.5.0 — Phase 5 in progress
 
 ---
 
@@ -82,22 +82,42 @@ ouroborOS/
 
 ---
 
-## Branch Strategy
+## Branch Strategy — dev-first
+
+**Regla de oro: Nada se mueve sin verde. Nada toca main sin tag. Nada es público sin pasar por privado primero.**
+
+> Ver skill `ci-dev-first` para diagramas Mermaid completos y plan de implementación detallado.
 
 | Branch | Purpose | Rules |
 |--------|---------|-------|
-| `main` | Stable releases only | **NEVER commit or push directly.** Only receives merges from `dev` when tagging a release. |
-| `dev` | Active development | All day-to-day work happens here. Default working branch. |
+| `dev` | Active development | All day-to-day work. CI runs here (lint + test + build). Tags born here. |
+| `main` | Release snapshots | **NEVER push directly.** Only receives merges from release job (via tag). |
 | `feature/NAME` | Individual features | Branch from `dev`, merge back to `dev` via PR. |
-| `fix/NAME` | Bug fixes | Branch from `dev`, merge back to `dev` via PR. |
 
 **Workflow:**
 1. All development → `dev` (or `feature/`/`fix/` branched from `dev`)
-2. When a milestone is complete and gate passes → merge `dev` → `main` → tag release
-3. Tag format: `vX.Y.Z` pushed from `main` only
-4. CI runs on both `dev` (lint + build) and `main` (lint + build + release)
+2. Push to `dev` triggers CI: lint + test + build
+3. When CI is green + manual tests pass → open PR `dev` → `main` on GitHub
+4. After PR merged → tag `vX.Y.Z` from `main`
+5. Tag triggers release job: build ISO → prerelease private.dev → push private.main → public release
 
-**Claude Code rule: ALWAYS work on `dev`. Never checkout or push to `main` directly.**
+**Claude Code rule: NEVER push to `main` directly. No exceptions, no bypass. Only PRs.**
+
+**Pre-push hook required** (no GitHub Pro — protection is local):
+```bash
+# Verify hook is installed:
+ls -la .git/hooks/pre-push
+# Must exist and be executable. Blocks any push to main.
+```
+
+### Dual-Repo Architecture
+
+| Repository | Visibility | Purpose |
+|------------|-----------|---------|
+| `Arkh-Ur/ouroborOS-dev` | Private | Development. CI runs on `dev`. Release job merges tag → `main`. |
+| `Arkh-Ur/ouroborOS` | Public | Mirror of private `main`. GitHub Releases published here. |
+
+**Flow:** `dev` push → CI → tag → release job → prerelease private → merge `main` private → mirror public
 
 ---
 
@@ -221,16 +241,16 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 **Phases 1-4 complete.** Release v0.4.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.0
 
-**Current phase:** Phase 4 complete — `our-aur` (containerized AUR helper via systemd-sysext), `our-flat` (Flatpak wrapper), lazy AUR queue via firstboot. See [docs/PHASE_4_PLAN.md](./docs/PHASE_4_PLAN.md).
+**Current phase:** Phase 5 in progress — `system.yaml` declarative manifest, multi-usuario, OTA. See [docs/PHASE_5_PLAN.md](./docs/PHASE_5_PLAN.md).
 
 ### Dual-Repo Architecture
 
 | Repository | Visibility | Purpose |
 |------------|-----------|---------|
-| `Arkh-Ur/ouroborOS-dev` | Private | Development, CI runs on tags |
-| `Arkh-Ur/ouroborOS` | Public | Releases only, receives code + ISO from dev repo |
+| `Arkh-Ur/ouroborOS-dev` | Private | Development, CI runs on `dev`, release job merges tag → `main` |
+| `Arkh-Ur/ouroborOS` | Public | Mirror of private `main`, GitHub Releases |
 
-When a tag is pushed to `ouroborOS-dev`, `.github/workflows/build.yml` builds the ISO in an Arch container and publishes the release to `ouroborOS` via `gh release create --repo`.
+When a tag `v*` is pushed to `ouroborOS-dev`, the release job builds the ISO, creates a prerelease in the private repo, merges the tag to `origin/main`, then mirrors to the public repo.
 
 ---
 
