@@ -32,6 +32,7 @@ amd-ucode
 iwd
 iw
 wireless_tools
+wireless-regdb
 dhcpcd
 openssh
 
