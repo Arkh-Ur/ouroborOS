@@ -323,7 +323,9 @@ class TUI:
         self._install_progress_active = True
         pct = max(0, min(100, percent))
         self._install_progress_pct = pct
-        step_text = _("Paso {step_num}/{total_steps}: {step_label}").format(step_num=step_num, total_steps=total_steps, step_label=step_label)
+        step_text = _("Paso {step_num}/{total_steps}: {step_label}").format(
+            step_num=step_num, total_steps=total_steps, step_label=step_label
+        )
         if detail:
             step_text += f" — {detail}"
         self._update_install_bar(pct, step_text)

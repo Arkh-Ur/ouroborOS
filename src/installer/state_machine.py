@@ -36,7 +36,7 @@ from installer.desktop_profiles import (
     shell_package,
     shell_path,
 )
-from installer.i18n import init_i18n, _
+from installer.i18n import _, init_i18n
 from installer.tui import TUI
 
 # ---------------------------------------------------------------------------

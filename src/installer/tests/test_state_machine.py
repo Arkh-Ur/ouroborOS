@@ -1204,7 +1204,7 @@ class TestHandleSecureBoot:
         """Test show_tpm2_prompt is called during PARTITION state when using LUKS."""
         installer = self._make_installer()
         installer.config.disk.use_luks = True
-        
+
         # Mock TUI methods that are called in sequence during _handle_partition
         mock_tui = MagicMock()
         mock_tui.show_disk_selection.return_value = "/dev/vda"
@@ -1214,12 +1214,12 @@ class TestHandleSecureBoot:
         mock_tui.show_partition_preview.return_value = None
         mock_tui.show_confirmation.return_value = True
         installer.tui = mock_tui
-        
+
         # Mock other required methods
         with patch.object(installer, "_run_op"), \
              patch.object(installer, "_update_progress"):
             installer._handle_partition()
-        
+
         # Verify show_tpm2_prompt was called and tpm2_unlock is set
         mock_tui.show_tpm2_prompt.assert_called_once()
         assert installer.config.security.tpm2_unlock is True
@@ -1228,19 +1228,19 @@ class TestHandleSecureBoot:
         """Test show_tpm2_prompt is NOT called when LUKS is disabled."""
         installer = self._make_installer()
         installer.config.disk.use_luks = False
-        
+
         mock_tui = MagicMock()
         mock_tui.show_disk_selection.return_value = "/dev/vda"
         mock_tui.show_luks_prompt.return_value = False
         mock_tui.show_partition_preview.return_value = None
         mock_tui.show_confirmation.return_value = True
         installer.tui = mock_tui
-        
+
         # Mock other required methods
         with patch.object(installer, "_run_op"), \
              patch.object(installer, "_update_progress"):
             installer._handle_partition()
-        
+
         # Verify show_tpm2_prompt was NOT called and tpm2_unlock remains False
         mock_tui.show_tpm2_prompt.assert_not_called()
         assert installer.config.security.tpm2_unlock is False
@@ -1249,7 +1249,7 @@ class TestHandleSecureBoot:
         """Test that show_tpm2_prompt returning False sets tpm2_unlock to False."""
         installer = self._make_installer()
         installer.config.disk.use_luks = True
-        
+
         mock_tui = MagicMock()
         mock_tui.show_disk_selection.return_value = "/dev/vda"
         mock_tui.show_luks_prompt.return_value = True
@@ -1258,12 +1258,12 @@ class TestHandleSecureBoot:
         mock_tui.show_partition_preview.return_value = None
         mock_tui.show_confirmation.return_value = True
         installer.tui = mock_tui
-        
+
         # Mock other required methods
         with patch.object(installer, "_run_op"), \
              patch.object(installer, "_update_progress"):
             installer._handle_partition()
-        
+
         # Verify show_tpm2_prompt was called and tpm2_unlock is False
         mock_tui.show_tpm2_prompt.assert_called_once()
         assert installer.config.security.tpm2_unlock is False
