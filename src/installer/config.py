@@ -155,6 +155,59 @@ class InstallerConfig:
     unattended: bool = False
     post_install_action: str = "reboot"  # "reboot" | "shutdown" | "none"
 
+    # Package list captured during INSTALL state — used to populate system.yaml
+    installed_packages: list[str] = field(default_factory=list)
+
+    def to_system_yaml(self) -> dict:
+        """Generate the system.yaml declarative manifest for the installed system.
+
+        Written to /etc/ouroboros/system.yaml on the target at FINISH time.
+        Acts as the source of truth for ouroboros-rebase, ouroboros-health,
+        and ouroboros-reinstall in Phase 5+.
+        """
+        from datetime import datetime, timezone  # noqa: PLC0415
+        return {
+            "version": "0.5.0",
+            "channel": "stable",
+            "channel_url": (
+                "https://raw.githubusercontent.com/Arkh-Ur/ouroborOS/main/channels/stable.yaml"
+            ),
+            "installed": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "system": {
+                "hostname": self.network.hostname,
+                "locale": self.locale.locale,
+                "timezone": self.locale.timezone,
+                "desktop": {
+                    "profile": self.desktop.profile,
+                    "dm": self.desktop.dm,
+                },
+                "shell": self.user.shell,
+            },
+            "base_packages": sorted(self.installed_packages),
+            "user_packages": [],
+            "aur_packages": [],
+            "users": [
+                {
+                    "username": self.user.username,
+                    "real_name": "",
+                    "groups": list(self.user.groups),
+                    "shell": self.user.shell,
+                    "homed_storage": self.user.homed_storage,
+                }
+            ],
+            "security": {
+                "secure_boot": self.security.secure_boot,
+                "tpm2_unlock": self.security.tpm2_unlock,
+                "fido2_pam": self.security.fido2_pam,
+            },
+            "disk": {
+                "device": self.disk.device,
+                "use_luks": self.disk.use_luks,
+                "btrfs_label": self.disk.btrfs_label,
+                "swap_type": self.disk.swap_type,
+            },
+        }
+
 
 # ---------------------------------------------------------------------------
 # YAML schema validation

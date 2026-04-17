@@ -982,19 +982,22 @@ class TestHandleFinish:
 
     def test_action_none_stays_up(self) -> None:
         installer = self._make_installer("none")
-        with patch("os.system") as mock_system:
+        with patch("os.system") as mock_system, \
+             patch.object(installer, "_write_system_yaml"):
             installer._handle_finish()
         mock_system.assert_not_called()
 
     def test_action_shutdown_calls_poweroff(self) -> None:
         installer = self._make_installer("shutdown")
-        with patch("os.system") as mock_system:
+        with patch("os.system") as mock_system, \
+             patch.object(installer, "_write_system_yaml"):
             installer._handle_finish()
         mock_system.assert_called_once_with("poweroff")
 
     def test_action_reboot_calls_reboot(self) -> None:
         installer = self._make_installer("reboot")
-        with patch("os.system") as mock_system:
+        with patch("os.system") as mock_system, \
+             patch.object(installer, "_write_system_yaml"):
             installer._handle_finish()
         mock_system.assert_called_once_with("reboot")
 
@@ -1003,14 +1006,110 @@ class TestHandleFinish:
         mock_tui = MagicMock()
         mock_tui.show_post_install_action.return_value = "none"
         installer.tui = mock_tui
-        with patch("os.system"):
+        with patch("os.system"), \
+             patch.object(installer, "_write_system_yaml"):
             installer._handle_finish()
         mock_tui.finish_install_progress.assert_called_once()
         mock_tui.show_summary.assert_called_once()
 
+    def test_write_system_yaml_called_on_finish(self) -> None:
+        installer = self._make_installer("none")
+        with patch("os.system"), \
+             patch.object(installer, "_write_system_yaml") as mock_write:
+            installer._handle_finish()
+        mock_write.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
-# Installer._handle_preflight
+# InstallerConfig.to_system_yaml (v0.5.0)
+# ---------------------------------------------------------------------------
+
+
+class TestSystemYaml:
+    def _make_config(self) -> InstallerConfig:  # noqa: F821
+        from installer.config import InstallerConfig  # noqa: PLC0415
+        cfg = InstallerConfig()
+        cfg.network.hostname = "test-host"
+        cfg.locale.locale = "en_US.UTF-8"
+        cfg.locale.timezone = "America/Santiago"
+        cfg.desktop.profile = "minimal"
+        cfg.desktop.dm = "none"
+        cfg.user.username = "testuser"
+        cfg.user.shell = "/bin/bash"
+        cfg.user.homed_storage = "classic"
+        cfg.user.groups = ["wheel", "audio"]
+        cfg.disk.device = "/dev/vda"
+        cfg.disk.use_luks = False
+        cfg.disk.btrfs_label = "ouroborOS"
+        cfg.disk.swap_type = "zram"
+        cfg.installed_packages = ["base", "linux-zen", "systemd"]
+        return cfg
+
+    def test_to_system_yaml_returns_dict(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        assert isinstance(data, dict)
+
+    def test_to_system_yaml_has_required_keys(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        for key in ("version", "channel", "channel_url", "installed",
+                    "system", "base_packages", "user_packages", "aur_packages",
+                    "users", "security", "disk"):
+            assert key in data, f"Missing key: {key}"
+
+    def test_to_system_yaml_base_packages_sorted(self) -> None:
+        cfg = self._make_config()
+        cfg.installed_packages = ["systemd", "base", "linux-zen"]
+        data = cfg.to_system_yaml()
+        assert data["base_packages"] == ["base", "linux-zen", "systemd"]
+
+    def test_to_system_yaml_user_packages_empty(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        assert data["user_packages"] == []
+        assert data["aur_packages"] == []
+
+    def test_to_system_yaml_users_list(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        assert isinstance(data["users"], list)
+        assert len(data["users"]) == 1
+        assert data["users"][0]["username"] == "testuser"
+        assert data["users"][0]["homed_storage"] == "classic"
+
+    def test_to_system_yaml_disk_config(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        assert data["disk"]["device"] == "/dev/vda"
+        assert data["disk"]["use_luks"] is False
+        assert data["disk"]["btrfs_label"] == "ouroborOS"
+
+    def test_to_system_yaml_system_config(self) -> None:
+        cfg = self._make_config()
+        data = cfg.to_system_yaml()
+        assert data["system"]["hostname"] == "test-host"
+        assert data["system"]["locale"] == "en_US.UTF-8"
+        assert data["system"]["timezone"] == "America/Santiago"
+
+    def test_write_system_yaml_creates_file(self, tmp_path: Path) -> None:  # noqa: F821
+        from installer.state_machine import Installer  # noqa: PLC0415
+
+        cfg = self._make_config()
+        target = tmp_path / "mnt"
+        (target / "etc" / "ouroboros").mkdir(parents=True)
+        cfg.install_target = str(target)
+
+        installer = Installer()
+        installer.config = cfg
+        installer._write_system_yaml()
+
+        yaml_file = target / "etc" / "ouroboros" / "system.yaml"
+        assert yaml_file.exists()
+        import yaml  # noqa: PLC0415
+        data = yaml.safe_load(yaml_file.read_text())
+        assert data["system"]["hostname"] == "test-host"
+        assert "base" in data["base_packages"]
 # ---------------------------------------------------------------------------
 
 

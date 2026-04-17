@@ -762,6 +762,9 @@ class Installer:
             log.info("Detected CPU microcode package: %s", ucode)
             packages.insert(0, ucode)
 
+        # Capture for system.yaml generation at FINISH
+        self.config.installed_packages = list(packages)
+
         cmd = ["pacstrap", "-K", target] + packages
         max_retries = 10
 
@@ -947,8 +950,27 @@ class Installer:
 
         self._update_progress(State.SNAPSHOT, 100, "Snapshot creado")
 
+    def _write_system_yaml(self) -> None:
+        """Write /etc/ouroboros/system.yaml to the installed target."""
+        import yaml  # noqa: PLC0415
+
+        target = Path(self.config.install_target)
+        ouroboros_dir = target / "etc" / "ouroboros"
+        ouroboros_dir.mkdir(parents=True, exist_ok=True)
+
+        system_yaml_path = ouroboros_dir / "system.yaml"
+        data = self.config.to_system_yaml()
+        system_yaml_path.write_text(
+            yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        system_yaml_path.chmod(0o644)
+        log.info("system.yaml written: %s", system_yaml_path)
+
     def _handle_finish(self) -> None:
-        """FINISH — show completion summary, then reboot or shutdown."""
+        """FINISH — write system.yaml, show summary, then reboot or shutdown."""
+        self._write_system_yaml()
+
         if self.tui:
             self.tui.finish_install_progress()
             self.tui.show_summary(self.config)
