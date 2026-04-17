@@ -5,6 +5,72 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.12] - 2026-04-16
+
+### Added
+
+- `ouroboros-snapshot-on-boot.service` — new early-boot systemd service.
+  When the system boots from `@snapshots/X` (e.g. after selecting a snapshot
+  in systemd-boot), it automatically creates a new `boot-TIMESTAMP` snapshot
+  from the active state and promotes it to `@`. All previous snapshots are
+  preserved intact as restore points.
+- `_detect_current_subvol()` helper in `snapshot.sh` — parses `findmnt`
+  mount options to detect whether the running root is `@` or `@snapshots/X`.
+- `our-snapshot create --promote` — creates a snapshot and immediately
+  promotes it to the active root in a single command.
+- `our-snapshot list` now shows a `*` marker next to the currently active
+  snapshot when booted from `@snapshots/X`.
+- `our-rollback promote --force` — skips interactive confirmation; used
+  internally by `our-snapshot create --promote` and the on-boot service.
+- `wireless-regdb` added to live ISO packages — fixes missing WiFi regulatory
+  domain database (`regulatory.db`) that caused firmware load errors on boot.
+
+### Changed
+
+- **`our-rollback promote` uses copy-promote** — the source snapshot is no
+  longer destroyed (renamed) when promoted. A `btrfs subvolume snapshot` is
+  used to copy the snapshot state into `@`, keeping `@snapshots/NAME` intact
+  as a restore point. All snapshot boot entries remain valid after promote.
+- `our-snapshot create` now warns when invoked from within a snapshot context
+  without `--promote`, informing the user the new snapshot won't be active.
+- `audit=0` added to kernel params in both live ISO boot entries — eliminates
+  `kauditd_printk_skb` noise caused by the audit subsystem running without
+  `auditd` in the live environment.
+
+### Fixed
+
+- `write_to_root_subvolume()` now temporarily clears `btrfs property ro=true`
+  on `@` before mounting. The GPU install step (pacman inside chroot) triggers
+  the `99-post-upgrade` hook which sets `@` read-only; subsequent writes to
+  `@` (firstboot service, hostname, etc.) were failing with EROFS.
+- `write_to_root_subvolume()` fixed to mount `subvol=/@` instead of
+  `subvolid=5` (Btrfs top-level). The previous mount wrote to `top-level/etc/`
+  instead of `@/etc/`, causing `Missing /etc/machine-id` on first boot.
+- Snapshot boot entries had duplicate `ro ro` in kernel params — the template
+  already appends `ro`; callers now pass `"quiet"` instead of `"quiet ro"`.
+
+### Removed
+
+- **aarch64 / ARM64 support removed** — the profile was severely out of sync
+  with x86_64 (wrong arch field, version 0.4.3, squashfs instead of erofs,
+  wrong publisher). No ARM hardware is available for validation; the profile
+  is removed until proper hardware support can be established.
+- `build-iso.sh --arch` flag removed along with the aarch64 profile.
+
+### Tests
+
+- 22 new unit tests for COSMIC profile, KDE flavor selector, GPU detection,
+  TPM2 unlock, and dual-boot flow.
+- Total: **555 tests passing**, 14 skipped, 0 failures. Coverage: **93.86%**.
+
+### i18n
+
+- Translations completed for all TUI strings (~138 msgids per locale):
+  `en_US`, `es_CL` (replaces `es_AR`), `de_DE`.
+  Includes strings for TPM2, GPU selection, dual-boot, COSMIC, KDE flavor.
+- `_STEP_LABELS` in `state_machine.py` now passes strings through `_()` at
+  the point of use (line 326), enabling proper FSM step label translation.
+
 ## [0.4.11] - 2026-04-16
 
 ### Added
