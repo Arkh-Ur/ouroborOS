@@ -1113,6 +1113,81 @@ class TestSystemYaml:
 # ---------------------------------------------------------------------------
 
 
+class TestUpdateSystemYamlPackages:
+    """Tests for the Python logic embedded in our-pac's update_system_yaml_packages()."""
+
+    # Extract the Python heredoc from our-pac so we test the real script.
+    _OUR_PAC = Path(__file__).parents[2] / "ouroborOS-profile/airootfs/usr/local/bin/our-pac"
+
+    @classmethod
+    def _script(cls) -> str:
+        text = cls._OUR_PAC.read_text()
+        begin = text.index("<< 'PYEOF'\n") + len("<< 'PYEOF'\n")
+        end = text.index("\nPYEOF", begin)
+        return text[begin:end]
+
+    def _run(self, tmp_path: Path, yaml_content: dict, operation: str, pkgs: list[str]) -> dict:
+        import yaml, subprocess  # noqa: PLC0415,E401
+        yaml_file = tmp_path / "system.yaml"
+        yaml_file.write_text(yaml.dump(yaml_content, default_flow_style=False))
+        args = ["python3", "-", str(yaml_file), operation, *pkgs]
+        subprocess.run(args, input=self._script(), text=True, check=True, capture_output=True)
+        return yaml.safe_load(yaml_file.read_text())
+
+    def _base_yaml(self) -> dict:
+        return {
+            "version": "0.5.0",
+            "channel": "stable",
+            "base_packages": ["base", "linux-zen"],
+            "user_packages": [],
+            "aur_packages": [],
+        }
+
+    def test_add_package(self, tmp_path: Path) -> None:
+        data = self._run(tmp_path, self._base_yaml(), "add", ["vim"])
+        assert "vim" in data["user_packages"]
+
+    def test_add_duplicate(self, tmp_path: Path) -> None:
+        base = self._base_yaml()
+        base["user_packages"] = ["vim"]
+        data = self._run(tmp_path, base, "add", ["vim"])
+        assert data["user_packages"].count("vim") == 1
+
+    def test_add_sorts_alphabetically(self, tmp_path: Path) -> None:
+        data = self._run(tmp_path, self._base_yaml(), "add", ["zsh", "nano"])
+        assert data["user_packages"] == sorted(data["user_packages"])
+
+    def test_remove_package(self, tmp_path: Path) -> None:
+        base = self._base_yaml()
+        base["user_packages"] = ["vim"]
+        data = self._run(tmp_path, base, "remove", ["vim"])
+        assert "vim" not in data["user_packages"]
+
+    def test_remove_nonexistent_is_noop(self, tmp_path: Path) -> None:
+        base = self._base_yaml()
+        base["user_packages"] = ["nano"]
+        data = self._run(tmp_path, base, "remove", ["vim"])
+        assert data["user_packages"] == ["nano"]
+
+    def test_no_yaml_file_is_silent(self, tmp_path: Path) -> None:
+        import subprocess  # noqa: PLC0415
+        missing = str(tmp_path / "nonexistent.yaml")
+        result = subprocess.run(
+            ["python3", "-", missing, "add", "vim"],
+            input=self._script(), text=True, capture_output=True,
+        )
+        assert result.returncode == 0
+
+    def test_empty_pkgs_leaves_yaml_intact(self, tmp_path: Path) -> None:
+        # With the fix (&&), empty pkgs → early return in bash before Python runs.
+        # This test verifies Python itself handles empty pkgs gracefully.
+        base = self._base_yaml()
+        base["user_packages"] = ["nano"]
+        data = self._run(tmp_path, base, "add", [])
+        assert data["user_packages"] == ["nano"]
+# ---------------------------------------------------------------------------
+
+
 class TestHandlePreflight:
     def test_all_checks_pass(self) -> None:
         installer = Installer()

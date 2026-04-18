@@ -190,7 +190,7 @@ update_system_yaml_packages() {
     local yaml_file="/etc/ouroboros/system.yaml"
 
     [[ -f "$yaml_file" ]] || return 0
-    [[ ${#pkgs[@]} -eq 0 ]] || return 0
+    [[ ${#pkgs[@]} -eq 0 ]] && return 0
     command -v python3 >/dev/null 2>&1 || return 0
 
     python3 - "$yaml_file" "$operation" "${pkgs[@]}" << 'PYEOF'
