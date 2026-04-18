@@ -48,3 +48,4 @@ src/ouroborOS-profile/airootfs/etc/systemd/system/ouroborOS-installer.service.d/
 
 # Tool logs
 opencode.log
+.sudo

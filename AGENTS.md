@@ -2,7 +2,7 @@
 
 **Actualizado:** 2026-04-16
 **Commit:** v0.4.12 (tag)
-**Branch:** main
+**Branch:** dev
 
 ## REGLAS DE SALIDA (OBLIGATORIO)
 
@@ -24,7 +24,7 @@ ouroborOS es una distribución Linux inmutable basada en ArchLinux que usa syste
 
 **Releases:** v0.1.0 (2026-04-07), v0.2.0 (2026-04-10), v0.3.0 (2026-04-11), v0.4.0 (2026-04-12), v0.4.12 (2026-04-16).
 
-**Estado actual:** Phase 4 completa — `our-aur` (AUR helper containerizado), `our-flat` (Flatpak wrapper), lazy AUR queue, i18n (en_US/es_CL/de_DE), TPM2, dual-boot, COSMIC desktop, GPU detection. ARM aarch64 eliminado en v0.4.12. Ver `docs/PHASE_4_PLAN.md`.
+**Estado actual:** Phase 5 en progreso — `system.yaml` manifiesto declarativo, multi-usuario, OTA. Ver `docs/PHASE_5_PLAN.md`.
 
 ## ESTRUCTURA
 
@@ -125,7 +125,7 @@ ouroborOS/
 
 - **Python para lógica, Bash para operaciones.** Sin mezclar. `state_machine.py` orquesta; `ops/*.sh` ejecuta.
 - **Conventional Commits:** `feat|fix|docs|build|installer|test|chore|refactor(scope): description`
-- **Estrategia de branches:** `main` es la rama de trabajo. PR para mergear a `master` (releases).
+- **Estrategia de branches (dev-first):** `dev` es la rama de trabajo. CI corre solo en dev. Tag `v*` desde dev dispara release job que mergea a `main` y mirror a repo público. **Nadie pushea a main directamente** (pre-push hook local). Ver skill `ci-dev-first`.
 - **Todos los shell scripts:** `set -euo pipefail` + pasar `shellcheck` (cero warnings).
 - **Lint Python:** Ruff con E,W,F,I,UP,ANN001,ANN201,E722.
 - **Cobertura mínima de tests:** ≥93% (347 tests, 14 skipped).
@@ -139,7 +139,7 @@ ouroborOS/
 | NetworkManager | systemd-networkd + iwd |
 | `/dev/sdX` en código runtime | Usar UUID en todo lugar |
 | Root montado read-write en producción | Diseño inmutable; escrituras a /var, /etc, /tmp, /home |
-| Commits directos a master | Estrategia: main→PR→master |
+| Commits directos a main | main es read-only, solo CI via tag |
 | Paquetes injustificados en el ISO | Mantener ISO liviano |
 | Fallos de `shellcheck` | Todos los scripts deben pasar con cero warnings |
 | `$AIROOTFS` en configure.sh | La variable no existe; usar rutas del live ISO directamente (ej. `/etc/bluetooth/main.conf`) |
