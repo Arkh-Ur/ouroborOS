@@ -290,12 +290,23 @@ if is_immutable_root; then
     # cancels with "n") and root stays writable until next reboot.
     trap 'lock_root 2>/dev/null || true; sync_boot_entries 2>/dev/null || true' EXIT
 
-    # 5. Run pacman
+    # 5. Stale lock check — remove db.lck only if no pacman process is running
+    _PACMAN_LOCK="/var/lib/pacman/db.lck"
+    if [[ -f "$_PACMAN_LOCK" ]]; then
+        if pgrep -x pacman > /dev/null 2>&1; then
+            _err "pacman is already running (lock: $_PACMAN_LOCK). Aborting."
+            exit 1
+        fi
+        _warn "Stale pacman lock detected — removing $_PACMAN_LOCK"
+        rm -f "$_PACMAN_LOCK"
+    fi
+
+    # 6. Run pacman
     _msg "Running: pacman $*"
     pacman_exit=0
     /usr/bin/pacman "$@" || pacman_exit=$?
 
-    # 5b. Update system.yaml user_packages for explicit installs/removes
+    # 6b. Update system.yaml user_packages for explicit installs/removes
     if [[ "$pacman_exit" -eq 0 ]]; then
         _pac_op=$(_pac_operation "$@")
         mapfile -t _pac_pkgs < <(_pac_pkg_names "$@")
@@ -306,14 +317,14 @@ if is_immutable_root; then
         fi
     fi
 
-    # 6. Lock root (trap also runs on exit, but explicit call keeps the order
+    # 7. Lock root (trap also runs on exit, but explicit call keeps the order
     #    deterministic for the steps below)
     lock_root
 
-    # 7. sbctl sign-all (if Secure Boot active)
+    # 8. sbctl sign-all (if Secure Boot active)
     sign_after_upgrade
 
-    # 8. Sync boot entries
+    # 9. Sync boot entries
     sync_boot_entries
 
     # 9. Write upgrade log
