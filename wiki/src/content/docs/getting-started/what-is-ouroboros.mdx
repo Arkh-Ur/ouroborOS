@@ -1,0 +1,89 @@
+---
+title: What is ouroborOS?
+description: Learn about ouroborOS, a modern immutable Arch Linux distribution that combines the power of Arch with the simplicity of declarative configuration.
+slug: getting-started/what-is-ouroboros
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# What is ouroborOS?
+
+ouroborOS is a cutting-edge Linux distribution that reimagines how we think about system management through the lens of immutability and declarative configuration. Built on the solid foundation of Arch Linux, ouroborOS brings together the best of both worlds: the rolling release model and extensive package repository of Arch, combined with the safety and predictability of immutable systems.
+
+## Core Philosophy
+
+At its heart, ouroborOS is designed around a simple yet powerful philosophy: **immutable systems by default, mutable when needed**. This approach eliminates the gradual degradation that plagues traditional Linux installations, ensuring your system remains clean, fast, and secure throughout its entire lifecycle.
+
+```bash
+# Example of our immutable approach
+# Every package operation creates a snapshot
+our-pac upgrade
+# This automatically creates: /.snapshots/YYYY-MM-DDTHHMMSS/
+```
+
+:::note
+**Why immutability matters**: Traditional mutable systems accumulate cruft over time as packages are modified, configurations drift, and services change. Immutability provides a clean slate for every change, making debugging easier and performance more predictable.
+:::
+
+## Key Features
+
+### 1. **Btrfs Integration**
+- Automatic snapshot creation on package operations
+- Atomic rollback capabilities
+- Efficient storage through copy-on-write
+- Built-in scrub and maintenance operations
+
+### 2. **Declarative Configuration**
+- `system.yaml` manifest for system-wide configuration
+- Version-controlled, reproducible system state
+- Easy backup and migration of system definitions
+
+### 3. **Modern Tooling**
+- Rich TUI installer with multiple profiles
+- Containerized AUR and Flatpak management
+- Integrated security (Secure Boot, FIDO2, TPM2)
+- systemd-homed for encrypted user directories
+
+### 4. **Minimal Bloat**
+- Core Arch Linux packages only
+- No unnecessary services or daemons
+- Clean desktop profiles (Hyprland, Niri, GNOME, KDE)
+- Optimized for performance and security
+
+```yaml
+# Example system.yaml configuration
+system:
+  hostname: ouroboros
+  locale: en_US.UTF-8
+  packages:
+    - base
+    - linux
+    - sudo
+    - networkmanager
+```
+
+## Who Should Use ouroborOS?
+
+ouorborOS is ideal for:
+
+- **Power users** who want control over their system without the maintenance overhead
+- **Developers** needing reproducible environments
+- **Security-conscious users** who value system integrity
+- **System administrators** managing multiple machines
+- **Users tired of system bloat and gradual degradation**
+
+## Getting Started
+
+Ready to explore ouroborOS? Begin with [installation requirements](installation/requirements) to ensure your system is compatible, or dive straight into the [interactive installer](installation/interactive) for a guided experience.
+
+:::tip
+**Pro tip**: Start with the `minimal` desktop profile to get a clean slate, then add your preferred desktop environment and applications as needed.
+:::
+
+<Tabs>
+<TabItem label="Interactive Install">
+The TUI installer provides a step-by-step guided experience with automatic detection of your hardware and network configuration.
+</TabItem>
+<TabItem label="Unattended Install">
+For automated deployments or when you need reproducible installations across multiple machines.
+</TabItem>
+</Tabs>

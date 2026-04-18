@@ -1,0 +1,677 @@
+---
+title: Hyprland
+description: Learn how to configure and use Hyprland, the modern tiling window manager in ouroborOS with Wayland support.
+slug: desktop/hyprland
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Hyprland
+
+Hyprland is a modern, dynamic tiling window manager for Wayland that prioritizes simplicity, performance, and customizability. In ouroborOS, Hyprland comes pre-configured with essential applications and a polished user experience, making it perfect for developers, power users, and anyone who values an efficient workflow.
+
+## What is Hyprland?
+
+Hyprland is a tiling window manager that uses the Wayland protocol, offering better performance, security, and stability compared to traditional X11-based window managers. It combines the power of tiling layouts with the flexibility of manual arrangements, all while maintaining excellent performance.
+
+```bash
+# Traditional window management - manual
+# Install window manager
+sudo pacman -S dwm
+# Configure manually
+# Install terminal
+sudo pacman -S alacritty
+# Configure applications individually
+
+# Hyprland in ouroborOS - pre-configured
+# Hyprland comes with waybar, kitty, rofi, and hyprpaper
+# All configurations pre-set for optimal experience
+```
+
+## Installation and Setup
+
+### **Hyprland Profile**
+Hyprland is included in the "Hyprland" desktop profile during installation:
+
+```bash
+# Check if Hyprland is installed
+hyprctl --version
+
+# Switch to Hyprland profile (if not already)
+ouroboros-profile change hyprland
+
+# Verify Hyprland installation
+systemctl status hyprland.service
+```
+
+### **Basic Configuration**
+Hyprland configuration is stored in `~/.config/hypr/hyprland.conf`:
+
+```bash
+# Edit Hyprland configuration
+nano ~/.config/hypr/hyprland.conf
+
+# Configuration directory structure
+~/.config/hypr/
+├── hyprland.conf        # Main configuration
+├── hyprpaper.conf       # Wallpaper configuration
+├── monitors.conf        # Monitor settings
+├── rules.conf          # Window rules
+└── apps/               # Application configurations
+    ├── kitty.conf
+    ├── waybar.conf
+    └── rofi.conf
+```
+
+## Core Concepts
+
+### **Layouts and Workspaces**
+Hyprland supports multiple layouts and workspaces for efficient workflow management:
+
+```ini
+# Basic workspace configuration
+workspace=1,monitor:HDMI-A-1,layout:dwindle
+workspace=2,monitor:HDMI-A-1,layout:master
+workspace=3,monitor:HDMI-A-1,layout:flex
+
+# Default layout
+monitor=HDMI-A-1,preferred,auto,1
+workspace=HDMI-A-1,1
+```
+
+### **Window Management**
+```ini
+# Window rules
+windowrule=float, ^(firefox)$
+windowrule=size 800 600, ^(vlc)$
+windowrule=opacity 0.8, ^(kitty)$
+
+# Window animations
+animation=windowsIn,1,3,default,popin 80%
+animation=windowsOut,1,3,default,slideoutleft
+animation=border,1,3,default
+animation=fade,1,3,default
+```
+
+### **Keybindings**
+Hyprland uses a clean, intuitive keybinding system:
+
+```ini
+# Basic keybindings
+$mainMod = SUPER
+
+# Window management
+bind=$mainMod, Q, killactive,
+bind=$mainMod, M, fullscreen,
+bind=$mainMod, F, togglefloating,
+bind=$mainMod, SPACE, togglesplit,
+
+# Workspace navigation
+bind=$mainMod, 1, workspace, 1
+bind=$mainMod, 2, workspace, 2
+bind=$mainMod, 3, workspace, 3
+
+# Window navigation
+bind=$mainMod, H, movefocus, l
+bind=$mainMod, L, movefocus, r
+bind=$mainMod, K, movefocus, u
+bind=$mainMod, J, movefocus, d
+```
+
+## Configuration Details
+
+### **Main Configuration File**
+```ini
+# ~/.config/hypr/hyprland.conf
+# -------------------------------
+# Monitor and Workspace Setup
+# -------------------------------
+monitor=HDMI-A-1,preferred,auto,1
+monitor=DP-1,preferred,auto,1,transform,1
+
+workspace=HDMI-A-1,1
+workspace=HDMI-A-1,2
+workspace=HDMI-A-1,3
+workspace=HDMI-A-1,4
+workspace=DP-1,5
+workspace=DP-1,6
+workspace=DP-1,7
+workspace=DP-1,8
+
+# -------------------------------
+# Input Configuration
+# -------------------------------
+input {
+    kb_layout = us
+    kb_variant = 
+    kb_model = 
+    kb_options = 
+    kb_rules = 
+    
+    follow_mouse = 1
+    mouse_refocus = 1
+    
+    touchpad {
+        natural_scroll = true
+        disable_while_typing = true
+        clickfinger_behavior = true
+    }
+}
+
+# -------------------------------
+# General Configuration
+# -------------------------------
+general {
+    gaps_in = 5
+    gaps_out = 20
+    border_size = 2
+    col.active_border = rgba(33,cc,ff,1.0)
+    col.inactive_border = rgba(88,88,88,1.0)
+    
+    layout = dwindle
+    # master
+    # dwindle
+    # master + dwindle
+}
+
+# -------------------------------
+# Decoration Configuration
+# -------------------------------
+decoration {
+    rounding = 10
+    
+    blur {
+        enabled = true
+        size = 8
+        passes = 3
+        new_optimizations = true
+    }
+    
+    drop_shadow = true
+    shadow_range = 4
+    shadow_render_power = 3
+    shadow_ignore_window = true
+    shadow_offset = 0 0
+}
+
+# -------------------------------
+# Animation Configuration
+# -------------------------------
+animations {
+    enabled = true
+    
+    bezier = myBezier, 0.05, 0.9, 0.1, 1.05
+    
+    animation = windows, 1, 3, myBezier
+    animation = windowsOut, 1, 3, default, popin 80%
+    animation = border, 1, 2, default
+    animation = fade, 1, 2, default
+    animation = workspaces, 1, 2, default
+}
+```
+
+### **Application Configuration**
+```ini
+# Application-specific configurations
+# Kitty terminal
+windowrule = float, ^(kitty)$
+windowrule = tile, ^(kitty)$
+windowrule = size 1200 800, ^(kitty)$
+
+# Firefox
+windowrule = float, ^(firefox)$
+windowrule = size 1200 800, ^(firefox)$
+
+# Rofi
+windowrule = float, ^(rofi)$
+windowrule = center, ^(rofi)$
+windowrule = size 60% 50%, ^(rofi)$
+
+# Waybar
+windowrule = float, ^(waybar)$
+windowrule = pin, ^(waybar)$
+windowrule = move 0 0, ^(waybar)$
+windowrule = dimaround, ^(waybar)$
+
+# Pavucontrol
+windowrule = float, ^(pavucontrol)$
+windowrule = center, ^(pavucontrol)$
+windowrule = size 400 300, ^(pavucontrol)$
+```
+
+### **Autostart Applications**
+```ini
+# Autostart applications
+exec-once = waybar
+exec-once = hyprpaper
+exec-once = nm-applet
+exec-once = blueberry-tray
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+
+# User applications
+exec-once = firefox
+exec-once = kitty
+```
+
+## Custom Applications
+
+### **Kitty Terminal Configuration**
+```bash
+# ~/.config/kitty/kitty.conf
+font_family JetBrains Mono
+font_size 12.0
+
+# Colors
+background #1a1a1a
+foreground #e0e0e0
+cursor #ffffff
+selection_background #4a4a4a
+color0 #2d2d2d
+color8 #5a5a5a
+color1 #ff5f56
+color9 #ff5f56
+color2 #98be65
+color10 #98be65
+color3 #ecbe7b
+color11 #ecbe7b
+color4 #51afef
+color12 #51afef
+color5 #c678dd
+color13 #c678dd
+color6 #46d9ff
+color14 #46d9ff
+color7 #dedede
+color15 #ffffff
+
+# Keybindings
+map ctrl+shift+t new_window
+map ctrl+shift+w close_window
+map ctrl+shift+enter new_tab
+map ctrl+shift+w close_tab
+map ctrl+shift+right next_tab
+map ctrl+shift+left previous_tab
+```
+
+### **Waybar Configuration**
+```json
+// ~/.config/waybar/config.json
+{
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "modules-left": ["sway/workspaces", "sway/mode", "sway/window"],
+    "modules-center": ["clock"],
+    "modules-right": ["tray", "pulseaudio", "battery", "network", "cpu", "memory", "temperature"],
+    
+    "sway/workspaces": {
+        "format": "{name}",
+        "format-icons": {
+            "1": "1",
+            "2": "2",
+            "3": "3",
+            "4": "4",
+            "5": "5",
+            "focused": "",
+            "default": ""
+        }
+    },
+    
+    "clock": {
+        "format": "{:%H:%M} {:%d/%m/%Y}",
+        "tooltip-format": "<big>{:%Y-%m-%d}</big><br><tt>{:%H:%M:%S}</tt>"
+    },
+    
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "🔇",
+        "format-icons": ["🔈", "🔊", "🔊"]
+    },
+    
+    "battery": {
+        "format": "{icon} {capacity}%",
+        "format-icons": ["🔋", "🔋", "🔋", "🔋"]
+    }
+}
+```
+
+### **Rofi Configuration**
+```bash
+# ~/.config/rofi/config.rasi
+configuration {
+    show-icons: true;
+    icon-theme: "Adwaita";
+    location: center;
+    modi: "drun,run,combi";
+    combi-modi: "drun,run";
+    
+    theme: str({
+        @define-color bg-color #1a1a1a;
+        @define-color fg-color #e0e0e0;
+        @define-color selected-color #10b981;
+        
+        window {
+            background-color: @bg-color;
+            border-radius: 10px;
+        }
+        
+        mainbox {
+            background-color: @bg-color;
+            border-radius: 10px;
+        }
+        
+        inputbar {
+            children: [prompt, entry];
+            background-color: @bg-color;
+            border-radius: 5px;
+        }
+        
+        listview {
+            background-color: @bg-color;
+            border-radius: 5px;
+        }
+        
+        element {
+            background-color: @bg-color;
+            text-color: @fg-color;
+        }
+        
+        element.selected {
+            background-color: @selected-color;
+            text-color: @bg-color;
+        }
+    });
+}
+```
+
+## Keybindings and Shortcuts
+
+### **Basic Navigation**
+```bash
+# Window management
+SUPER + Q          # Close focused window
+SUPER + SHIFT + Q  # Kill focused window
+SUPER + M          # Toggle fullscreen
+SUPER + F         # Toggle floating
+SUPER + SPACE      # Toggle split mode
+
+# Window focus
+SUPER + H          # Focus left
+SUPER + L          # Focus right
+SUPER + K          # Focus up
+SUPER + J          # Focus down
+
+# Window movement
+SUPER + SHIFT + H  # Move window left
+SUPER + SHIFT + L  # Move window right
+SUPER + SHIFT + K  # Move window up
+SUPER + SHIFT + J  # Move window down
+```
+
+### **Workspace Management**
+```bash
+# Workspace navigation
+SUPER + 1-8        # Switch to workspace 1-8
+SUPER + SHIFT + 1-8 # Move focused window to workspace 1-8
+
+# Workspace movement
+SUPER + CTRL + H    # Move workspace to left monitor
+SUPER + CTRL + L    # Move workspace to right monitor
+```
+
+### **Special Applications**
+```bash
+# Application launchers
+SUPER + RETURN      # Open Kitty terminal
+SUPER + D          # Open Rofi app launcher
+SUPER + SHIFT + D  # Open Rfi window launcher
+
+# System commands
+SUPER + SHIFT + E  # Exit Hyprland
+SUPER + SHIFT + R  # Reload configuration
+SUPER + SHIFT + C  # Clear all windows
+```
+
+## Theming and Customization
+
+### **Color Schemes**
+```ini
+# ~/.config/hypr/hyprland.conf
+# -------------------------------
+# Dark theme colors
+# -------------------------------
+general {
+    col.active_border = rgba(16,185,129,1.0)    # emerald-500
+    col.inactive_border = rgba(88,88,88,1.0)    # gray-700
+}
+
+decoration {
+    rounding = 10
+    
+    blur {
+        enabled = true
+        size = 8
+        passes = 3
+        new_optimizations = true
+    }
+}
+
+# -------------------------------
+# Light theme colors
+# -------------------------------
+# general {
+#     col.active_border = rgba(5,150,105,1.0)   # emerald-600
+#     col.inactive_border = rgba(209,213,219,1.0) # gray-300
+# }
+```
+
+### **Dynamic Wallpaper**
+```bash
+# Set wallpaper with hyprpaper
+hyprpaper -j ~/.config/hyprpaper.conf
+
+# ~/.config/hyprpaper.conf
+preload = /path/to/wallpaper.jpg
+wallpaper = HDMI-A-1,/path/to/wallpaper.jpg
+wallpaper = DP-1,/path/to/wallpaper2.jpg
+```
+
+### **GTK/Icon Themes**
+```bash
+# Set GTK theme
+gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+gsettings set org.gnome.desktop.interface icon-theme "Adwaita"
+
+# Set cursor theme
+gsettings set org.gnome.desktop.interface cursor-theme "Adwaita"
+```
+
+## Performance Optimization
+
+### **Hyprland Settings**
+```ini
+# Performance optimizations
+general {
+    resize_on_border = true
+    no_focus_fallback = true
+    gaps_in = 5
+    gaps_out = 10
+}
+
+decoration {
+    blur {
+        enabled = true
+        size = 5
+        passes = 2
+        ignore_opacity = true
+    }
+    
+    drop_shadow = false
+}
+
+animations {
+    enabled = false  # Disable animations for performance
+}
+
+input {
+    touchpad {
+        natural_scroll = true
+        disable_while_typing = true
+    }
+}
+```
+
+### **System Configuration**
+```bash
+# ~/.config/hypr/hyprland.conf
+# -------------------------------
+# Monitor configuration
+monitor=HDMI-A-1,preferred,auto,1,scale,1
+monitor=DP-1,preferred,auto,1,transform,1
+
+# GPU acceleration
+render {
+    explicit_sync = true
+    direct_scanout = true
+}
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Hyprland not starting
+hyprctl --version
+systemctl status hyprland.service
+
+# Configuration errors
+hyprctl dispatch exec kitty  # Test configuration
+hyprctl reload              # Reload configuration
+
+# Window focus issues
+hyprctl dispatch focuswindow urgent
+```
+
+### **Debug Mode**
+```bash
+# Enable debug logging
+hyprland -d
+
+# Show debug information
+hyprctl cursorpos
+hyprctl activewindow
+hyprctl workspaces
+```
+
+### **Performance Issues**
+```bash
+# Check GPU usage
+glxgears
+
+# Monitor performance
+hyprctl getoption animations:enabled
+hyprctl getoption decoration:blur:enabled
+```
+
+## Integration with ouroborOS
+
+### **Service Management**
+```bash
+# Enable Hyprland services
+systemctl enable --now NetworkManager
+systemctl enable --now bluetooth
+systemctl enable --now waybar
+
+# Disable conflicting services
+systemctl disable --now gdm
+systemctl disable --now sddm
+```
+
+### **Package Updates**
+```bash
+# Update Hyprland packages
+our-pac upgrade hyprland waybar kitty rofi
+
+# Update system
+our-pac upgrade
+```
+
+### **Snapshots and Rollbacks**
+```bash
+# Create snapshot before major changes
+our-snapshot create pre-hyprland-config
+
+# Test new configuration
+hyprctl reload
+
+# Rollback if needed
+our-rollback now
+```
+
+## Best Practices
+
+### **Workflow Optimization**
+```bash
+# Use workspaces efficiently
+# Workspaces 1-4: Development
+# Workspaces 5-8: Communication
+# Use floating windows for specific apps
+
+# Use keybindings efficiently
+# Keep commonly used apps bound to key combinations
+# Use Rofi for application launching
+```
+
+### **Configuration Management**
+```bash
+# Backup configuration
+cp -r ~/.config/hypr ~/.config/hypr.backup
+
+# Version control configuration
+git init ~/.config/hypr
+git add .
+git commit -m "Initial Hyprland configuration"
+
+# Test configuration changes
+hyprctl reload
+```
+
+### **Resource Management**
+```bash
+# Monitor resource usage
+htop
+btop
+
+# Optimize for performance
+# Disable unnecessary animations
+# Use efficient applications
+# Monitor GPU usage
+```
+
+Hyprland in ouroborOS provides a powerful, efficient desktop environment that combines the best of tiling window management with modern Wayland technology. With its pre-configured setup and extensive customization options, it's perfect for users who value both performance and flexibility.
+
+<Tabs>
+<TabItem label="Basic Setup">
+```bash
+# Basic Hyprland workflow
+SUPER + RETURN  # Open terminal
+SUPER + D       # Open app launcher
+SUPER + H/J/K/L # Navigate windows
+SUPER + 1-8     # Switch workspaces
+SUPER + SHIFT + R # Reload config
+```
+</TabItem>
+<TabItem label="Advanced Configuration">
+```bash
+# Custom configuration
+nano ~/.config/hypr/hyprland.conf
+hyprctl reload
+
+# Custom applications
+windowrule=float, ^(firefox)$
+windowrule=tile, ^(kitty)$
+
+# Custom autostart
+exec-once = waybar
+exec-once = hyprpaper
+```
+</TabItem>
+</Tabs>

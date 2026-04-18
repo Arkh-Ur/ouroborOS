@@ -1,0 +1,393 @@
+---
+title: systemd-networkd Configuration
+description: Network configuration with systemd-networkd in ouroborOS
+slug: network/networkd
+---
+
+# systemd-networkd Configuration
+
+systemd-networkd is the default network management system in ouroborOS, providing robust, reliable network configuration using declarative configuration files. It replaces traditional NetworkManager with a more systemd-integrated approach.
+
+## Overview
+
+systemd-networkd provides:
+
+- **Declarative network configuration** through .network and .netdev files
+- **Automatic network detection** and connection management
+- **Integration with systemd** for service dependencies
+- **DNS and NTP management** through systemd-resolved and systemd-timesyncd
+- **Bonding and teaming** for network redundancy
+
+:::note
+
+ouroborOS uses systemd-networkd as the primary network manager, with iwd for WiFi and systemd-resolved for DNS resolution. This provides a consistent, systemd-native networking experience.
+
+:::
+
+## Installation and Setup
+
+The network stack is pre-installed with ouroborOS. Verify setup:
+
+```bash
+# Check network service status
+systemctl status systemd-networkd
+systemctl status systemd-resolved
+systemctl status systemd-timesyncd
+
+# Show network interfaces
+ip link show
+```
+
+## Configuration Directory
+
+Network configuration files are stored in `/etc/systemd/network/`:
+
+```bash
+# List network configurations
+ls -la /etc/systemd/network/
+
+# Show network directory structure
+tree /etc/systemd/network/
+```
+
+## Basic Network Configuration
+
+### Static IP Configuration
+
+```ini
+# /etc/systemd/network/10-static.network
+[Match]
+Name=enp0s3
+
+[Network]
+Address=192.168.1.100/24
+Gateway=192.168.1.1
+DNS=8.8.8.8 8.8.4.4
+DNS=1.1.1.1
+```
+
+### DHCP Configuration
+
+```ini
+# /etc/systemd/network/20-dhcp.network
+[Match]
+Name=enp0s3
+
+[Network]
+DHCP=yes
+Domains=example.com
+Gateway=on
+```
+
+### Multiple DNS Servers
+
+```ini
+# /etc/systemd/network/30-dns.network
+[Match]
+Name=enp0s3
+
+[Network]
+DNS=8.8.8.8
+DNS=8.8.4.4
+DNS=1.1.1.1
+DNS=9.9.9.9
+```
+
+## Advanced Configuration
+
+### Bonding (Link Aggregation)
+
+```ini
+# /etc/systemd/network/40-bond.netdev
+[NetDev]
+Name=bond0
+Kind=bond
+MACAddress=00:11:22:33:44:55
+
+[Bond]
+Mode=802.3ad
+LACPRate=fast
+MIIMonitorSec=100
+UpDelaySec=2000
+DowndelaySec=2000
+```
+
+```ini
+# /etc/systemd/network/50-bond.network
+[Match]
+Name=bond0
+
+[Network]
+Address=192.168.1.100/24
+Gateway=192.168.1.1
+DNS=8.8.8.8
+```
+
+### VLAN Configuration
+
+```ini
+# /etc/systemd/network/60-vlan.netdev
+[NetDev]
+Name=vlan10
+Kind=vlan
+Interface=eth0
+Id=10
+
+[VLAN]
+VLANId=10
+```
+
+```ini
+# /etc/systemd/network/70-vlan.network
+[Match]
+Name=vlan10
+
+[Network]
+Address=192.168.10.100/24
+Gateway=192.168.10.1
+```
+
+### Bridge Configuration
+
+```ini
+# /etc/systemd/network/80-bridge.netdev
+[NetDev]
+Name=br0
+Kind=bridge
+MACAddress=00:11:22:33:44:55
+
+[Bridge]
+STP=no
+ForwardDelaySec=0
+```
+
+## Network Management Commands
+
+### Service Management
+
+```bash
+# Enable and start network services
+systemctl enable systemd-networkd
+systemctl start systemd-networkd
+
+# Enable and start DNS resolution
+systemctl enable systemd-resolved
+systemctl start systemd-resolved
+
+# Enable and start time sync
+systemctl enable systemd-timesyncd
+systemctl start systemd-timesyncd
+```
+
+### Network Status
+
+```bash
+# Show network connections
+networkctl
+
+# Show detailed network status
+networkctl status
+
+# Show network addresses
+networkctl address
+
+# Show DNS configuration
+systemd-resolve --status
+```
+
+### Network Configuration Reload
+
+```bash
+# Reload network configurations
+systemctl reload systemd-networkd
+
+# Restart network service
+systemctl restart systemd-networkd
+
+# Show network logs
+journalctl -u systemd-networkd -f
+```
+
+## DNS Configuration
+
+### systemd-resolved Setup
+
+```bash
+# Create symlink for DNS
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+
+# Show DNS status
+systemd-resolve --statistics
+
+# Show DNS cache
+systemd-resolve --cache-status
+```
+
+### Custom DNS Servers
+
+```ini
+# /etc/systemd/network/99-dns.network
+[Match]
+Name=enp0s3
+
+[Network]
+DNS=8.8.8.8
+DNS=8.8.4.4
+DNS=1.1.1.1
+Domains=example.com
+```
+
+## Network Debugging
+
+### Troubleshooting Commands
+
+```bash
+# Check network interfaces
+ip addr show
+ip link show
+
+# Show network routes
+ip route show
+
+# Check ARP table
+ip neigh show
+
+# Show connection tracking
+ss -tulnp
+```
+
+### Network Logging
+
+```bash
+# Show network service logs
+journalctl -u systemd-networkd -f
+
+# Show DNS service logs
+journalctl -u systemd-resolved -f
+
+# Show time sync logs
+journalctl -u systemd-timesyncd -f
+```
+
+### Diagnostic Tools
+
+```bash
+# Test network connectivity
+ping google.com
+ping 8.8.8.8
+
+# Test DNS resolution
+dig google.com
+nslookup google.com
+
+# Test network speed
+speedtest-cli
+iperf3 -c speedtest.server.net
+```
+
+## WiFi Integration
+
+### iwd Configuration
+
+```ini
+# /etc/iwd/main.conf
+[General]
+EnableNetworkConfiguration=true
+AddressRandomization=performance
+
+[Network]
+EnableIPv6=true
+```
+
+### Networkd+iwd Integration
+
+```ini
+# /etc/systemd/network/20-wireless.network
+[Match]
+Name=wlp3s0
+
+[Network]
+DHCP=yes
+DNS=8.8.8.8
+Domains=example.com
+```
+
+## Time Synchronization
+
+### systemd-timesyncd Configuration
+
+```ini
+# /etc/systemd/timesyncd.conf
+[Time]
+NTP=pool.ntp.org
+FallbackNTP=time.google.com time.windows.com
+PollIntervalMinSec=32
+PollIntervalMaxSec=2048
+```
+
+### Time Management
+
+```bash
+# Enable time sync
+systemctl enable systemd-timesyncd
+systemctl start systemd-timesyncd
+
+# Show time status
+timedatectl status
+
+# Set time manually
+timedatectl set-time "2024-01-01 12:00:00"
+
+# Enable NTP
+timedatectl set-ntp true
+```
+
+## Network Security
+
+### Firewall Integration
+
+```bash
+# Enable firewalld
+systemctl enable firewalld
+systemctl start firewalld
+
+# Add firewall rules
+firewall-cmd --add-service=http --permanent
+firewall-cmd --add-service=https --permanent
+firewall-cmd --reload
+```
+
+### Network Hardening
+
+```ini
+# /etc/systemd/network/99-security.network
+[Match]
+Name=enp0s3
+
+[Network]
+IPv6AcceptRA=no
+LLMNR=no
+MulticastDNS=no
+ProxyARP=no
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Network automation with systemd-networkd
+- Advanced bonding and teaming configurations
+- VPN integration with WireGuard and OpenVPN
+- Network monitoring and performance tuning
+- Security hardening guidelines
+- Network scripting and automation
+- Load balancing configurations
+- Network failover mechanisms
+- Integration with cloud services
+- Network troubleshooting tools
+
+:::tip
+
+Always backup network configuration files before making changes. Use `networkctl` to verify configuration syntax and test changes in a development environment first.
+
+:::

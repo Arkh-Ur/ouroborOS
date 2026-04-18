@@ -1,0 +1,335 @@
+---
+title: Secure Boot
+description: Secure Boot configuration and management with ouroboros-secureboot in ouroborOS
+slug: security/secure-boot
+---
+
+# Secure Boot Configuration (ouroboros-secureboot)
+
+`ouroboros-secureboot` is a comprehensive Secure Boot management tool built on top of sbctl, providing easy setup, verification, and management of Secure Boot in ouroborOS. It ensures system integrity and protection against boot-time attacks.
+
+## Overview
+
+The Secure Boot tool provides:
+
+- **Complete lifecycle management** of Secure Boot keys and certificates
+- **Automatic signing** of kernel and boot files
+- **Microsoft keys integration** for third-party driver compatibility
+- **System integrity verification** and boot security monitoring
+- **Rollback protection** for secure system updates
+
+:::note
+
+Secure Boot requires UEFI firmware with Setup Mode enabled. The system automatically detects firmware capabilities and guides you through the setup process.
+
+:::
+
+## Installation
+
+The Secure Boot manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+ouroboros-secureboot --version
+ouroboros-secureboot --help
+```
+
+## Basic Usage
+
+### Initial Setup
+
+```bash
+# Check Secure Boot status
+ouroboros-secureboot status
+
+# Initialize Secure Boot
+sudo ouroboros-secureboot setup
+
+# Add Microsoft keys (optional)
+sudo ouroboros-secureboot enroll-keys -m
+
+# Verify system files
+sudo ouroboros-secureboot verify
+```
+
+### Key Management
+
+```bash
+# Show current keys
+sudo ouroboros-secureboot list-keys
+
+# Add custom key
+sudo ouroboros-secureboot add-key my-key.pem
+
+# Remove key
+sudo ouroboros-secureboot remove-key my-key
+
+# Export keys
+sudo ouroboros-secureboot export-keys secure-boot-backup.tar
+```
+
+## Advanced Operations
+
+### System Signing
+
+```bash
+# Sign all system files
+sudo ouroboros-secureboot sign-all
+
+# Sign specific kernel
+sudo ouroboros-secureboot sign /boot/vmlinuz-linux
+
+# Sign bootloader
+sudo ouroboros-secureboot sign /boot/EFI/BOOT/BOOTX64.EFI
+
+# Sign EFI applications
+sudo ouroboros-secureboot sign /boot/EFI/grub/grubx64.efi
+```
+
+### Verification and Monitoring
+
+```bash
+# Verify all system files
+sudo ouroboros-secureboot verify
+
+# Check boot entries
+sudo ouroboros-secureboot boot-entries
+
+# Monitor system integrity
+sudo ouroboros-secureboot monitor --continuous
+
+# Generate integrity report
+sudo ouroboros-secureboot report --output integrity-report.txt
+```
+
+### Key Rotation
+
+```bash
+# Generate new keys
+sudo ouroboros-secureboot rotate-keys
+
+# Re-sign all files with new keys
+sudo ouroboros-secureboot re-sign
+
+# Verify key rotation
+sudo ouroboros-secureboot verify-keys
+```
+
+## Configuration Files
+
+### Secure Boot Configuration
+
+```ini
+# /etc/secureboot/secureboot.conf
+[secureboot]
+enabled = true
+microsoft_keys = true
+auto_sign = true
+monitor_interval = 300
+backup_enabled = true
+```
+
+### Key Storage
+
+Secure Boot keys are stored in `/var/lib/sbctl/`:
+
+```bash
+# Key storage directory
+ls -la /var/lib/sbctl/
+
+# Key files
+ls -la /var/lib/sbctl/keys/
+ls -la /var/lib/sbctl/db/
+
+# Certificate files
+ls -la /var/lib/sbctl/certificates/
+```
+
+## System Integration
+
+### Package Management Integration
+
+```bash
+# Automatic signing during package updates
+our-pac install neovim  # Automatically signs neovim binaries
+
+# Manual signing after manual package installation
+sudo ouroboros-secureboot sign-all
+```
+
+### Bootloader Integration
+
+```bash
+# Show boot entries
+bootctl list
+
+# Verify boot entry signatures
+bootctl verify /boot/EFI/BOOT/BOOTX64.EFI
+
+# Update boot entries
+bootctl update
+```
+
+### UEFI Integration
+
+```bash
+# Check UEFI variables
+efivar -l
+
+# Show UEFI firmware info
+dmidecode -t bios
+
+# Check UEFI secure boot status
+mokutil --sb-state
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix Secure Boot issues
+sudo ouroboros-secureboot fix
+
+# Reset Secure Boot database
+sudo ouroboros-secureboot reset
+
+# Clear enrollment keys
+sudo ouroboros-secureboot clear-keys
+
+# Reinitialize Secure Boot
+sudo ouroboros-secureboot reinitialize
+```
+
+### Boot Problems
+
+```bash
+# Check boot signature
+sudo ouroboros-secureboot check-boot
+
+# Verify kernel signature
+sudo ouroboros-secureboot check-kernel
+
+# Check bootloader signature
+sudo ouroboros-secureboot check-bootloader
+
+# Diagnose boot issues
+sudo ouroboros-secureboot diagnose
+```
+
+### Key Management Issues
+
+```bash
+# Check key database
+sudo ouroboros-secureboot check-keys
+
+# Verify certificates
+sudo ouroboros-secureboot check-certificates
+
+# Fix key permissions
+sudo ouroboros-secureboot fix-permissions
+
+# Rebuild key database
+sudo ouroboros-secureboot rebuild-db
+```
+
+## Security Features
+
+### System Integrity Protection
+
+```bash
+# Enable integrity monitoring
+sudo ouroboros-secureboot enable-monitoring
+
+# Set up alerts for changes
+sudo ouroboros-secureboot enable-alerts
+
+# Configure automatic response
+sudo ouroboros-secureboot configure-auto-response
+```
+
+### Backup and Recovery
+
+```bash
+# Create backup
+sudo ouroboros-securebackup create-backup
+
+# Restore from backup
+sudo ouroboros-secureboot restore-backup secure-boot-backup.tar
+
+# Test backup integrity
+sudo ouroboros-secureboot test-backup secure-boot-backup.tar
+```
+
+### Custom Keys
+
+```bash
+# Generate custom key pair
+openssl req -new -x509 -newkey rsa:2048 -nodes -keyout secureboot.key -out secureboot.crt -days 3650
+
+# Add custom key
+sudo ouroboros-secureboot add-key secureboot.crt
+
+# Remove custom key
+sudo ouroboros-secureboot remove-key secureboot.crt
+```
+
+## Workflow Management
+
+### Safe Boot Process
+
+```bash
+# 1. Check Secure Boot status
+sudo ouroboros-secureboot status
+
+# 2. Enable Secure Boot
+sudo ouroboros-secureboot setup
+
+# 3. Sign system files
+sudo ouroboros-secureboot sign-all
+
+# 4. Verify system
+sudo ouroboros-secureboot verify
+
+# 5. Configure monitoring
+sudo ouroboros-secureboot enable-monitoring
+```
+
+### Update Process
+
+```bash
+# 1. Pre-update backup
+sudo ouroboros-securebackup create-backup
+
+# 2. Update system
+our-pac update
+
+# 3. Re-sign files
+sudo ouroboros-secureboot sign-all
+
+# 4. Verify integrity
+sudo ouroboros-secureboot verify
+
+# 5. Check monitoring
+sudo ouroboros-secureboot monitor
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Advanced UEFI firmware configuration
+- Custom key management and PKI setup
+- Secure Boot for virtual machines and containers
+- Integration with TPM2 for enhanced security
+- Secure Boot debugging and forensic analysis
+- Network boot security
+- Firmware update security
+- Secure Boot policies and compliance
+- Integration with hardware security modules
+- Secure Boot performance optimization
+
+:::danger
+
+Always back up your Secure Boot keys before making changes. Losing Secure Boot keys may prevent system boot and require firmware reset.
+
+:::

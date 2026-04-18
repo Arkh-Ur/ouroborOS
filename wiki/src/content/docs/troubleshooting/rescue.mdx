@@ -1,0 +1,39 @@
+---
+title: System Rescue & Rollbacks
+description: How to rescue and roll back a broken ouroborOS installation using Btrfs snapshots.
+slug: troubleshooting/rescue
+---
+
+# System Rescue & Rollbacks
+
+Every `our-pac` operation creates a Btrfs snapshot before making changes. If an update breaks your system, you can roll back to a known-good state in seconds — no live USB required.
+
+## Quick Rollback via Boot Menu
+
+The simplest rollback method uses the systemd-boot menu:
+
+```bash
+# 1. Reboot your machine
+sudo reboot
+
+# 2. At the systemd-boot menu, select a snapshot entry:
+#    ouroborOS snapshot (2026-04-18T143000)
+```
+
+:::tip
+Boot menu entries are automatically generated for every snapshot. Just pick the one from before the problematic update.
+:::
+
+## Rollback from Running System
+
+```bash
+# Boot into snapshot for next boot only (non-destructive)
+sudo our-rollback now
+
+# Permanently promote a snapshot to be the active system
+sudo our-rollback promote
+```
+
+---
+
+*Content coming soon — chroot rescue, live ISO recovery, and advanced Btrfs repair.*

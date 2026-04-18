@@ -1,0 +1,366 @@
+---
+title: Flatpak Wrapper
+description: Flatpak package management with our-flat - pacman-style interface for ouroborOS
+slug: apps/our-flat
+---
+
+# Flatpak Wrapper (our-flat)
+
+`our-flat` is a comprehensive Flatpak package wrapper that provides a pacman-style interface for managing Flatpak applications. It integrates seamlessly with ouroborOS, offering familiar commands while leveraging the power and security of Flatpak containers.
+
+## Overview
+
+The `our-flat` tool provides:
+
+- **Pacman-style interface** for familiar Arch Linux users
+- **Complete Flatpak lifecycle management** with 8 primary operations
+- **Automatic remote management** with curated repositories
+- **System integration** with package snapshots and rollback
+- **Application sandboxing** with secure containers
+
+:::note
+
+Flatpak applications run in isolated containers, providing enhanced security and preventing system contamination. This makes it ideal for running third-party applications safely.
+
+:::
+
+## Installation
+
+The Flatpak wrapper is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-flat --version
+our-flat --help
+```
+
+## Basic Usage
+
+### Package Search
+
+```bash
+# Search applications in flatpak repositories
+our-flat search firefox
+
+# Search with descriptions
+our-flat search --desc "video editor"
+
+# Search specific applications
+our-flat search code spotify
+```
+
+### Package Installation
+
+```bash
+# Install a single application
+our-flat install firefox
+
+# Install multiple applications
+our-flat install code neovim telegram
+
+# Install with specific branch
+our-flat install --branch=stable libreoffice
+```
+
+### Package Removal
+
+```bash
+# Remove application (keep user data)
+our-flat remove firefox
+
+# Remove application and user data
+our-flat remove --data firefox
+
+# Remove application and all related packages
+our-flat remove --recursive firefox
+```
+
+## Remote Management
+
+### Configure Remotes
+
+```bash
+# List configured remotes
+our-flat remotes
+
+# Add Flathub repository
+our-flat remote-add flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# Add specific application repository
+our-flat remote-add gnome https://sdk.gnome.org/gnome.flatpakrepo
+
+# Remove remote
+our-flat remote-remove flathub
+```
+
+### Update Remotes
+
+```bash
+# Update all remotes
+our-flat update
+
+# Update specific remote
+our-flat update flathub
+
+# Check remote status
+our-flat status flathub
+```
+
+## Application Management
+
+### Application Information
+
+```bash
+# Show application details
+our-flat info firefox
+
+# Show application files
+our-flat files firefox
+
+# Show application permissions
+our-flat permissions firefox
+
+# Show application runtime
+our-flat runtime firefox
+```
+
+### Application Updates
+
+```bash
+# Update all applications
+our-flat update
+
+# Update specific application
+our-flat update firefox
+
+# Check for updates without installing
+our-flat check-updates
+
+# Update applications from specific remote
+our-flat update --remote=flathub
+```
+
+### Application Control
+
+```bash
+# List installed applications
+our-flat list
+
+# Show running applications
+our-flat ps
+
+# Stop application
+our-flat stop firefox
+
+# Restart application
+our-flat restart firefox
+```
+
+## Security and Permissions
+
+### Permission Management
+
+```bash
+# Grant application permissions
+our-flat grant firefox --filesystem=home
+
+# Revoke application permissions
+our-flat revoke firefox --filesystem=home
+
+# Reset application permissions
+our-flat reset-permissions firefox
+
+# Show permission details
+our-flat permissions firefox
+```
+
+### Sandboxing Configuration
+
+```bash
+# Create sandbox profile
+our-flat sandbox firefox --network=host --filesystem=home
+
+# Apply sandbox profile
+our-flat apply-sandbox firefox
+
+# Remove sandbox profile
+our-flat remove-sandbox firefox
+```
+
+## Application Categories
+
+### Development Tools
+
+```bash
+# Code editors and IDEs
+our-flat install code neovim sublime-text
+
+# Development utilities
+our-flat install gitkraken github-desktop postman
+
+# Version control
+our-flat install gitkraken sourcetree
+```
+
+### Productivity
+
+```bash
+# Office applications
+our-flat install libreoffice-onlyoffice
+
+# Note taking
+our-flat install obsidian standard-notes
+
+# Project management
+our-flat install asana trello notion
+```
+
+### Multimedia
+
+```bash
+# Video players
+our-flat install vlc mpv celluloid
+
+# Music players
+our-flat install spotify audacious
+
+# Image editors
+our-flat install gimp krita inkscape
+```
+
+### Communication
+
+```bash
+# Messaging apps
+our-flat install telegram discord signal
+
+# Video conferencing
+our-flat install zoom jitsi-meet
+
+# Email clients
+our-flat install thunderbird evolution
+```
+
+## Workflow Management
+
+### Safe Installation Process
+
+```bash
+# 1. Create snapshot before installation
+our-snapshot create pre-flatpak-install
+
+# 2. Install application
+our-flat install code
+
+# 3. Test application
+code --version
+
+# 4. If issues arise, rollback
+our-rollback now
+```
+
+### Update Workflow
+
+```bash
+# 1. Check for updates
+our-flat check-updates
+
+# 2. Create snapshot
+our-snapshot create pre-flatpak-update
+
+# 3. Update applications
+our-flat update
+
+# 4. Test updated applications
+code --version
+firefox --version
+
+# 5. If issues, rollback
+our-rollback now
+```
+
+## System Integration
+
+### Automatic Updates
+
+```bash
+# Enable automatic application updates
+systemctl --user enable flatpak-update.timer
+systemctl --user start flatpak-update.timer
+
+# Check update timer status
+systemctl --user status flatpak-update.timer
+```
+
+### Application Integration
+
+```bash
+# Create desktop shortcuts
+our-flat desktop firefox
+
+# Update menu entries
+our-flat update-menu
+
+# Configure MIME types
+our-flat configure-mime
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix broken dependencies
+our-flat repair
+
+# Clean flatpak cache
+our-flat clean-cache
+
+# Reset flatpak database
+our-flat reset-database
+```
+
+### Permission Issues
+
+```bash
+# Reset application permissions
+our-flat reset-permissions firefox
+
+# Grant filesystem access
+our-flat grant firefox --filesystem=home:rw
+
+# Show permission issues
+our-flat check-permissions firefox
+```
+
+### Runtime Issues
+
+```bash
+# Check runtime health
+our-flat check-runtime firefox
+
+# Update runtimes
+our-flat update-runtimes
+
+# Repair runtime
+our-flat repair-runtime firefox
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Flatpak application sandboxing best practices
+- Runtime management and versioning
+- Application data backup and migration
+- Flatpak performance optimization
+- Integration with desktop environments
+- Application container customization
+- Network security for Flatpak apps
+- Application sandbox debugging
+- Flatpak repository management
+
+:::caution
+
+Always review application permissions before installation. Flatpak applications can access sensitive data and system resources if permissions are not properly configured.
+
+:::

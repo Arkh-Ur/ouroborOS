@@ -1,0 +1,332 @@
+---
+title: WiFi Management
+description: WiFi network management with our-wifi in ouroborOS
+slug: network/our-wifi
+---
+
+# WiFi Management (our-wifi)
+
+`our-wifi` is an intuitive WiFi management tool built on top of iwd (iwctl), providing an easy-to-use interface for wireless network discovery, connection, and management. It seamlessly integrates with ouroborOS networking stack.
+
+## Overview
+
+The `our-wifi` tool provides:
+
+- **Interactive WiFi management** with user-friendly commands
+- **Network discovery and scanning** with detailed information
+- **Secure connections** with WPA2/WPA3 encryption
+- **Network profile management** with persistent configurations
+- **Signal strength monitoring** and network quality assessment
+
+:::note
+
+our-wifi uses iwd (Intel Wireless Daemon) as the backend, which provides modern wireless support with WPA3 security and improved performance compared to traditional NetworkManager.
+
+:::
+
+## Installation
+
+The WiFi manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-wifi --version
+our-wifi --help
+```
+
+## Basic Usage
+
+### Network Discovery
+
+```bash
+# List available networks
+our-wifi list
+
+# List networks with detailed information
+our-wifi list --verbose
+
+# Scan for networks in specific area
+our-wifi scan --area office
+```
+
+### Network Connection
+
+```bash
+# Connect to a WiFi network
+our-wifi connect "MyWiFiNetwork"
+
+# Connect with specific password
+our-wifi connect "MyWiFiNetwork" --password mypassword
+
+# Connect to hidden network
+our-wifi connect "HiddenNetwork" --hidden --password mypassword
+```
+
+### Network Status
+
+```bash
+# Show current WiFi status
+our-wifi status
+
+# Show connected network details
+our-wifi current
+
+# Show network signal strength
+our-wifi signal
+```
+
+## Advanced Operations
+
+### Network Management
+
+```bash
+# Disconnect from current network
+our-wifi disconnect
+
+# Forget a network profile
+our-wifi forget "MyWiFiNetwork"
+
+# Set network priority
+our-wifi priority "MyWiFiNetwork" --level high
+
+# Set network auto-connect
+our-wifi auto-connect "MyWiFiNetwork" --enabled
+```
+
+### Network Configuration
+
+```bash
+# View network profiles
+our-wifi profiles
+
+# Show network configuration
+our-wifi config "MyWiFiNetwork"
+
+# Export network profiles
+our-wifi export-profiles > wifi-backup.json
+
+# Import network profiles
+our-wifi import-profiles < wifi-backup.json
+```
+
+## Network Security
+
+### WPA3 Support
+
+```bash
+# Connect to WPA3 network
+our-wifi connect "WPA3-Network" --password mypassword --wpa3
+
+# Check WPA3 capability
+our-wifi capability wpa3
+
+# Verify network security
+our-wifi security "MyWiFiNetwork"
+```
+
+### Network Authentication
+
+```bash
+# Show network authentication type
+our-wifi auth-type "MyWiFiNetwork"
+
+# Check network certificate
+our-wifi cert-check "MyWiFiNetwork"
+
+# Enterprise network support
+our-wifi connect "EnterpriseNet" --eap-peap --username myuser --password mypass
+```
+
+## Signal and Performance
+
+### Signal Monitoring
+
+```bash
+# Monitor signal strength over time
+our-wifi monitor --duration 60
+
+# Show signal history
+our-wifi history
+
+# Analyze network performance
+our-wifi performance "MyWiFiNetwork"
+```
+
+### Network Optimization
+
+```bash
+# Find best channel
+our-wifi optimize-channel
+
+# Analyze interference
+our-wifi interference
+
+# Recommend optimal settings
+our-wifi recommend
+```
+
+## Network Profiles
+
+### Profile Management
+
+```bash
+# Create network profile
+our-wifi profile-create "MyWiFiNetwork" \
+  --password mypassword \
+  --priority 80 \
+  --auto-connect true
+
+# Modify profile
+our-wifi profile-modify "MyWiFiNetwork" \
+  --priority 90 \
+  --auto-connect true
+
+# Delete profile
+our-wifi profile-delete "MyWiFiNetwork"
+```
+
+### Profile Backup
+
+```bash
+# Export all profiles
+our-wifi export > wifi-profiles.json
+
+# Import profiles
+our-wifi import < wifi-profiles.json
+
+# Sync profiles between devices
+our-wifi sync --device laptop
+```
+
+## Special Networks
+
+### Hotspot Mode
+
+```bash
+# Create WiFi hotspot
+our-wifi hotspot "MyHotspot" --password hotspotpass
+
+# Stop hotspot
+our-wifi hotspot --stop
+
+# Show hotspot status
+our-wifi hotspot --status
+```
+
+### Mesh Networking
+
+```bash
+# Configure mesh network
+our-wifi mesh "MeshNetwork" --channel 6
+
+# Show mesh neighbors
+our-wifi mesh --neighbors
+
+# Monitor mesh quality
+our-wifi mesh --monitor
+```
+
+## Network Troubleshooting
+
+### Diagnostics
+
+```bash
+# Run network diagnostics
+our-wifi diagnose
+
+# Check driver status
+our-wifi driver-status
+
+# Verify hardware
+our-wifi hardware-test
+```
+
+### Common Issues
+
+```bash
+# Fix connection issues
+our-wifi fix-connection
+
+# Reset network stack
+our-wifi reset-network
+
+# Clear cache and restart
+our-wwifi refresh
+```
+
+## Network Statistics
+
+### Usage Monitoring
+
+```bash
+# Show network statistics
+our-wifi stats
+
+# Monitor bandwidth usage
+our-wifi bandwidth --monitor
+
+# Show data transfer history
+our-wifi history --data
+```
+
+### Performance Analysis
+
+```bash
+# Analyze network performance
+our-wifi analyze --speedtest
+
+# Compare network quality
+our-wifi compare "Network1" "Network2"
+
+# Generate report
+our-wifi report --output network-report.txt
+```
+
+## Integration with System
+
+### System Services
+
+```bash
+# Enable WiFi service
+systemctl enable iwd.service
+
+# Start WiFi service
+systemctl start iwd.service
+
+# Check WiFi service status
+systemctl status iwd.service
+```
+
+### Network Configuration
+
+```bash
+# Show network configuration
+ip link show
+ip addr show
+
+# Check routing table
+ip route show
+
+# Verify DNS resolution
+nslookup google.com
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Advanced WiFi security configurations
+- Multi-band (2.4GHz/5GHz) management
+- WiFi mesh network setup
+- Network load balancing
+- WiFi client isolation
+- Access point management
+- Network bandwidth management
+- WiFi roaming optimization
+- Enterprise WiFi integration
+- Network automation scripts
+
+:::danger
+
+Always use strong passwords for WiFi networks. Avoid using common passwords or personal information in network names for security reasons.
+
+:::

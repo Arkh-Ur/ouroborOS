@@ -1,0 +1,356 @@
+---
+title: Bluetooth Management
+description: Bluetooth device management with our-bluetooth in ouroborOS
+slug: network/our-bluetooth
+---
+
+# Bluetooth Management (our-bluetooth)
+
+`our-bluetooth` is a comprehensive Bluetooth management tool built on top of bluetoothctl with experimental Low Energy (LE) support. It provides intuitive commands for device discovery, pairing, and management in ouroborOS.
+
+## Overview
+
+The `our-bluetooth` tool provides:
+
+- **Complete Bluetooth lifecycle management** with 15+ commands
+- **Low Energy (LE) support** with experimental features
+- **Device discovery and pairing** with automatic authentication
+- **Profile management** for various Bluetooth services
+- **Audio and peripheral integration**
+
+:::note
+
+our-bluetooth uses bluetoothctl as the backend with experimental extensions for Low Energy functionality. The `--experimental` flag is required for LE features and Advertising Monitor API.
+
+:::
+
+## Installation
+
+The Bluetooth manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-bluetooth --version
+our-bluetooth --help
+```
+
+## Basic Usage
+
+### Device Discovery
+
+```bash
+# Start Bluetooth discovery
+our-bluetooth scan
+
+# Scan for specific duration
+our-bluetooth scan --duration 30
+
+# List nearby devices
+our-bluetooth list
+
+# Show device details
+our-bluetooth info "My Phone"
+```
+
+### Device Management
+
+```bash
+# Pair with a device
+our-bluetooth pair "My Phone"
+
+# Connect to a device
+our-bluetooth connect "My Phone"
+
+# Disconnect from a device
+our-bluetooth disconnect "My Phone"
+
+# Remove device
+our-bluetooth forget "My Phone"
+```
+
+### Status Monitoring
+
+```bash
+# Show Bluetooth status
+our-bluetooth status
+
+# Show connected devices
+our-bluetooth connected
+
+# Show paired devices
+our-bluetooth paired
+
+# Show adapter information
+our-bluetooth adapter
+```
+
+## Advanced Operations
+
+### LE (Low Energy) Features
+
+```bash
+# Enable experimental mode
+our-bluetooth --experimental le-scan
+
+# LE device discovery
+our-bluetooth le-scan
+
+# LE device information
+our-bluetooth le-info "BLE Device"
+
+# LE connection management
+our-bluetooth le-connect "BLE Device"
+```
+
+### Profile Management
+
+```bash
+# Show available profiles
+our-bluetooth profiles
+
+# Enable specific profile
+our-bluetooth profile --enable "A2DP"
+
+# Disable specific profile
+our-bluetooth profile --disable "HFP"
+
+# Show profile status
+our-bluetooth profile --status "A2DP"
+```
+
+### Audio Management
+
+```bash
+# Connect audio device
+our-bluetooth audio --connect "Headphones"
+
+# Switch audio profile
+our-bluetooth audio --profile "A2DP"
+
+# Show audio devices
+our-bluetooth audio --list
+
+# Audio quality test
+our-bluetooth audio --test
+```
+
+## Device Configuration
+
+### Device Settings
+
+```bash
+# Set device priority
+our-bluetooth priority "My Phone" --level high
+
+# Enable auto-connect
+our-bluetooth auto-connect "My Phone" --enable
+
+# Set device trust level
+our-bluetooth trust "My Phone" --trusted
+
+# Configure device battery monitoring
+our-bluetooth battery "My Phone" --monitor
+```
+
+### Security Settings
+
+```bash
+# Check device security
+our-bluetooth security "My Phone"
+
+# Set device encryption
+our-bluetooth encrypt "My Phone" --enable
+
+# Show device authentication
+our-bluetooth auth "My Phone"
+
+# Configure device authorization
+our-bluetooth authorize "My Phone"
+```
+
+## Special Features
+
+### BLE Advertising Monitor
+
+```bash
+# Start advertising monitor
+our-bluetooth --experimental adv-monitor
+
+# Monitor BLE beacons
+our-bluetooth --experimental beacon-monitor
+
+# Analyze BLE advertisements
+our-bluetooth --experimental adv-analyze
+```
+
+### Keyboard and Mouse
+
+```bash
+# Connect Bluetooth keyboard
+our-bluetooth keyboard --connect "My Keyboard"
+
+# Connect Bluetooth mouse
+our-bluetooth mouse --connect "My Mouse"
+
+# Configure input devices
+our-bluetooth input --configure "My Keyboard"
+```
+
+### Audio Devices
+
+```bash
+# Connect headphones
+our-bluetooth headphones --connect "My Headphones"
+
+# Connect speakers
+our-bluetooth speakers --connect "My Speakers"
+
+# Configure audio quality
+our-bluetooth audio --quality high
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix connection problems
+our-bluetooth fix-connection
+
+# Reset Bluetooth stack
+our-bluetooth reset
+
+# Clear pairing cache
+our-bluetooth clear-cache
+
+# Restart Bluetooth service
+our-bluetooth restart
+```
+
+### Diagnostics
+
+```bash
+# Run Bluetooth diagnostics
+our-bluetooth diagnose
+
+# Check driver status
+our-bluetooth driver-status
+
+# Verify hardware
+our-bluetooth hardware-test
+
+# Show detailed logs
+our-bluetooth logs
+```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+our-bluetooth --debug scan
+
+# Show detailed device info
+our-bluetooth --verbose info "My Phone"
+
+# Monitor connection attempts
+our-bluetooth --monitor connect "My Phone"
+```
+
+## System Integration
+
+### Service Management
+
+```bash
+# Enable Bluetooth service
+systemctl enable bluetooth.service
+
+# Start Bluetooth service
+systemctl start bluetooth.service
+
+# Check service status
+systemctl status bluetooth.service
+```
+
+### Hardware Configuration
+
+```bash
+# Show Bluetooth devices
+lsusb | grep -i bluetooth
+
+# Check kernel modules
+lsmod | grep bluetooth
+
+# Show system logs
+journalctl -u bluetooth.service
+```
+
+### Power Management
+
+```bash
+# Enable power management
+our-bluetooth power --auto
+
+# Disable power management
+our-bluetooth power --performance
+
+# Show power status
+our-bluetooth power --status
+```
+
+## Device Categories
+
+### Audio Devices
+
+```bash
+# Headphones and earbuds
+our-bluetooth audio --connect "AirPods"
+our-bluetooth audio --connect "Sony WH-1000XM4"
+
+# Speakers and soundbars
+our-bluetooth audio --connect "HomePod"
+our-bluetooth audio --connect "Sonos Speaker"
+```
+
+### Input Devices
+
+```bash
+# Keyboards
+our-bluetooth keyboard --connect "Apple Keyboard"
+our-bluetooth keyboard --connect "Logitech K380"
+
+# Mice and trackpads
+our-bluetooth mouse --connect "Magic Mouse"
+our-bluetooth mouse --connect "Logitech MX Master"
+```
+
+### Smart Devices
+
+```bash
+# Smart watches
+our-bluetooth smartwatch --connect "Apple Watch"
+our-bluetooth smartwatch --connect "Samsung Galaxy Watch"
+
+# Fitness trackers
+our-bluetooth fitness --connect "Fitbit"
+our-bluetooth fitness --connect "Garmin"
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Advanced BLE device configuration
+- Bluetooth network sharing
+- Device automation and scripting
+- Bluetooth security hardening
+- Multi-device management
+- Bluetooth range testing
+- Audio profile switching
+- Device battery optimization
+- Bluetooth mesh networking
+- Integration with smart home systems
+
+:::danger
+
+Always verify device authenticity before pairing with unknown Bluetooth devices. Some devices may pose security risks or attempt unauthorized access to your system.
+
+:::

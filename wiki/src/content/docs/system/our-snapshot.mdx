@@ -1,0 +1,458 @@
+---
+title: our-snapshot — Btrfs Snapshots
+description: Learn how to use our-snapshot, the Btrfs snapshot manager for ouroborOS that provides comprehensive snapshot operations and system rollback capabilities.
+slug: system/our-snapshot
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# our-snapshot — Btrfs Snapshots
+
+`our-snapshot` is ouroborOS's powerful Btrfs snapshot management tool that provides comprehensive control over system snapshots, enabling atomic rollbacks, automated pruning, and system integrity verification. It's the backbone of ouroborOS's immutable architecture, ensuring every system state is preserved and reversible.
+
+## What is our-snapshot?
+
+`our-snapshot` transforms Btrfs snapshot management from a complex manual process into an intuitive, automated system. It handles the complexity of Btrfs subvolumes, snapshot naming, and lifecycle management while providing powerful tools for system recovery and maintenance.
+
+```bash
+# Traditional Btrfs operations - complex
+btrfs subvolume snapshot / /.snapshots/manual-$(date +%Y%m%d)
+btrfs subvolume list /mnt
+btrfs subvolume delete /.snapshots/old-snapshot
+
+# our-snapshot - simple and powerful
+our-snapshot create manual-backup
+our-snapshot list
+our-snapshot prune --keep 30
+```
+
+## Core Architecture
+
+### **Snapshot Categories**
+our-snapshot organizes snapshots into logical categories:
+
+- **Automatic**: Created during package operations (`pacop-YYYY-MM-DDTHHMMSS/`)
+- **Manual**: Created by users (`YYYY-MM-DD_LABEL/`)
+- **System**: Core system snapshots (`install/`, `upgrade/`, etc.)
+- **Golden**: The immutable baseline snapshot (never pruned)
+
+```yaml
+# Snapshot hierarchy
+/.snapshots/
+├── install/                    # Golden snapshot (never deleted)
+├── 2024-01-15T10:00:00_upgrade/
+├── 2024-01-15T10:30:00_docker_install/
+├── 2024-01-15T14:00:00_manual_backup/
+└── .metadata/
+    ├── snapshot_list.json
+    ├── snapshot_info.json
+    └── system_state.json
+```
+
+### **Metadata Management**
+```json
+// /.snapshots/.metadata/snapshot_info.json
+{
+  "snapshots": [
+    {
+      "id": "2024-01-15T10:00:00",
+      "label": "upgrade",
+      "parent": "install",
+      "size": "2.5GB",
+      "created": "2024-01-15T10:00:00Z",
+      "description": "System package upgrade",
+      "type": "automatic"
+    }
+  ]
+}
+```
+
+## Basic Operations
+
+### **Creating Snapshots**
+```bash
+# Create manual snapshot
+our-snapshot create my-custom-config
+
+# Create snapshot with description
+our-snapshot create "Pre-update backup" --description "Before major system update"
+
+# Create snapshot in specific category
+our-snapshot create --category backup my-backup
+
+# Create recursive snapshot of specific subvolume
+our-snapshot create --subvolume @home home-backup
+```
+
+### **Listing Snapshots**
+```bash
+# List all snapshots
+our-snapshot list
+
+# List recent snapshots
+our-snapshot list --limit 10
+
+# List snapshots by category
+our-snapshot list --category automatic
+
+# List snapshots with detailed information
+our-snapshot list --verbose
+
+# List snapshots in JSON format
+our-snapshot list --json
+```
+
+### **Deleting Snapshots**
+```bash
+# Delete specific snapshot
+our-snapshot delete 2024-01-15T10:00:00
+
+# Delete snapshot by label
+our-snapshot delete --label upgrade
+
+# Delete multiple snapshots
+our-snapshot delete 2024-01-15T10:00:00 2024-01-15T11:00:00
+
+# Delete all snapshots except golden and recent
+our-snapshot delete --all --keep-install --keep 10
+```
+
+### **Pruning Snapshots**
+```bash
+# Keep only last 30 snapshots
+our-snapshot prune --keep 30
+
+# Keep snapshots by age
+our-snapshot prune --keep-days 7
+
+# Keep golden snapshot + last 10
+our-snapshot prune --keep-install --keep 10
+
+# Dry run to see what would be pruned
+our-snapshot prune --dry-run --keep 30
+```
+
+## Advanced Operations
+
+### **Snapshot Management**
+```bash
+# Clone snapshot to new location
+our-snapshot clone 2024-01-15T10:00:00 /mnt/backup
+
+# Compare snapshots
+our-snapshot diff 2024-01-15T10:00:00 2024-01-15T11:00:00
+
+# Export snapshot metadata
+our-snapshot export-metadata /var/snapshots/backup/
+
+# Import snapshot metadata
+our-snapshot import-metadata /var/snapshots/backup/
+```
+
+### **System Integration**
+```bash
+# Check snapshot integrity
+our-snapshot scrub
+
+# Scrub specific snapshot
+our-snapshot scrub 2024-01-15T10:00:00
+
+# Balance filesystem
+our-snapshot balance
+
+# Defragment filesystem
+our-snapshot defrag
+```
+
+### **Boot Management**
+```bash
+# Sync boot entries
+our-snapshot boot-sync
+
+# List boot entries
+our-snapshot boot-list
+
+# Update boot entries for snapshot
+our-snapshot boot-update 2024-01-15T10:00:00
+
+# Remove boot entry
+our-snapshot boot-remove 2024-01-15T09:00:00
+```
+
+## Configuration Options
+
+### **Configuration File**
+```yaml
+# /etc/ouroborOS/our-snapshot.conf
+snapshot:
+  prefix: "snapshot"
+  keep_minimum: 10
+  keep_automatic: 30
+  keep_manual: 50
+  keep_golden: true
+  compression: "zlib"
+  encryption: false
+
+pruning:
+  strategy: "age"
+  keep_days: 30
+  keep_count: 50
+  schedule: "daily"
+  
+logging:
+  level: "info"
+  file: "/var/log/our-snapshot.log"
+  rotate: "weekly"
+```
+
+### **Global Configuration**
+```bash
+# Set global snapshot prefix
+our-snapshot config set snapshot.prefix "backup"
+
+# Set retention policy
+our-snapshot config set pruning.keep_days "7"
+
+# Enable compression
+our-snapshot config set snapshot.compression "zstd"
+```
+
+## Snapshot Types and Usage
+
+### **Automatic Snapshots**
+```bash
+# Created during package operations
+our-pac upgrade → creates: /.snapshots/pacop-YYYY-MM-DDTHHMMSS/
+our-pac install nginx → creates: /.snapshots/pacop-YYYY-MM-DDTHHMMSS_nginx_install/
+
+# Automatic snapshot naming
+# Format: {operation}_{optional_detail}_{timestamp}
+# Examples:
+# - pacop-2024-01-15T10:30:00_system_upgrade
+# - pacop-2024-01-15T10:45:00_docker_install
+# - pacop-2024-01-15T11:00:00_neovim_update
+```
+
+### **Manual Snapshots**
+```bash
+# User-created snapshots
+our-snapshot create "My custom config"
+# Creates: /.snapshots/2024-01-15T11:15:00_My custom config/
+
+# Category-based snapshots
+our-snapshot create --category config desktop-setup
+# Creates: /.snapshots/2024-01-15T11:30:00_desktop-setup/
+```
+
+### **System Snapshots**
+```bash
+# System-critical snapshots (never pruned)
+install/         # Initial system installation
+upgrade/        # Major system upgrades
+recovery/       # System recovery snapshots
+golden/         # Baseline snapshot
+```
+
+## Integration with System
+
+### **Package Manager Integration**
+```bash
+# Automatic snapshots during package operations
+our-pac upgrade
+# Automatically creates: /.snapshots/pacop-YYYY-MM-DDTHHMMSS/
+
+# Manual snapshot before package operation
+our-snapshot create pre-custom-package
+our-pac install custom-package
+```
+
+### **System Recovery**
+```bash
+# Emergency rollback
+our-rollback now
+our-snapshot list --rollback
+
+# Snapshot-based recovery
+our-snapshot promote 2024-01-15T10:00:00
+```
+
+### **Monitoring and Alerting**
+```bash
+# Check snapshot health
+our-snapshot health-check
+
+# Monitor disk usage
+our-snapshot usage
+
+# Send alerts for large snapshots
+our-snapshot alert --size 10G
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Fix snapshot corruption
+our-snapshot scrub --repair
+
+# Rebuild snapshot metadata
+our-snapshot rebuild-metadata
+
+# Fix boot entry sync
+our-snapshot boot-sync --force
+```
+
+### **Error Recovery**
+```bash
+# Restore from corrupted snapshot
+our-snapshot restore 2024-01-15T10:00:00 --force
+
+# Recover deleted snapshot
+our-snapshot recover-deleted
+
+# Emergency snapshot creation
+our-snapshot create --emergency emergency-restore
+```
+
+### **Performance Optimization**
+```bash
+# Defragment large snapshots
+our-snapshot defrag --size 1G
+
+# Balance snapshot distribution
+our-snapshot balance --profile=ssd
+
+# Compress old snapshots
+our-snapshot compress --age 30d
+```
+
+## Automation Scripts
+
+### **Daily Maintenance**
+```bash
+#!/bin/bash
+# /etc/ouroborOS/snapshot-daily.sh
+
+our-snapshot prune --keep-days 7
+our-snapshot scrub
+our-snapshot balance --profile=ssd
+our-snapshot usage --alert-size 80%
+```
+
+### **Weekly Cleanup**
+```bash
+#!/bin/bash
+# /etc/ouroborOS/snapshot-weekly.sh
+
+our-snapshot prune --keep 30
+our-snapshot compress --age 7d
+our-snapshot boot-sync
+our-snapshot export-metadata /var/backups/snapshots/
+```
+
+### **Pre-Update Backup**
+```bash
+#!/bin/bash
+# /usr/local/bin/pre-update-snapshot.sh
+
+our-snapshot create "Pre-update $(date +%Y%m%d)"
+our-snapshot list --limit 5
+our-snapshot scrub
+```
+
+## Security Considerations
+
+### **Snapshot Protection**
+```bash
+# Protect critical snapshots
+our-snapshot protect install recovery
+
+# Remove snapshot protection
+our-snapshot unprotect manual-backup
+
+# List protected snapshots
+our-snapshot list --protected
+```
+
+### **Access Control**
+```bash
+# Set snapshot permissions
+our-snapshot set-permissions 2024-01-15T10:00:00 700
+
+# Verify snapshot integrity
+our-snapshot verify --signatures
+```
+
+### **Audit Trail**
+```bash
+# Track snapshot operations
+our-snapshot audit --since "1 week ago"
+
+# Export audit logs
+our-snapshot audit --export /var/log/snapshot-audit.log
+
+# Monitor unauthorized changes
+our-snapshot monitor --watch /
+```
+
+## Performance Monitoring
+
+### **Usage Statistics**
+```bash
+# Show disk usage by snapshot
+our-snapshot usage
+
+# Show snapshot growth
+our-snapshot growth --last 30d
+
+# Show snapshot creation patterns
+our-snapshot patterns --last 7d
+```
+
+### **Performance Analysis**
+```bash
+# Analyze snapshot performance
+our-snapshot analyze
+
+# Identify large snapshots
+our-snapshot large --size 1G
+
+# Recommend optimization
+our-snapshot optimize
+```
+
+### **Benchmarking**
+```bash
+# Benchmark snapshot creation
+our-snapshot benchmark create
+
+# Benchmark snapshot deletion
+our-snapshot benchmark delete
+
+# Benchmark scrub operations
+our-snapshot benchmark scrub
+```
+
+`our-snapshot` provides the foundation for ouroborOS's immutable architecture, making system state management safe, predictable, and efficient. By abstracting the complexity of Btrfs while maintaining full power and flexibility, it enables users to confidently manage their systems with complete rollback capabilities.
+
+<Tabs>
+<TabItem label="Daily Operations">
+```bash
+# Daily snapshot workflow
+our-snapshot list                      # Check existing snapshots
+our-snapshot create daily-backup      # Create today's backup
+our-snapshot prune --keep 7          # Keep last 7 days
+our-snapshot scrub                    # Verify integrity
+our-snapshot usage                     # Check disk usage
+```
+</TabItem>
+<TabItem label="Emergency Recovery">
+```bash
+# Emergency recovery workflow
+our-snapshot list --rollback         # Show rollback candidates
+our-rollback now                      # Immediate rollback
+our-snapshot promote stable-snapshot  # Make rollback permanent
+our-snapshot create post-recovery     # Document recovery
+our-snapshot scrub --repair           # Fix any issues
+```
+</TabItem>
+</Tabs>

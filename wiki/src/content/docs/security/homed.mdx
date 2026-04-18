@@ -1,0 +1,53 @@
+---
+title: systemd-homed
+description: Portable, encrypted home directories with systemd-homed on ouroborOS.
+slug: security/homed
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# systemd-homed
+
+ouroborOS integrates **systemd-homed** for portable, self-contained user home directories. Home directories managed by `homectl` are independent of the system — they can be moved between machines, encrypted per-user, and unlocked with TPM2 or FIDO2 tokens.
+
+## Storage Backends
+
+<Tabs>
+  <TabItem label="Directory">
+    ```bash
+    # Default for new multi-user setups
+    homectl create --storage=directory --shell=/bin/bash admin
+    ```
+    Standard directory under `/home/`. Simple and reliable.
+  </TabItem>
+  <TabItem label="Subvolume">
+    ```bash
+    homectl create --storage=subvolume --shell=/bin/bash admin
+    ```
+    Btrfs subvolume per user. Enables per-user snapshots.
+  </TabItem>
+  <TabItem label="LUKS">
+    ```bash
+    homectl create --storage=luks --shell=/bin/bash admin
+    ```
+    Encrypted LUKS image per user. strongest isolation.
+  </TabItem>
+</Tabs>
+
+## TPM2 & FIDO2 Enrollment
+
+```bash
+# Enroll TPM2 for automatic home unlock
+homectl update admin --tpm2-device=auto
+
+# Enroll FIDO2 security key
+homectl update admin --fido2-device=auto
+```
+
+:::danger[Known QEMU limitation]
+`homectl create` with Btrfs subvolumes fails inside QEMU. The installer automatically falls back to `classic` (`useradd`) in virtualized environments. This is documented in `docs/architecture/systemd-homed.md`.
+:::
+
+---
+
+*Content coming soon — home directory migration, recovery, and advanced homed configurations.*

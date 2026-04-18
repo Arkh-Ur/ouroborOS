@@ -1,0 +1,496 @@
+---
+title: Unattended Install (YAML)
+description: Learn how to perform automated, unattended installations of ouroborOS using YAML configuration files.
+slug: installation/unattended
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Unattended Install (YAML)
+
+The ouroborOS unattended installer enables fully automated deployments using declarative YAML configuration files. This method is ideal for enterprise deployments, testing environments, and scenarios where you need reproducible installations across multiple machines.
+
+## Overview
+
+The unattended installer reads a YAML configuration file and performs the entire installation process without user interaction. This is perfect for:
+
+- **Enterprise deployments**: Deploy consistent systems across hundreds of machines
+- **Testing environments**: Create identical test machines for CI/CD pipelines
+- **Development setups**: Quickly reproduce development environments
+- **System recovery**: Automated reinstallation from recovery media
+
+## Configuration File Structure
+
+### **Basic Configuration**
+```yaml
+# config.yaml
+user:
+  username: admin
+  password: changeme
+  shell: /bin/bash
+  groups: [wheel, audio, video, input]
+  homed_storage: classic
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+  wifi:
+    ssid: ""
+    passphrase: ""
+  bluetooth:
+    enable: false
+
+security:
+  secure_boot: false
+  sbctl_include_ms_keys: false
+
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+desktop:
+  profile: minimal
+  dm: none
+
+extra_packages: []
+post_install_action: reboot
+```
+
+### **Complete Configuration Example**
+```yaml
+# Full configuration example
+user:
+  username: developer
+  password: "hashed_password_here"
+  shell: /usr/bin/fish
+  groups: [wheel, audio, video, input, docker, libvirt]
+  homed_storage: luks
+
+network:
+  hostname: development-box
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+  wifi:
+    ssid: "CorporateWiFi"
+    passphrase: "secure_wifi_password"
+  bluetooth:
+    enable: true
+    # Bluetooth will be enabled with experimental features for BLE support
+
+security:
+  secure_boot: true
+  sbctl_include_ms_keys: true
+  # Requires firmware in Setup Mode for first-time setup
+
+disk:
+  device: /dev/nvme0n1
+  use_luks: true
+  btrfs_label: ouroborOS
+  swap_size: 4GB
+  # TPM2 will be used if available, fallback to passphrase
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/New_York
+
+desktop:
+  profile: hyprland
+  dm: gdm
+  # Installs Hyprland with GDM display manager
+
+extra_packages:
+  - git
+  - docker
+  - python-pip
+  - neovim
+  - htop
+  - ripgrep
+  - bat
+
+post_install_action: reboot
+```
+
+## Installation Methods
+
+### **1. Using Configuration File**
+Create your configuration file and run the installer:
+
+```bash
+# Basic unattended installation
+sudo ouroboros-installer --config config.yaml
+
+# With validation first
+sudo ouroboros-installer --validate-config config.yaml
+sudo ouroboros-installer --config config.yaml
+```
+
+### **2. Network-based Installation**
+Place configuration files on a network share or web server:
+
+```bash
+# HTTP configuration
+sudo ouroboros-installer --config http://server/config.yaml
+
+# Network share
+sudo ouroboros-installer --config smb://server/share/config.yaml
+
+# Local network path
+sudo ouroboros-installer --config /mnt/nfs/config.yaml
+```
+
+### **3. USB Media Installation**
+Create bootable USB with configuration files:
+
+```bash
+# Structure the USB media
+mount /dev/sdX1 /mnt
+mkdir -p /mnt/ouroborOS/config/
+cp config.yaml /mnt/ouroborOS/config/
+umount /mnt
+
+# Boot from USB with config path
+sudo ouroboros-installer --config /run/ouroborOS/config/config.yaml
+```
+
+## Configuration Reference
+
+### **User Configuration**
+```yaml
+user:
+  username: string              # Required: System username
+  password: string              # Required: Plain text password (hashed automatically)
+  shell: string                # Optional: /bin/bash | /bin/zsh | /usr/bin/fish
+  groups: array                 # Optional: User groups (default: [wheel, audio, video, input])
+  homed_storage: string         # Optional: subvolume | luks | directory | classic (default: classic)
+```
+
+### **Network Configuration**
+```yaml
+network:
+  hostname: string              # Required: System hostname
+  enable_networkd: boolean      # Optional: Enable systemd-networkd (default: true)
+  enable_iwd: boolean          # Optional: Enable iwd for WiFi (default: true)
+  enable_resolved: boolean     # Optional: Enable systemd-resolved (default: true)
+  wifi:
+    ssid: string                # Optional: WiFi network name
+    passphrase: string          # Optional: WiFi password (transient, not persisted)
+  bluetooth:
+    enable: boolean             # Optional: Enable bluetooth.service (default: false)
+```
+
+### **Security Configuration**
+```yaml
+security:
+  secure_boot: boolean          # Optional: Enable Secure Boot setup (default: false)
+  sbctl_include_ms_keys: boolean # Optional: Include Microsoft keys (default: false)
+```
+
+### **Disk Configuration**
+```yaml
+disk:
+  device: string               # Required: Target device (e.g., /dev/vda, /dev/nvme0n1)
+  use_luks: boolean            # Optional: Enable LUKS encryption (default: false)
+  btrfs_label: string          # Optional: Btrfs filesystem label (default: ouroborOS)
+  swap_type: string            # Optional: zram | partition | none (default: zram)
+  swap_size: string            # Optional: Swap size when swap_type=partition
+```
+
+### **Locale Configuration**
+```yaml
+locale:
+  locale: string               # Required: System locale (e.g., en_US.UTF-8)
+  keymap: string               # Optional: Keyboard layout (default: us)
+  timezone: string             # Required: System timezone (e.g., America/Santiago)
+```
+
+### **Desktop Configuration**
+```yaml
+desktop:
+  profile: string              # Required: minimal | hyprland | niri | gnome | kde
+  dm: string                  # Optional: auto | gdm | sddm | plm | none (default: auto)
+```
+
+### **Extra Packages**
+```yaml
+extra_packages: array          # Optional: Additional packages to install
+  - git
+  - docker
+  - neovim
+```
+
+### **Post-install Action**
+```yaml
+post_install_action: string   # Optional: reboot | poweroff | none (default: reboot)
+```
+
+## Advanced Configuration
+
+### **LUKS Encryption with TPM2**
+```yaml
+disk:
+  use_luks: true
+  luks:
+    key_type: tpm2           # Use TPM2 if available
+    key_size: 256            # AES-256 encryption
+    cipher: aes-xts-plain64  # XTS mode for disk encryption
+    # Fallback to passphrase if TPM2 not available
+```
+
+### **Custom Btrfs Subvolumes**
+```yaml
+disk:
+  btrfs_subvolumes:
+    root: "@"
+    home: "@home"
+    var: "@var"
+    snapshots: "@snapshots"
+    etc: "@etc"
+    log: "@var/log"
+    pkg: "@var/cache/pacman/pkg"
+```
+
+### **Network Configuration with Static IP**
+```yaml
+network:
+  hostname: server-01
+  networkd:
+    - match: name=ens33
+      network:
+        Address: 192.168.1.100/24
+        Gateway: 192.168.1.1
+        DNS: [8.8.8.8, 8.8.4.4]
+```
+
+## Deployment Automation
+
+### **Ansible Integration**
+```yaml
+# playbook.yml
+- name: Deploy ouroborOS
+  hosts: all
+  become: yes
+  tasks:
+    - name: Copy configuration file
+      copy:
+        src: config.yaml
+        dest: /tmp/ouroborOS-config.yaml
+    
+    - name: Run unattended installation
+      command: sudo ouroboros-installer --config /tmp/ouroborOS-config.yaml
+      register: install_result
+```
+
+### **Puppet Integration**
+```puppet
+# ouroboros.pp
+package { 'ouroboros-installer':
+  ensure => installed,
+}
+
+file { '/etc/ouroborOS/config.yaml':
+  ensure => file,
+  source => 'puppet:///modules/ouroborOS/config.yaml',
+}
+
+exec { 'run-installation':
+  command => 'sudo ouroboros-installer --config /etc/ouroborOS/config.yaml',
+  path    => '/usr/bin:/bin',
+}
+```
+
+### **SaltStack Integration**
+```yaml
+# salt/ouroborOS.sls
+deploy_ouroborOS:
+  cmd.run:
+    - name: sudo ouroboros-installer --config /srv/salt/ouroborOS/config.yaml
+    - require:
+      - file: ouroborOS_config
+```
+
+## Error Handling
+
+### **Validation Before Installation**
+```bash
+# Validate configuration syntax
+sudo ouroboros-installer --validate-config config.yaml
+
+# Check disk requirements
+sudo ouroboros-installer --check-disk /dev/vda
+
+# Test network connectivity
+sudo ouroboros-installer --test-network
+```
+
+### **Error Recovery**
+```bash
+# Check installation logs
+/var/log/ouroborOS-installer.log
+
+# Recover from failed installation
+sudo our-rollback undo
+# Reinstall with corrected configuration
+sudo ouroboros-installer --config config.yaml
+```
+
+### **Logging Configuration**
+```yaml
+# Enable verbose logging
+sudo ouroboros-installer --config config.yaml --verbose
+
+# Log to specific file
+sudo ouroboros-installer --config config.yaml --log /var/log/install.log
+
+# Debug mode for troubleshooting
+sudo ouroboros-installer --config config.yaml --debug
+```
+
+## Use Cases
+
+### **Enterprise Deployment**
+```yaml
+# enterprise-config.yaml
+user:
+  username: employee
+  groups: [domain-users, developers]
+  homed_storage: luks
+
+network:
+  hostname: workstation-{{ inventory_hostname }}
+  domain: example.com
+
+desktop:
+  profile: gnome
+  dm: gdm
+
+extra_packages:
+  - office-suite
+  - development-tools
+  - security-tools
+```
+
+### **Development Environment**
+```yaml
+# dev-config.yaml
+user:
+  username: developer
+  shell: /usr/bin/fish
+  groups: [wheel, docker, libvirt]
+
+network:
+  hostname: dev-{{ inventory_hostname }}
+
+desktop:
+  profile: hyprland
+
+extra_packages:
+  - git
+  - docker
+  - python-pip
+  - nodejs
+  - rust
+  - neovim
+  - tmux
+```
+
+### **Testing Environment**
+```yaml
+# test-config.yaml
+user:
+  username: testuser
+  password: "testpass"
+
+disk:
+  use_luks: false
+  swap_type: zram
+
+desktop:
+  profile: minimal
+
+post_install_action: poweroff
+
+extra_packages:
+  - qemu
+  - virt-manager
+  - pytest
+```
+
+The unattended installer provides powerful automation capabilities while maintaining the flexibility to configure every aspect of the ouroborOS system. By using declarative YAML configuration, you can ensure consistent, reproducible deployments across any number of machines.
+
+<Tabs>
+<TabItem label="Basic Unattended">
+```yaml
+# Simple config for testing
+user:
+  username: admin
+  password: changeme
+  shell: /bin/bash
+
+network:
+  hostname: test-system
+
+disk:
+  device: /dev/vda
+  use_luks: false
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: UTC
+
+desktop:
+  profile: minimal
+```
+</TabItem>
+<TabItem label="Production Enterprise">
+```yaml
+# Production deployment
+user:
+  username: admin
+  password: "SECURE_HASHED_PASSWORD"
+  shell: /bin/bash
+  groups: [wheel, sudo, docker]
+
+network:
+  hostname: prod-server-01
+  enable_networkd: true
+  enable_resolved: true
+
+security:
+  secure_boot: true
+  sbctl_include_ms_keys: true
+
+disk:
+  device: /dev/nvme0n1
+  use_luks: true
+  btrfs_label: ouroborOS
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/New_York
+
+desktop:
+  profile: minimal
+  dm: none
+
+extra_packages:
+  - nginx
+  - postgresql
+  - docker
+  - certbot
+
+post_install_action: reboot
+```
+</TabItem>
+</Tabs>

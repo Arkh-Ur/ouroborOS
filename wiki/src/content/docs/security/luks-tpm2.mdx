@@ -1,0 +1,60 @@
+---
+title: Disk Encryption (LUKS + TPM2)
+description: Configure full-disk encryption with LUKS and automatic TPM2 unlocking on ouroborOS.
+slug: security/luks-tpm2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Disk Encryption (LUKS + TPM2)
+
+ouroborOS supports optional full-disk encryption via LUKS, with automatic unlocking through TPM2 when available. This provides strong data-at-rest protection without requiring manual passphrase entry on every boot.
+
+## Enabling LUKS
+
+Set `disk.use_luks: true` in your install configuration:
+
+```yaml
+disk:
+  device: /dev/nvme0n1
+  use_luks: true
+  btrfs_label: ouroborOS
+  swap_type: zram
+```
+
+:::caution
+LUKS encryption is configured **during installation only**. You cannot enable it retroactively on an existing installation without reinstalling.
+:::
+
+## TPM2 Auto-Unlock
+
+When LUKS is enabled and a TPM2 module is present, ouroborOS automatically enrolls the TPM2 chip:
+
+```bash
+systemd-cryptenroll --tpm2-pcrs=7+14 /dev/sdX
+```
+
+:::note
+If no TPM2 module is detected, the system falls back to passphrase-based unlock. You will be prompted for the LUKS passphrase at boot.
+:::
+
+<Tabs>
+  <TabItem label="With TPM2">
+    ```bash
+    # Verify TPM2 enrollment
+    systemd-cryptenroll /dev/nvme0n1p2 --list
+    # Output shows TPM2 token enrolled with PCR 7+14
+    ```
+  </TabItem>
+  <TabItem label="Without TPM2">
+    ```bash
+    # Manual unlock at boot
+    # Enter LUKS passphrase when prompted
+    # No automatic unlock available
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+*Content coming soon — detailed TPM2 PCR policies, recovery procedures, and dual-factor setup.*

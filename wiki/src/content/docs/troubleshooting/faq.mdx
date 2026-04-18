@@ -1,0 +1,52 @@
+---
+title: FAQ
+description: Frequently asked questions about ouroborOS.
+slug: troubleshooting/faq
+---
+
+# Frequently Asked Questions
+
+## General
+
+### Is ouroborOS based on Arch Linux?
+
+Yes. ouroborOS is an **immutable Arch Linux distribution**. It uses official Arch packages via `pacman`, adds an immutable root filesystem layer via Btrfs subvolumes, and provides atomic upgrades with automatic snapshots.
+
+### Can I use `pacman` directly?
+
+:::caution
+Use `our-pac` instead of `pacman` directly. `our-pac` handles read-only root remounting, pre-update snapshots, Secure Boot re-signing, and boot entry synchronization.
+:::
+
+```bash
+# Do this
+sudo our-pac -S neovim
+
+# NOT this
+sudo pacman -S neovim  # Won't work — root is read-only
+```
+
+### Does ouroborOS support GRUB / Legacy BIOS?
+
+No. ouroborOS is **UEFI-only** with **systemd-boot**. There are no plans to support Legacy BIOS or GRUB.
+
+## Installation
+
+### Can I dual-boot with Windows?
+
+Yes. The installer detects Windows Boot Manager and generates a `windows.conf` entry in systemd-boot with a 5-second timeout.
+
+### What desktop environments are supported?
+
+| Profile | Status |
+|---------|--------|
+| Minimal (no DE) | Stable |
+| Hyprland | Stable |
+| Niri | Stable |
+| GNOME | Stable |
+| KDE Plasma | Stable |
+| COSMIC | Available via `[extra]` |
+
+---
+
+*More questions coming soon — submit yours via GitHub Issues.*

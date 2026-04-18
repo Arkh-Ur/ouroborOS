@@ -1,0 +1,63 @@
+:root {
+  --sl-color-accent: #00FF66;
+  --sl-color-accent-hover: #33ff85;
+  --sl-color-accent-contrast: #083f28;
+  --sl-color-caution: #f59e0b;
+  --sl-color-note: #3b82f6;
+  --sl-color-tip: #00FF66;
+  --sl-color-danger: #ef4444;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent: #067b3b;
+  --sl-color-accent-hover: #083f28;
+  --sl-color-accent-contrast: #ffffff;
+}
+
+:root {
+  --sl-h1: 2.25rem;
+  --sl-h2: 1.875rem;
+  --sl-h3: 1.5rem;
+  --sl-h4: 1.25rem;
+  --sl-h5: 1.125rem;
+  --sl-h6: 1rem;
+}
+
+.sl-code {
+  background-color: var(--sl-color-bg-code-bg);
+  border-color: var(--sl-color-border-code);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Monaco, 'Inconsolata', 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.starlight {
+  --sl-color-text-link: var(--sl-color-accent);
+  --sl-color-text-link-hover: var(--sl-color-accent-hover);
+}
+
+@media (max-width: 768px) {
+  :root {
+    --sl-h1: 1.875rem;
+    --sl-h2: 1.5rem;
+    --sl-h3: 1.25rem;
+    --sl-h4: 1.125rem;
+    --sl-h5: 1rem;
+    --sl-h6: 0.875rem;
+  }
+}
+
+@media print {
+  .starlight-header,
+  .starlight-sidebar,
+  .starlight-footer {
+    display: none !important;
+  }
+
+  .starlight {
+    background: white !important;
+    color: black !important;
+  }
+}

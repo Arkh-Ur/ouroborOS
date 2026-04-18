@@ -1,0 +1,50 @@
+---
+title: Bienvenido a la documentación de ouroborOS
+description: Documentación para ouroborOS — una distribución Arch Linux moderna e inmutable.
+template: splash
+hero:
+  tagline: Arch Linux moderno, inmutable, nativo de systemd.
+  actions:
+    - text: Comenzar
+      link: /es/getting-started/what-is-ouroboros
+      variant: primary
+      icon: right-arrow
+    - text: Guía de Instalación
+      link: /es/installation/requirements
+      icon: download
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## Explora la Documentación
+
+<CardGrid stagger>
+  <LinkCard title="Primeros Pasos" href="/es/getting-started/what-is-ouroboros">
+    Conocé qué es ouroborOS, por qué es diferente, y cómo funciona su arquitectura.
+  </LinkCard>
+  <LinkCard title="Instalación" href="/es/installation/requirements">
+    Guías paso a paso para instalación interactiva y desatendida.
+  </LinkCard>
+  <LinkCard title="Gestión del Sistema" href="/es/system/our-pac">
+    Dominá system.yaml, snapshots, rollbacks y actualizaciones OTA.
+  </LinkCard>
+  <LinkCard title="Escritorio y Wayland" href="/es/desktop/profiles">
+    Configurá Hyprland, Niri y otros compositores Wayland.
+  </LinkCard>
+  <LinkCard title="Seguridad" href="/es/security/secure-boot">
+    Secure Boot, FIDO2, encriptación LUKS y systemd-homed.
+  </LinkCard>
+  <LinkCard title="Solución de Problemas" href="/es/troubleshooting/faq">
+    Rescatá tu sistema, leé logs y encontrá respuestas en el FAQ.
+  </LinkCard>
+</CardGrid>
+
+:::note[Inicio Rápido]
+Booteá la ISO y el instalador arranca automáticamente. Para installs desatendidos:
+
+```bash
+ouroborOS-installer --config /path/to/config.yaml
+```
+
+Descargá un template listo para editar desde [install-config.yaml](https://github.com/Arkh-Ur/ouroborOS/blob/dev/templates/install-config.yaml).
+:::

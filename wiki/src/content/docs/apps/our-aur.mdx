@@ -1,0 +1,304 @@
+---
+title: AUR Helper
+description: Containerized AUR package management with our-aur in ouroborOS
+slug: apps/our-aur
+---
+
+# AUR Helper (our-aur)
+
+`our-aur` is a containerized AUR (Arch User Repository) package manager that safely handles AUR packages using systemd-nspawn containers and systemd-sysext. This approach provides isolation, security, and seamless integration with the ouroborOS package management system.
+
+## Overview
+
+The `our-aur` tool provides:
+
+- **Containerized AUR management** using systemd-nspawn
+- **Seamless pacman integration** with consistent interface
+- **Automatic snapshot protection** before AUR operations
+- **Secure package signing** with sbctl
+- **Clean rollback capabilities** for failed installations
+
+:::tip
+
+All AUR operations run in isolated containers, preventing system contamination and providing a clean rollback mechanism if packages fail to build or install.
+
+:::
+
+## Installation
+
+The AUR helper is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-aur --version
+our-aur --help
+```
+
+## Basic Usage
+
+### Package Search
+
+```bash
+# Search for packages in AUR
+our-aur search neovim
+
+# Search with description
+our-aur search --desc "video editor"
+
+# Search maintained packages only
+our-aur search --maintained telegram-desktop
+```
+
+### Package Installation
+
+```bash
+# Install a single package
+our-aur install neovim
+
+# Install multiple packages
+our-aur install neovim lazygit zellij
+
+# Install with dependencies
+our-aur install --deps visual-studio-code-bin
+```
+
+### Package Removal
+
+```bash
+# Remove a package (keep dependencies)
+our-aur remove neovim
+
+# Remove package and dependencies
+our-aur remove --nosave neovim
+
+# Remove package and all dependencies
+our-aur remove --recursive neovim
+```
+
+## Advanced Operations
+
+### Package Information
+
+```bash
+# Show package details
+our-aur info neovim
+
+# Show package files
+our-aur files neovim
+
+# Show package dependencies
+our-aur deps neovim
+
+# Show package build status
+our-aur status neovim
+```
+
+### Package Updates
+
+```bash
+# Update all AUR packages
+our-aur update
+
+# Update specific package
+our-aur update neovim
+
+# Check for updates without installing
+our-aur checkupdates
+```
+
+### Package Building
+
+```bash
+# Build package without installing
+our-aur build neovim
+
+# Build with custom makepkg flags
+our-aur build -- -j$(nproc) neovim
+
+# Clean build cache
+our-aur clean-build
+```
+
+## Container Configuration
+
+### Container Setup
+
+AUR operations run in systemd-nspawn containers with systemd-sysext integration:
+
+```bash
+# View container configuration
+cat /etc/systemd/system/aur-builder.service
+
+# View systemd-sysext configuration
+cat /etc/systemd/system/aur-sysext.service
+```
+
+### Network Configuration
+
+```bash
+# Configure container networking
+cat > ~/.config/ouroborOS/aur.conf << 'EOF'
+[network]
+enable_networkd = true
+enable_iwd = true
+enable_resolved = true
+EOF
+```
+
+## Security Features
+
+### Package Verification
+
+```bash
+# Verify package signatures
+our-aur verify neovim
+
+# Check package integrity
+our-aur checksum neovim
+
+# List untrusted packages
+our-aur untrusted
+```
+
+### Build Isolation
+
+```bash
+# Build in isolated container
+our-aur --isolated build neovim
+
+# Build with seccomp filtering
+our-aur --seccomp build neovim
+
+# Build with resource limits
+our-aur --memory 2G build neovim
+```
+
+## Package Management Workflow
+
+### Safe Installation Process
+
+```bash
+# 1. Create snapshot before installation
+our-snapshot create pre-aur-install
+
+# 2. Install package
+our-aur install neovim
+
+# 3. Verify installation
+neovim --version
+
+# 4. If issues arise, rollback
+our-rollback now
+```
+
+### Update Workflow
+
+```bash
+# 1. Check for updates
+our-aur checkupdates
+
+# 2. Create snapshot
+our-snapshot create pre-aur-update
+
+# 3. Update packages
+our-aur update
+
+# 4. Test updated packages
+neovim --version
+lazygit --version
+
+# 5. If issues, rollback
+our-rollback now
+```
+
+## Package Categories
+
+### Development Tools
+
+```bash
+# Install development tools
+our-aur install neovim lazygit zellij helix bat eza fd ripgrep
+
+# IDE and editors
+our-aur install visual-studio-code-bin jetbrains-toolbox
+```
+
+### System Tools
+
+```bash
+# System utilities
+our-aur install htop btop bashtop neofetch cmatrix
+
+# Network tools
+our-aur install nmap wireshark-qt tshark tcpdump
+```
+
+### Multimedia
+
+```bash
+# Video editors
+our-aur install kdenlive obs-studio blender
+
+# Image editors
+our-aur install gimp inkscape krita
+```
+
+### Gaming
+
+```bash
+# Gaming tools
+our-aur install steam lutris protonup-qt heroic-games-launcher
+
+# Wine and compatibility
+our-aur install wine-staging protontricks
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix failed dependencies
+our-aur --sync-deps install neovim
+
+# Clean package cache
+our-aur clean-cache
+
+# Rebuild failed package
+our-aur --rebuild neovim
+
+# Check build logs
+our-aur --log neovim
+```
+
+### Build Errors
+
+```bash
+# Show build logs
+journalctl -u aur-builder.service
+
+# Debug build process
+our-aur --debug build neovim
+
+# Check system requirements
+our-aur --check-env neovim
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- AUR package security guidelines
+- Package building customization
+- Repository management and mirroring
+- Package conflict resolution
+- Performance optimization tips
+- Integration with other package managers
+- AUR package monitoring and alerts
+- Package backup and migration
+- Development environment setup with AUR
+
+:::danger
+
+Always verify AUR package sources before installation. Only install packages from trusted maintainers and regularly check for security updates.
+
+:::

@@ -1,0 +1,37 @@
+---
+title: Known Limitations
+description: Current known limitations and design decisions in ouroborOS.
+slug: troubleshooting/limitations
+---
+
+# Known Limitations
+
+Some ouroborOS behaviors are intentional design decisions. Others are temporary limitations being addressed in upcoming releases.
+
+## By Design
+
+| Limitation | Reason |
+|-----------|--------|
+| **UEFI only** | Modern firmware standard — no Legacy BIOS |
+| **x86_64 only** | ARM/aarch64 removed in v0.4.12 — no hardware to validate |
+| **No NetworkManager** | systemd-networkd + iwd — lighter, systemd-native |
+| **No GRUB** | systemd-boot only — simpler, faster |
+| **No swap partition** | zram swap — no disk I/O, instant |
+| **Read-only root** | Immutability is the core design — writes go to `/var`, `/etc`, `/home` |
+
+## Temporary Limitations
+
+| Limitation | Status | Target |
+|-----------|--------|--------|
+| No GUI installer | TUI + YAML only | Phase 6+ |
+| No OTA image-based updates | `ouroboros-update` checks channel YAML | Phase 6+ |
+| systemd-homed fails in QEMU | Auto-fallback to `useradd` | Upstream systemd bug |
+| Multi-language installer | English only (wiki supports en/es/de) | Future |
+
+:::tip
+Check the [Vision & Roadmap](/roadmap/declarative-vision) section for planned features and timelines.
+:::
+
+---
+
+*Content coming soon — detailed per-limitation workarounds and migration guides.*

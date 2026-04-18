@@ -1,0 +1,408 @@
+---
+title: FIDO2/WebAuthn
+description: FIDO2/WebAuthn authentication management with our-fido2 in ouroborOS
+slug: security/fido2
+---
+
+# FIDO2/WebAuthn Management (our-fido2)
+
+`our-fido2` is a comprehensive FIDO2/WebAuthn authentication tool supporting multiple authenticator types including USB, BLE GATT, and Hybrid QR (CTAP2). It provides secure passwordless authentication for ouroborOS systems and web applications.
+
+## Overview
+
+The FIDO2 manager provides:
+
+- **Multi-protocol support** for USB, BLE, and QR authentication
+- **Cross-platform compatibility** with FIDO2 standards
+- **Secure credential management** with backup and recovery
+- **Web application integration** for seamless authentication
+- **System integration** with login managers and services
+
+:::note
+
+our-fido2 requires BlueZ with `--experimental` flag enabled for BLE functionality and the Advertising Monitor API. USB and QR authentication work with standard FIDO2 devices.
+
+:::
+
+## Installation
+
+The FIDO2 manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-fido2 --version
+our-fido2 --help
+```
+
+## Basic Usage
+
+### Device Management
+
+```bash
+# List connected FIDO2 devices
+our-fido2 list
+
+# Show device details
+our-fido2 info "My YubiKey"
+
+# Check device capabilities
+our-fido2 capabilities "My YubiKey"
+
+# Test device connection
+our-fido2 test "My YubiKey"
+```
+
+### Credential Management
+
+```bash
+# Create new credential
+our-fido2 credential create "My Account" --device "My YubiKey"
+
+# List credentials
+our-fido2 credential list
+
+# Remove credential
+our-fido2 credential remove "My Account"
+
+# Backup credentials
+our-fido2 credential backup > credentials-backup.json
+```
+
+## Authentication Methods
+
+### WebAuthn Authentication
+
+```bash
+# Authenticate with website
+our-fido2 auth "example.com" --username "user@example.com"
+
+# Register new account
+our-fido2 register "example.com" --username "user@example.com"
+
+# Check authentication status
+our-fido2 auth-status "example.com" --username "user@example.com"
+```
+
+### System Authentication
+
+```bash
+# Add FIDO2 to system authentication
+our-fido2 system-auth add
+
+# Remove FIDO2 from system authentication
+our-fido2 system-auth remove
+
+# Test system authentication
+our-fido2 system-auth test
+```
+
+## Advanced Features
+
+### BLE (Bluetooth Low Energy) Support
+
+```bash
+# Check BLE readiness
+our-fido2 qr-ready
+
+# Start BLE authentication
+our-fido2 ble-auth "example.com" --username "user@example.com"
+
+# Monitor BLE connections
+our-fido2 ble-monitor
+
+# Configure BLE settings
+our-fido2 ble-config --timeout 30
+```
+
+### QR Code Authentication
+
+```bash
+# Generate QR code for authentication
+our-fido2 qr-auth "example.com" --username "user@example.com"
+
+# Scan QR code
+our-fido2 qr-scan
+
+# Configure QR settings
+our-fido2 qr-config --timeout 60 --size 256
+```
+
+### USB Authentication
+
+```bash
+# USB authentication
+our-fido2 usb-auth "example.com" --username "user@example.com"
+
+# Touch-based authentication
+our-fido2 touch-auth "example.com" --username "user@example.com"
+
+# PIN-based authentication
+our-fido2 pin-auth "example.com" --username "user@example.com" --pin "123456"
+```
+
+## Device Configuration
+
+### PIN Management
+
+```bash
+# Set PIN
+our-fido2 pin set --new-pin "123456"
+
+# Change PIN
+our-fido2 pin change --old-pin "123456" --new-pin "654321"
+
+# Remove PIN
+our-fido2 pin remove --pin "654321"
+
+# Reset PIN
+our-fido2 pin reset
+```
+
+### Biometric Settings
+
+```bash
+# Enable biometric authentication
+our-fido2 biometric enable
+
+# Disable biometric authentication
+our-fido2 biometric disable
+
+# Configure biometric timeout
+our-fido2 biometric timeout 30
+
+# Check biometric status
+our-fido2 biometric status
+```
+
+### Security Settings
+
+```bash
+# Enable enterprise attestation
+our-fido2 security enterprise-attestation enable
+
+# Configure UV (User Verification)
+our-fido2 security uv require
+
+# Configure UP (User Presence)
+our-fido2 security up require
+
+# Configure device attestation
+our-fido2 security attestation enable
+```
+
+## Application Integration
+
+### Web Applications
+
+```bash
+# Configure web app integration
+our-fido2 web-config "example.com" --enable
+
+# Test web app integration
+our-fido2 web-test "example.com"
+
+# Remove web app integration
+our-fido2 web-config "example.com" --disable
+```
+
+### Desktop Applications
+
+```bash
+# Configure desktop app integration
+our-fido2 desktop-config "MyApp" --enable
+
+# Test desktop app integration
+our-fido2 desktop-test "MyApp"
+
+# Remove desktop app integration
+our-fido2 desktop-config "MyApp" --disable
+```
+
+## System Integration
+
+### Login Manager
+
+```bash
+# Configure login manager integration
+our-fido2 login-manager configure
+
+# Test login manager integration
+our-fido2 login-manager test
+
+# Remove login manager integration
+our-fido2 login-manager remove
+```
+
+### SSH Authentication
+
+```bash
+# Add FIDO2 key to SSH
+our-fido2 ssh add-key
+
+# Remove FIDO2 key from SSH
+our-fido2 ssh remove-key
+
+# Test SSH authentication
+our-fido2 ssh test
+```
+
+## Monitoring and Diagnostics
+
+### Device Monitoring
+
+```bash
+# Monitor device status
+our-fido2 monitor --continuous
+
+# Show device statistics
+our-fido2 stats
+
+# Monitor authentication events
+our-fido2 auth-events
+```
+
+### Performance Testing
+
+```bash
+# Test authentication speed
+our-fido2 perf-test --iterations 100
+
+# Compare authenticator performance
+our-fido2 compare "YubiKey5" "SecurityKey"
+
+# Generate performance report
+our-fido2 perf-report --output perf-report.txt
+```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+our-fido2 --debug list
+
+# Show detailed device info
+our-fido2 --verbose info "My YubiKey"
+
+# Monitor authentication flow
+our-fido2 --monitor auth "example.com"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix device connection issues
+our-fido2 fix-device
+
+# Reset device configuration
+our-fido2 reset-device
+
+# Clear device cache
+our-fido2 clear-cache
+
+# Reinitialize device
+our-fido2 reinit
+```
+
+### Authentication Issues
+
+```bash
+# Fix authentication problems
+our-fido2 fix-auth
+
+# Reset authentication state
+our-fido2 reset-auth
+
+# Clear authentication cache
+our-fido2 clear-auth-cache
+
+# Rebuild authentication database
+our-fido2 rebuild-auth-db
+```
+
+### Device Configuration Issues
+
+```bash
+# Fix configuration issues
+our-fido2 fix-config
+
+# Reset device configuration
+our-fido2 reset-config
+
+# Restore default settings
+our-fido2 restore-defaults
+
+# Validate device configuration
+our-fido2 validate-config
+```
+
+## Security Features
+
+### Backup and Recovery
+
+```bash
+# Create device backup
+our-fido2 backup create --file device-backup.json
+
+# Restore device from backup
+our-fido2 backup restore --file device-backup.json
+
+# Test backup integrity
+our-fido2 backup test --file device-backup.json
+
+# Encrypt backup file
+our-fido2 backup encrypt --file device-backup.json --password secret
+```
+
+### Security Audit
+
+```bash
+# Run security audit
+our-fido2 audit
+
+# Generate security report
+our-fido2 audit-report --output security-report.txt
+
+# Check compliance
+our-fido2 compliance check
+
+# Generate compliance report
+our-fido2 compliance report --output compliance-report.txt
+```
+
+### Access Control
+
+```bash
+# Configure access control
+our-fido2 access-control configure
+
+# Set access policies
+our-fido2 access-control set-policy --policy strict
+
+# Check access control status
+our-fido2 access-control status
+
+# Test access control
+our-fido2 access-control test
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Advanced FIDO2 enterprise features
+- Multi-factor authentication setup
+- FIDO2 for server administration
+- Cross-device authentication
+- FIDO2 policy management
+- FIDO2 compliance standards
+- FIDO2 performance optimization
+- FIDO2 security hardening
+- FIDO2 integration with SSO
+- FIDO2 for mobile devices
+
+:::danger
+
+Always backup your FIDO2 credentials regularly. Losing access to your FIDO2 device without backup credentials may permanently lock you out of your accounts.
+
+:::

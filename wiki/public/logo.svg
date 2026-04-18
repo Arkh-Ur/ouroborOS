@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 544 120" width="100%" height="100%"><g transform="translate(10,10)">
+    <g>
+      <polygon points="50,5 89,28 50,25" fill="#083f28"/>
+      <polygon points="50,5 11,28 50,25" fill="#083f28"/>
+      <polygon points="89,28 89,72 72,63" fill="#083f28"/>
+      <polygon points="11,28 11,72 28,63" fill="#083f28"/>
+      <polygon points="89,72 50,95 72,63" fill="#083f28"/>
+      <polygon points="11,72 50,95 28,63" fill="#083f28"/>
+      <polygon points="89,28 72,63 50,25" fill="#067b3b"/>
+      <polygon points="11,28 28,63 50,25" fill="#067b3b"/>
+      <polygon points="50,95 72,63 28,63" fill="#067b3b"/>
+      <polygon points="50,25 72,63 28,63" fill="#00FF66"/>
+    </g>
+    <path d="M50,5L89,28L89,72L50,95L11,72L11,28ZM50,5L50,25M89,28L50,25M89,28L72,63M89,72L72,63M50,95L72,63M50,95L28,63M11,72L28,63M11,28L28,63M11,28L50,25M50,25L72,63L28,63Z"
+      fill="none" stroke="#419e6e" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g><text x="130" y="60" dominant-baseline="central" font-family="sans-serif" font-weight="bold" font-size="68" fill="#00FF66" letter-spacing="1">ouroborOS</text></svg>

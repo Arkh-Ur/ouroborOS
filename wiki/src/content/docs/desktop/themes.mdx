@@ -1,0 +1,159 @@
+---
+title: Desktop Themes
+description: Customization and theming guide for ouroborOS desktop environments
+slug: desktop/themes
+---
+
+# Desktop Themes and Customization
+
+orooborOS provides comprehensive theming capabilities across all supported desktop environments. Whether you prefer a minimal aesthetic or a highly customized workspace, the system supports easy theme management and consistent styling.
+
+## Overview
+
+The theming system in ouroborOS is designed to be:
+
+- **Consistent**: All desktop environments follow similar color palette conventions
+- **Customizable**: Easy to modify colors, icons, and layouts
+- **Persistent**: Theme changes are preserved across reboots and updates
+- **Cross-desktop**: Works across Hyprland, Niri, GNOME, and KDE
+
+:::note
+
+Theme management is integrated with the `our-pac` package manager. When you update system packages, your theme customizations are preserved automatically.
+
+:::
+
+## Color Palette
+
+### Default Color Scheme
+
+orooborOS uses an emerald/teal color palette that provides a fresh, modern appearance:
+
+```yaml
+# Default color scheme
+colors:
+  primary: "#10b981"    # Emerald (dark mode accent)
+  secondary: "#059669" # Dark Emerald (light mode accent)  
+  background: "#0f172a" # Very Dark (header background)
+  surface: "#1e293b"    # Card backgrounds
+  text: "#f1f5f9"       # Primary text
+  text-secondary: "#94a3b8" # Secondary text
+```
+
+### Theme Customization
+
+You can customize colors by modifying theme files in your home directory:
+
+```bash
+# Theme configuration directory
+~/.config/ouroborOS/themes/
+
+# Create custom theme
+mkdir -p ~/.config/ouroborOS/themes/my-theme
+```
+
+## Desktop-Specific Theming
+
+### Hyprland Themes
+
+Hyprland configuration is located at `~/.config/hypr/hyprland.conf`:
+
+```ini
+# Hyprland theme configuration
+$accent = #10b981
+$background = #0f172a
+$surface = #1e293b
+
+windowrule = float, ^(firefox)$
+windowrule = tile, ^(kitty)$
+
+general {
+    border_size = 2
+    col.active_border = $accent
+    col.inactive_border = #334155
+}
+```
+
+### Niri Themes
+
+Niri configuration is in `~/.config/niri/config.kdl`:
+
+```kdl
+// Niri theme configuration
+$accent: #10b981;
+$background: #0f172a;
+$surface: #1e293b;
+
+windowRules {
+    match app_id "firefox" {
+        floating true
+    }
+}
+```
+
+### GNOME Themes
+
+GNOME themes are managed through extensions:
+
+```bash
+# Install GNOME tweaks
+our-pac install gnome-tweaks
+
+# Theme installation
+gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
+```
+
+### KDE Themes
+
+KDE customization through System Settings:
+
+```bash
+# KDE theme management
+systemsettings5
+```
+
+## Theme Packages
+
+Pre-built theme packages are available through our repositories:
+
+```bash
+# Install additional themes
+our-pac install ouroborOS-themes-collection
+our-pac install ouroborOS-icons
+our-pac install ouroborOS-cursors
+```
+
+## Dynamic Theme Switching
+
+orooborOS supports automatic theme switching based on time of day:
+
+```yaml
+# ~/.config/ouroborOS/theme-switcher.yaml
+theme:
+  day:
+    colors:
+      primary: "#059669"  # Light emerald
+      background: "#ffffff"
+  night:
+    colors:
+      primary: "#10b981"  # Dark emerald  
+      background: "#0f172a"
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Detailed theme customization tutorials
+- Icon theme management
+- Cursor theme setup
+- Font configuration
+- Wallpaper management
+- Theme backup and restore procedures
+- Integration with system-wide theming tools
+
+:::caution
+
+Always backup your theme configurations before major system updates to prevent customization loss.
+
+:::

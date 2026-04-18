@@ -1,0 +1,310 @@
+---
+title: Container Manager
+description: Guide to using our-container for systemd-nspawn containers in ouroborOS
+slug: apps/our-container
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Container Manager (our-container)
+
+`our-container` is a comprehensive container management wrapper for systemd-nspawn, providing an easy-to-use interface for running isolated Linux environments. It's designed specifically for ouroborOS with integration for GUI applications, networking, and system security.
+
+## Overview
+
+The `our-container` tool provides:
+
+- **17 commands** covering container lifecycle management
+- **Isolated environments** with network namespace separation
+- **GUI support** with Wayland, GPU, and audio passthrough
+- **System integration** with systemd and Btrfs snapshots
+- **Security features** with seccomp and network filtering
+
+:::note
+
+Containers run as systemd services and are automatically managed by the system. This ensures proper startup, shutdown, and resource management.
+
+:::
+
+## Installation
+
+The container manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-container --version
+our-container --help
+```
+
+## Basic Usage
+
+### Container Creation
+
+```bash
+# Create a new Ubuntu container
+our-container create ubuntu-latest --image ubuntu:latest
+
+# Create a Fedora container  
+our-container create fedora-38 --image fedora:38
+
+# Create a Debian container with specific release
+our-container create debian-bookworm --image debian:bookworm
+```
+
+### Container Management
+
+```bash
+# List all containers
+our-container list
+
+# Start a container
+our-container start ubuntu-latest
+
+# Stop a container
+our-container stop ubuntu-latest
+
+# Restart a container
+our-container restart ubuntu-latest
+
+# Remove a container
+our-container remove ubuntu-latest
+```
+
+## Advanced Container Operations
+
+### Isolated Networking
+
+```bash
+# Create container with isolated network (veth pair)
+our-container create isolated-container --network isolated
+
+# Create container with host networking (for testing)
+our-container create host-net-container --network host
+```
+
+### GUI Applications
+
+```bash
+# Start container with GUI support
+our-container start ubuntu-latest --gui
+
+# Start container with GPU passthrough
+our-container start ubuntu-latest --gui --gpu
+
+# Start container with audio support
+our-container start ubuntu-latest --gui --audio
+```
+
+### Container Commands
+
+```bash
+# Execute command in running container
+our-container exec ubuntu-latest -- apt update
+
+# Get shell in container
+our-container shell ubuntu-latest
+
+# View container logs
+our-container logs ubuntu-latest
+
+# View container status
+our-container status ubuntu-latest
+
+# Enter container maintenance mode
+our-container maintenance ubuntu-latest
+```
+
+## Configuration Files
+
+### Container Configuration Directory
+
+Containers are configured in `~/.config/ouroborOS/containers/`:
+
+```bash
+# List container configurations
+ls -la ~/.config/ouroborOS/containers/
+
+# Example configuration
+cat ~/.config/ouroborOS/containers/ubuntu-latest.conf
+```
+
+### Global Configuration
+
+Global settings in `~/.config/ouroborOS/containers.conf`:
+
+```ini
+[containers]
+default_network = isolated
+enable_gpu = true
+enable_audio = true
+auto_remove = false
+```
+
+## Container Lifecycle
+
+### Creating Containers
+
+```bash
+# Create with custom name and image
+our-container create my-dev-env \
+  --image ubuntu:22.04 \
+  --network isolated \
+  --storage btrfs \
+  --autostart true
+```
+
+### Managing Running Containers
+
+```bash
+# Monitor container resource usage
+our-container monitor ubuntu-latest
+
+# View container processes
+our-container ps ubuntu-latest
+
+# Send signal to container
+our-container signal ubuntu-latest --signal SIGTERM
+```
+
+### Backup and Migration
+
+```bash
+# Export container configuration
+our-container export ubuntu-latest > ubuntu-backup.tar.gz
+
+# Import container from backup
+our-container import ubuntu-backup.tar.gz
+```
+
+## Network Configuration
+
+### Network Types
+
+<Tabs>
+<TabItem label="Isolated">
+
+Creates a veth pair with NAT to host network:
+
+```bash
+our-container create web-server --network isolated --port 8080:80
+```
+
+</TabItem>
+<TabItem label="Bridge">
+
+Connects to host bridge network:
+
+```bash
+our-container create db-server --network bridge --ip 192.168.1.100
+```
+
+</TabItem>
+<TabItem label="Host">
+
+Shares host network namespace (use with caution):
+
+```bash
+our-container create testing --network host
+```
+
+</TabItem>
+</Tabs>
+
+### Port Forwarding
+
+```bash
+# Forward container port to host
+our-container create nginx-app \
+  --network isolated \
+  --port 8080:80 \
+  --port 8443:443
+```
+
+## GUI and Audio Support
+
+### Wayland Integration
+
+```bash
+# Start container with full GUI support
+our-container start ubuntu-latest --gui \
+  --wayland-display :1 \
+  --x11-display :0
+```
+
+### GPU Passthrough
+
+```bash
+# GPU acceleration support
+our-container create gaming-container \
+  --network isolated \
+  --gpu nvidia \
+  --gpu render
+```
+
+### Audio Support
+
+```bash
+# PulseAudio integration
+our-container start ubuntu-latest --audio \
+  --pulse-server /run/user/1000/pulse/native
+```
+
+## Security Features
+
+### Seccomp Filtering
+
+```bash
+# Create container with custom seccomp profile
+our-container create secure-container \
+  --seccomp-profile ~/.config/ouroborOS/seccomp-base.json
+```
+
+### Resource Limits
+
+```bash
+# Set resource limits
+our-container create limited-container \
+  --memory 2G \
+  --cpu-shares 512 \
+  --pids-max 100
+```
+
+## Container Templates
+
+### Pre-built Templates
+
+```bash
+# List available templates
+our-container templates
+
+# Use a template
+our-container create from-template python-dev --template python-dev
+```
+
+### Custom Templates
+
+```bash
+# Create custom template
+our-container create-template my-base \
+  --base ubuntu:22.04 \
+  --packages "python3 python3-pip git" \
+  --config ~/.config/ouroborOS/templates/my-base.conf
+```
+
+## Content coming soon...
+
+This section will be expanded with:
+
+- Container resource management and monitoring
+- Advanced networking and load balancing
+- Container orchestration patterns
+- Integration with Kubernetes and Docker
+- Container backup and disaster recovery
+- Security hardening guidelines
+- Performance optimization techniques
+- Multi-container orchestration examples
+- Container lifecycle automation
+
+:::caution
+
+Container root access provides significant privileges. Always verify container images from trusted sources and regularly update base images to prevent security vulnerabilities.
+
+:::

@@ -1,0 +1,47 @@
+---
+title: Logs & Debugging
+description: How to find and interpret system logs on ouroborOS for troubleshooting.
+slug: troubleshooting/logs
+---
+
+# Logs & Debugging
+
+ouroborOS uses systemd's journal as the primary logging system. Here's how to find what you need.
+
+## Essential Commands
+
+```bash
+# View all logs (newest first)
+journalctl -e
+
+# Follow logs in real-time
+journalctl -f
+
+# Filter by service
+journalctl -u ouroboros-health.service
+journalctl -u our-pac.service
+
+# Filter by boot (previous boot)
+journalctl -b -1
+
+# Filter by priority (errors and worse)
+journalctl -p err
+```
+
+## System Health Check
+
+```bash
+# Run the built-in health check
+ouroboros-health --doctor
+
+# Machine-readable output
+ouroboros-health --json
+```
+
+:::note
+`ouroboros-health` checks: root RO status, failed units, machine-id, system.yaml validity, Btrfs pool usage, snapshot count, orphan boot entries, SMART status, Secure Boot, TPM2, and available updates.
+:::
+
+---
+
+*Content coming soon — installer log locations, snapshot metadata inspection, and advanced debugging techniques.*

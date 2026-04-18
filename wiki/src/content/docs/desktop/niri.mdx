@@ -1,0 +1,616 @@
+---
+title: Niri
+description: Learn how to configure and use Niri, the modern tiling Wayland compositor in ouroborOS designed for keyboard navigation and simplicity.
+slug: desktop/niri
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Niri
+
+Niri is a modern, keyboard-driven tiling Wayland compositor that prioritizes simplicity, performance, and keyboard-first navigation. In ouroborOS, Niri comes pre-configured with essential applications and a clean, efficient interface, making it perfect for users who prefer a minimalist workflow with excellent keyboard control.
+
+## What is Niri?
+
+Niri is a Wayland compositor that focuses on tiling window management with strong emphasis on keyboard navigation. It combines the simplicity of traditional tiling window managers with modern features like smooth animations, multi-monitor support, and excellent performance.
+
+```bash
+# Traditional window management - complex keybindings
+# Install window manager
+sudo pacman -S i3
+# Configure dozens of keybindings manually
+# Install applications
+sudo pacman -S alacritty dmenu
+# Configure each application
+
+# Niri in ouroborOS - keyboard-first, pre-configured
+# Niri comes with foot terminal, fuzzel launcher, waybar
+# All optimized for keyboard navigation
+# Simple, consistent keybindings
+```
+
+## Installation and Setup
+
+### **Niri Profile**
+Niri is included in the "Niri" desktop profile during installation:
+
+```bash
+# Check if Niri is installed
+niri --version
+
+# Switch to Niri profile (if not already)
+ouroboros-profile change niri
+
+# Verify Niri installation
+systemctl status niri.service
+```
+
+### **Basic Configuration**
+Niri configuration is stored in `~/.config/niri/config.kdl`:
+
+```bash
+# Edit Niri configuration
+nano ~/.config/niri/config.kdl
+
+# Configuration directory structure
+~/.config/niri/
+├── config.kdl        # Main configuration
+├── apps/             # Application configurations
+│   ├── foot.kdl
+│   ├── fuzzel.kdl
+│   └── waybar.kdl
+└── themes/           # Theme configurations
+    ├── dark.kdl
+    └── light.kdl
+```
+
+## Core Concepts
+
+### **Tiling Layout**
+Niri uses a simple but powerful tiling system:
+
+```kdl
+// Basic layout configuration
+layout {
+    // Focus direction
+    focus-ring {
+        width: 2px
+        active-color: rgb(59 130 246)   // blue-500
+        inactive-color: rgba(100 100 100 0.5)
+    }
+
+    // Window placement
+    auto-layout {
+        columns: 1
+    }
+}
+```
+
+### **Workspace Management**
+Niri supports multiple workspaces with keyboard navigation:
+
+```kdl
+// Workspace configuration
+workspaces {
+    // Default workspace
+    workspace "1" {
+        output "HDMI-A-1"
+    }
+
+    // Additional workspaces
+    workspace "2" {
+        output "DP-1"
+    }
+
+    // Workspace switching
+    bindings {
+        // Switch workspace
+        Mod+1 exec "niri switch-to-workspace 1"
+        Mod+2 exec "niri switch-to-workspace 2"
+
+        // Move window to workspace
+        Mod+Shift+1 exec "niri move-to-workspace 1"
+    }
+}
+```
+
+### **Keybindings**
+Niri uses a clean, keyboard-first binding system:
+
+```kdl
+// Basic keybindings
+bind Mod+Q   close-window
+bind Mod+Shift+Q   close-window-or-kills-process-if-last-window
+bind Mod+F   focus-or-launch "foot"
+bind Mod+D   focus-or-launch "fuzzel"
+bind Mod+Space   focus-window-or-workspace "overview"
+```
+
+## Configuration Details
+
+### **Main Configuration File**
+```kdl
+// ~/.config/niri/config.kdl
+// -------------------------------
+// Basic settings
+// -------------------------------
+mod = "SUPER"
+
+// Focus settings
+focus-ring {
+    width: 2px
+    active-color: rgb(16 185 129)  // emerald-500
+    inactive-color: rgba(100 100 100 0.5)
+}
+
+// Window management
+prefer-no-csd = true
+applet-windows = ["waybar"]
+title-bar = false
+```
+
+### **Layout Configuration**
+```kdl
+// Layout settings
+layout {
+    // Focus behavior
+    focus-ring {
+        width: 2px
+        active-color: rgb(16 185 129)
+        inactive-color: rgba(100 100 100 0.5)
+    }
+
+    // Window placement
+    auto-layout {
+        columns: 1
+        rows: 1
+    }
+
+    // Window animations
+    animate-mouse = true
+    animation-duration-ms = 100
+}
+
+// Workspace configuration
+workspaces {
+    workspace "1" {
+        output "HDMI-A-1"
+    }
+    workspace "2" {
+        output "DP-1"
+    }
+}
+```
+
+### **Input Configuration**
+```kdl
+// Input settings
+input {
+    keyboard {
+        xkb {
+            layout = "us"
+            variant = ""
+            options = "caps:escape"
+        }
+    }
+
+    touchpad {
+        tap = true
+        natural-scroll = true
+        tap-and-drag = true
+        drag-lock = false
+        scroll-method = "two-finger"
+        click-method = "clickfinger"
+        middle-click-emulation = false
+        disable-while-typing = true
+        scroll-factor = 1.0
+    }
+
+    trackpoint {
+        emulate-scroll-wheel = false
+    }
+}
+```
+
+### **Output Configuration**
+```kdl
+// Monitor/Output configuration
+output "HDMI-A-1" {
+    mode = "1920x1080@60Hz"
+    position = "0,0"
+    scale = 1.0
+    transform = "normal"
+    adaptive-sync = false
+}
+
+output "DP-1" {
+    mode = "2560x1440@60Hz"
+    position = "1920,0"
+    scale = 1.0
+    transform = "normal"
+    adaptive-sync = false
+}
+```
+
+## Custom Applications
+
+### **Foot Terminal Configuration**
+```kdl
+// ~/.config/niri/apps/foot.kdl
+// Foot terminal configuration
+app "foot" {
+    focus = true
+    floating = false
+    tags = ["terminal"]
+    layout = "tiled"
+    orientation = "horizontal"
+    position = "0 0"
+    size = "100% 40%"
+    children = []
+}
+```
+
+### **Fuzzel Launcher Configuration**
+```kdl
+// ~/.config/niri/apps/fuzzel.kdl
+// Fuzzel app launcher configuration
+app "fuzzel" {
+    focus = true
+    floating = true
+    tags = ["launcher"]
+    layout = "center"
+    orientation = "horizontal"
+    position = "50% 50%"
+    size = "50% 10%"
+    children = []
+}
+```
+
+### **Waybar Configuration**
+```kdl
+// ~/.config/niri/apps/waybar.kdl
+// Waybar bar configuration
+app "waybar" {
+    focus = false
+    floating = true
+    tags = ["panel"]
+    layout = "tiled"
+    orientation = "horizontal"
+    position = "0 0"
+    size = "100% 3%"
+    children = []
+}
+```
+
+## Keybindings and Shortcuts
+
+### **Basic Window Management**
+```kdl
+// ~/.config/niri/config.kdl
+// Basic keybindings
+bind Mod+Q   close-window
+bind Mod+Shift+Q   close-window-or-kills-process-if-last-window
+bind Mod+Right   focus-right
+bind Mod+Left    focus-left
+bind Mod+Up      focus-up
+bind Mod+Down    focus-down
+
+// Window movement
+bind Mod+Shift+Right   move-window-right
+bind Mod+Shift+Left    move-window-left
+bind Mod+Shift+Up      move-window-up
+bind Mod+Shift+Down    move-window-down
+```
+
+### **Application Management**
+```kdl
+// Application keybindings
+bind Mod+F   focus-or-launch "foot"
+bind Mod+D   focus-or-launch "fuzzel"
+bind Mod+T   focus-or-launch "firefox"
+bind Mod+B   focus-or-launch "bitwarden"
+bind Mod+N   focus-or-launch "obsidian"
+
+// Window manipulation
+bind Mod+Return   maximize-window
+bind Mod+Shift+Return   maximize-window-horizontally
+bind Mod+Space   focus-window-or-workspace "overview"
+bind Mod+Escape  exit-workspace
+
+// System keybindings
+bind Mod+Shift+E   exit-niri
+bind Mod+Shift+R   reload-config
+bind Mod+Print    screenshot
+bind Shift+Print   screenshot-area
+```
+
+### **Workspace Management**
+```kdl
+// Workspace navigation
+bind Mod+1   focus-workspace "1"
+bind Mod+2   focus-workspace "2"
+bind Mod+3   focus-workspace "3"
+bind Mod+4   focus-workspace "4"
+bind Mod+5   focus-workspace "5"
+
+// Window movement between workspaces
+bind Mod+Shift+1   move-to-workspace "1"
+bind Mod+Shift+2   move-to-workspace "2"
+bind Mod+Shift+3   move-to-workspace "3"
+bind Mod+Shift+4   move-to-workspace "4"
+bind Mod+Shift+5   move-to-workspace "5"
+
+// Workspace overview
+bind Mod+Space   focus-window-or-workspace "overview"
+```
+
+## Theming and Customization
+
+### **Color Schemes**
+```kdl
+// ~/.config/niri/themes/dark.kdl
+// Dark theme configuration
+theme {
+    // Background and foreground
+    background = rgb(26 27 38)    // gray-900
+    foreground = rgb(229 231 235) // gray-100
+
+    // Window colors
+    focused-background = rgb(38 40 51)    // gray-800
+    focused-foreground = rgb(229 231 235) // gray-100
+    unfocused-background = rgb(26 27 38)   // gray-900
+    unfocused-foreground = rgb(148 163 184) // gray-400
+
+    // Border colors
+    focused-border = rgb(16 185 129)     // emerald-500
+    unfocused-border = rgba(100 100 100 0.5)
+    urgent-border = rgb(239 68 68)       // red-500
+}
+
+// Apply theme
+import ~/.config/niri/themes/dark.kdl
+```
+
+### **Light Theme Alternative**
+```kdl
+// ~/.config/niri/themes/light.kdl
+// Light theme configuration
+theme {
+    background = rgb(248 250 252)    // gray-50
+    foreground = rgb(31 41 55)       // gray-800
+
+    focused-background = rgb(255 255 255) // white
+    focused-foreground = rgb(31 41 55)    // gray-800
+    unfocused-background = rgb(248 250 252) // gray-50
+    unfocused-foreground = rgb(75 85 99)   // gray-600
+
+    focused-border = rgb(5 150 105)      // emerald-600
+    unfocused-border = rgba(100 100 100 0.5)
+    urgent-border = rgb(239 68 68)       // red-500
+}
+```
+
+### **Window Rules and Behavior**
+```kdl
+// Window rules configuration
+window-rule floating title ^= "Bitwarden"
+window-rule floating title ^= "Calculator"
+window-rule floating title ^= "Settings"
+window-rule floating title ^= "About"
+window-rule floating title ^= "Preferences"
+
+window-rule floating class ^= " pavucontrol"
+window-rule floating class ^= " blueman"
+window-rule floating class ^= " nm-connection-editor"
+
+window-rule fullscreen title ^= "Firefox"
+window-rule fullscreen title ^= "Chromium"
+window-rule fullscreen title ^= "YouTube"
+```
+
+## Performance Optimization
+
+### **Niri Configuration**
+```kdl
+// Performance optimizations
+prefer-no-csd = true
+applet-windows = ["waybar"]
+title-bar = false
+
+// Animation settings
+animate-mouse = true
+animation-duration-ms = 50
+fade-in-duration-ms = 100
+fade-out-duration-ms = 100
+
+// Layout optimizations
+auto-layout {
+    columns: 1
+    rows: 1
+    smart-gaps = true
+    smart-splits = true
+}
+```
+
+### **System Configuration**
+```kdl
+// Monitor configuration
+output "HDMI-A-1" {
+    mode = "1920x1080@60Hz"
+    position = "0,0"
+    scale = 1.0
+    transform = "normal"
+}
+
+output "DP-1" {
+    mode = "2560x1440@60Hz"
+    position = "1920,0"
+    scale = 1.0
+    transform = "normal"
+}
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Niri not starting
+niri --version
+systemctl status niri.service
+
+# Configuration errors
+niri validate-config
+niri --config ~/.config/niri/config.kdl
+
+# Window focus issues
+niri switch-to-workspace 1
+niri focus-direction right
+```
+
+### **Debug Mode**
+```bash
+# Enable debug logging
+niri --log-level debug
+
+# Show debug information
+niri --help
+niri --version
+
+# Monitor performance
+niri --benchmark
+```
+
+### **Performance Issues**
+```bash
+# Check resource usage
+htop
+btop
+
+# Monitor GPU usage
+glxgears
+
+# Optimize configuration
+# Disable animations
+# Reduce number of windows
+# Monitor memory usage
+```
+
+## Integration with ouroborOS
+
+### **Service Management**
+```bash
+# Enable Niri services
+systemctl enable --now NetworkManager
+systemctl enable --now bluetooth
+systemctl enable --now waybar
+
+# Disable conflicting services
+systemctl disable --now gdm
+systemctl disable --now sddm
+```
+
+### **Package Updates**
+```bash
+# Update Niri packages
+our-pac upgrade niri foot fuzzel waybar
+
+# Update system
+our-pac upgrade
+```
+
+### **Snapshots and Rollbacks**
+```bash
+# Create snapshot before major changes
+our-snapshot create pre-niri-config
+
+# Test new configuration
+niri --config ~/.config/niri/config.kdl
+
+# Rollback if needed
+our-rollback now
+```
+
+## Best Practices
+
+### **Workflow Optimization**
+```bash
+# Use workspaces efficiently
+# Workspaces 1-3: Development
+# Workspaces 4-5: Communication
+# Use floating windows for specific apps
+
+# Use keybindings efficiently
+# Keep commonly used apps bound to key combinations
+# Use fuzzel for application launching
+# Use keyboard navigation for window management
+```
+
+### **Configuration Management**
+```bash
+# Backup configuration
+cp -r ~/.config/niri ~/.config/niri.backup
+
+# Version control configuration
+git init ~/.config/niri
+git add .
+git commit -m "Initial Niri configuration"
+
+# Test configuration changes
+niri --config ~/.config/niri/config.kdl
+```
+
+### **Resource Management**
+```bash
+# Monitor resource usage
+htop
+btop
+
+# Optimize for performance
+# Disable unnecessary animations
+# Use efficient applications
+# Monitor GPU and memory usage
+```
+
+### **Extension and Customization**
+```bash
+# Add custom applications
+bind Mod+G   focus-or-launch "obsidian"
+bind Mod+P   focus-or-launch "spotify"
+
+# Custom window rules
+window-rule floating title ^= "Spotify"
+window-rule floating title ^= "Calculator"
+
+# Custom keybindings
+bind Mod+Shift+R   exec "systemctl reboot"
+bind Mod+Shift+S   exec "systemctl suspend"
+```
+
+Niri in ouroborOS provides a minimalist, keyboard-driven desktop environment that combines the power of tiling window management with the simplicity of modern Wayland technology. With its pre-configured setup and keyboard-first design, it's perfect for users who value efficiency and control over their desktop environment.
+
+<Tabs>
+<TabItem label="Basic Workflow">
+```bash
+# Basic Niri workflow
+SUPER + F      # Open terminal
+SUPER + D      # Open app launcher
+SUPER + H/J/K/L # Navigate windows
+SUPER + 1-5    # Switch workspaces
+SUPER + SPACE   # Overview mode
+SUPER + SHIFT + R # Reload config
+```
+</TabItem>
+<TabItem label="Advanced Configuration">
+```bash
+# Custom configuration
+nano ~/.config/niri/config.kdl
+niri validate-config
+
+# Custom applications
+window-rule floating title ^= "Spotify"
+window-rule fullscreen title ^= "Firefox"
+
+# Custom themes
+import ~/.config/niri/themes/light.kdl
+```
+</TabItem>
+</Tabs>

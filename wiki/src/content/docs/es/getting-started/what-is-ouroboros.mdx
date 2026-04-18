@@ -1,0 +1,47 @@
+---
+title: ¿Qué es ouroborOS?
+description: Conocé ouroborOS, una distribución Linux Arch moderna e inmutable que combina la potencia de Arch con la simplicidad de la configuración declarativa.
+slug: getting-started/what-is-ouroboros
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# ¿Qué es ouroborOS?
+
+ouroborOS es una distribución Linux de vanguardia que reimagina la gestión del sistema a través de la inmutabilidad. Construida sobre la base sólida de **Arch Linux**, ouroborOS combina lo mejor de ambos mundos: el modelo de rolling release y el enorme repositorio de paquetes de Arch, junto con la seguridad y previsibilidad de los sistemas inmutables.
+
+## Filosofía Central
+
+ouroborOS se basa en tres principios fundamentales:
+
+1. **Inmutabilidad** — El filesystem raíz es de solo lectura. Los cambios se hacen a través de snapshots atómicos de Btrfs, permitiendo rollbacks instantáneos.
+2. **Nativo de systemd** — Todo el stack usa componentes de systemd: `systemd-boot`, `systemd-networkd`, `iwd`, `systemd-resolved`, `systemd-homed`.
+3. **Mínimo bloat** — Solo los paquetes necesarios. Sin NetworkManager, sin GRUB, sin servicios innecesarios.
+
+:::tip
+Cada operación de `our-pac` crea un snapshot de Btrfs antes de hacer cambios. Si algo rompe, booteá el snapshot anterior desde el menú de systemd-boot. Es así de simple.
+:::
+
+## Stack Tecnológico
+
+<Tabs>
+  <TabItem label="Boot">
+    - **systemd-boot** — bootloader nativo, UEFI only
+    - Snapshots automáticos con entradas de boot
+    - Dual-boot con Windows detectado automáticamente
+  </TabItem>
+  <TabItem label="Filesystem">
+    - **Btrfs** con subvolúmenes (`@`, `@home`, `@var`, `@snapshots`)
+    - Raíz inmutable (read-only)
+    - Snapshots atómicos para upgrades
+  </TabItem>
+  <TabItem label="Red">
+    - **systemd-networkd** + **iwd** (WiFi)
+    - Sin NetworkManager
+    - `our-wifi` para setup interactivo
+  </TabItem>
+</Tabs>
+
+---
+
+*Contenido completo próximamente. [View in English](/getting-started/what-is-ouroboros)*
