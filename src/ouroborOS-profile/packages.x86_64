@@ -49,6 +49,7 @@ python-pyaml
 # Text utilities
 less
 nano
+neovim
 vim
 
 # Shells (selectable at install time — bash is already in 'base')

@@ -739,6 +739,7 @@ class Installer:
             "zram-generator",
             "openssh",
             "which",
+            "neovim",
             # systemd-nspawn + machinectl ship with the `systemd` package
             # (already in base), used by `our-container` for container workflows.
         ] + self.config.extra_packages + packages_for(
