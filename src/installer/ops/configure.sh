@@ -854,7 +854,11 @@ EOF
     # Previously a stale 95-line copy lived inline here and overwrote the
     # good one — the trap-EXIT fix and system.yaml sync never reached the
     # target. Copy the live-ISO script directly instead of duplicating it.
-    if [[ ! -x /usr/local/bin/our-pac ]]; then
+    # Check existence with -f (not -x) — the executable bit can be dropped
+    # in transit through squashfs/erofs or other copy steps. install -Dm0755
+    # explicitly sets the mode on the target so we don't depend on the source
+    # bit surviving the build pipeline.
+    if [[ ! -f /usr/local/bin/our-pac ]]; then
         log_error "our-pac not found at /usr/local/bin/our-pac in live environment"
         return 1
     fi
