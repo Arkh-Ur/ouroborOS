@@ -855,7 +855,7 @@ EOF
     # good one — the trap-EXIT fix and system.yaml sync never reached the
     # target. Copy the live-ISO script directly instead of duplicating it.
     if [[ ! -x /usr/local/bin/our-pac ]]; then
-        log_err "our-pac not found at /usr/local/bin/our-pac in live environment"
+        log_error "our-pac not found at /usr/local/bin/our-pac in live environment"
         return 1
     fi
     install -Dm0755 /usr/local/bin/our-pac "${TARGET}/usr/local/bin/our-pac"
