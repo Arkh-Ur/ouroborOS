@@ -14,29 +14,41 @@ hero:
       icon: download
 ---
 
-import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from '@astrojs/starlight/components';
 
 ## Explore the Docs
 
 <CardGrid stagger>
-  <LinkCard title="Getting Started" href="/getting-started/what-is-ouroboros">
-    Learn what ouroborOS is, why it's different, and how its architecture works.
-  </LinkCard>
-  <LinkCard title="Installation" href="/installation/requirements">
-    Step-by-step guides for interactive and unattended installation.
-  </LinkCard>
-  <LinkCard title="System Management" href="/system/our-pac">
-    Master system.yaml, snapshots, rollbacks, and OTA updates.
-  </LinkCard>
-  <LinkCard title="Desktop & Wayland" href="/desktop/profiles">
-    Configure Hyprland, Niri, and other Wayland compositors.
-  </LinkCard>
-  <LinkCard title="Security" href="/security/secure-boot">
-    Secure Boot, FIDO2, LUKS encryption, and systemd-homed.
-  </LinkCard>
-  <LinkCard title="Troubleshooting" href="/troubleshooting/faq">
-    Rescue your system, read logs, and find answers in the FAQ.
-  </LinkCard>
+  <a class="card-link" href="/getting-started/what-is-ouroboros">
+    <Card title="Getting Started" icon="rocket">
+      Learn what ouroborOS is, why it's different, and how its architecture works.
+    </Card>
+  </a>
+  <a class="card-link" href="/installation/requirements">
+    <Card title="Installation" icon="download">
+      Step-by-step guides for interactive and unattended installation.
+    </Card>
+  </a>
+  <a class="card-link" href="/system/our-pac">
+    <Card title="System Management" icon="setting">
+      Master system.yaml, snapshots, rollbacks, and OTA updates.
+    </Card>
+  </a>
+  <a class="card-link" href="/desktop/profiles">
+    <Card title="Desktop & Wayland" icon="laptop">
+      Configure Hyprland, Niri, and other Wayland compositors.
+    </Card>
+  </a>
+  <a class="card-link" href="/security/secure-boot">
+    <Card title="Security" icon="approve-check-circle">
+      Secure Boot, FIDO2, LUKS encryption, and systemd-homed.
+    </Card>
+  </a>
+  <a class="card-link" href="/troubleshooting/faq">
+    <Card title="Troubleshooting" icon="warning">
+      Rescue your system, read logs, and find answers in the FAQ.
+    </Card>
+  </a>
 </CardGrid>
 
 :::note[Quick Start]

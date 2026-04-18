@@ -13,7 +13,7 @@ export default {
       tagline: 'Modern immutable Arch Linux',
       logo: {
         src: './src/assets/logo.svg',
-        replacesTitle: true,
+        replacesTitle: false,
       },
       defaultLocale: 'root',
       customCss: ['./src/styles/custom.css'],
@@ -213,7 +213,7 @@ export default {
         {
           tag: 'script',
           attrs: { type: 'text/javascript' },
-          content: `(function(){var k='ouroboros-lang';if(document.cookie.indexOf(k+'=')!==-1)return;var p=window.location.pathname;if(p.startsWith('/es'))return;var l=navigator.languages||[navigator.language||'en'];for(var i=0;i<l.length;i++){if(l[i].toLowerCase().startsWith('es')){document.cookie=k+'=es;path=/;max-age='+31536000;window.location.replace('/es'+p);return;}}document.cookie=k+'=en;path=/;max-age='+31536000;})();`,
+          content: `(function(){var k='ouroboros-lang';if(document.cookie.indexOf(k+'=')!==-1)return;var p=window.location.pathname;if(p.startsWith('/es'))return;var l=navigator.languages||[navigator.language||'en'];for(var i=0;i<l.length;i++){if(l[i].toLowerCase().startsWith('es')){document.cookie=k+'=es;path=/;max-age='+31536000;var t=p==='/'?'/es':'/es'+p;window.location.replace(t);return;}}document.cookie=k+'=en;path=/;max-age='+31536000;})();`,
         },
       ],
     }),
