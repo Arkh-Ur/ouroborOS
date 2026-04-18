@@ -850,104 +850,16 @@ EOF
     # Usage: sudo our-pac -Syu
     #        sudo our-pac -S <pkg>
     #        sudo our-pac -R <pkg>
-    cat > "${TARGET}/usr/local/bin/our-pac" << 'SCRIPT'
-#!/usr/bin/env bash
-# our-pac — the ONLY safe way to install/upgrade packages on ouroborOS.
-#
-# On the installed system:
-#   1. Mounts the Btrfs top-level (subvolid=5) to unlock @ without hitting
-#      the VFS ro restriction (circular deadlock prevention).
-#   2. Remounts / read-write at the VFS layer.
-#   3. Creates a timestamped Btrfs snapshot (pre-upgrade baseline).
-#   4. Runs pacman (NOT exec — we need control back after pacman exits).
-#   5. Locks root again via lock_root() AFTER pacman and ALL its hooks finish.
-#
-# Why NOT use exec:
-#   pacman hooks are sorted alphabetically. Hooks from packages like gtk4,
-#   dconf, glib write to /usr/share/* AFTER our zzz-post-upgrade.hook would
-#   run (if the hook existed alone). By doing the lock here — after pacman
-#   returns — we guarantee ALL hooks completed on a writable root.
-#
-# On the live ISO:
-#   Simply forwards to pacman (root already writable, no snapshots needed).
-set -euo pipefail
-
-readonly PROGRAM_NAME="our-pac"
-_msg()    { echo "[${PROGRAM_NAME}] $*"; }
-_err()    { _msg "ERROR: $*" >&2; }
-
-if [[ $EUID -ne 0 ]]; then
-    exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
-fi
-
-is_immutable_root() {
-    btrfs property get / ro 2>/dev/null | grep -q 'ro=true'
-}
-
-# Unlock root via top-level Btrfs mount (avoids circular deadlock).
-# btrfs property set / ro false fails when VFS mount is ro — metadata
-# writes are blocked. Mounting subvolid=5 to a temp dir bypasses this.
-unlock_root() {
-    local root_dev tmp
-    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
-    tmp=$(mktemp -d)
-
-    if ! mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
-        rmdir "$tmp"; _err "Could not mount Btrfs top-level from ${root_dev}"; exit 1
+    # Single source of truth: /usr/local/bin/our-pac from the airootfs.
+    # Previously a stale 95-line copy lived inline here and overwrote the
+    # good one — the trap-EXIT fix and system.yaml sync never reached the
+    # target. Copy the live-ISO script directly instead of duplicating it.
+    if [[ ! -x /usr/local/bin/our-pac ]]; then
+        log_err "our-pac not found at /usr/local/bin/our-pac in live environment"
+        return 1
     fi
-    if ! btrfs property set "${tmp}/@" ro false 2>/dev/null; then
-        umount "$tmp"; rmdir "$tmp"; _err "Could not clear Btrfs ro on @"; exit 1
-    fi
-    umount "$tmp"; rmdir "$tmp"
-    mount -o remount,rw /
-    _msg "Root unlocked (Btrfs ro=false) and remounted read-write"
-}
-
-# Lock root after pacman + all its hooks have finished.
-# Same top-level mount approach to avoid issues with busy mounts.
-lock_root() {
-    local root_dev tmp
-    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
-    tmp=$(mktemp -d)
-
-    if mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
-        btrfs property set "${tmp}/@" ro true 2>/dev/null && \
-            _msg "Root locked (Btrfs ro=true)"
-        umount "$tmp"; rmdir "$tmp"
-    else
-        rmdir "$tmp"
-        _msg "Could not mount top-level — root may remain writable"
-    fi
-    mount -o remount,ro / 2>/dev/null || \
-        _msg "Root busy — Btrfs property protects immutability regardless"
-}
-
-if is_immutable_root; then
-    _msg "Preparing package operation on immutable root..."
-
-    snapshot_lib="/usr/local/lib/ouroboros/snapshot.sh"
-    if [[ -r "$snapshot_lib" ]]; then
-        source "$snapshot_lib"
-        unlock_root
-        pre_upgrade_snapshot
-    else
-        _msg "Snapshot library not found — unlocking root (direct)"
-        unlock_root
-    fi
-
-    _msg "Running pacman $*"
-    /usr/bin/pacman "$@"
-    pacman_exit=$?
-
-    lock_root
-    exit "$pacman_exit"
-else
-    _msg "Running pacman $* (writable root — live ISO or unlocked)"
-    exec /usr/bin/pacman "$@"
-fi
-SCRIPT
-    chmod 0755 "${TARGET}/usr/local/bin/our-pac"
-    log_ok "our-pac installed."
+    install -Dm0755 /usr/local/bin/our-pac "${TARGET}/usr/local/bin/our-pac"
+    log_ok "our-pac installed (copied from airootfs)."
 
     # our-container — full-featured systemd-nspawn container wrapper for ouroborOS.
     # Copy from the live ISO (which ships the complete version with snapshots,
