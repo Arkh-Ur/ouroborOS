@@ -285,10 +285,15 @@ if is_immutable_root; then
     # 3-4. Unlock and remount rw
     unlock_root
 
+    # Guarantee root is re-locked on ANY exit path (success, error, SIGINT, SIGTERM).
+    # Without this, `set -e` aborts mid-flow if pacman returns non-zero (e.g. user
+    # cancels with "n") and root stays writable until next reboot.
+    trap 'lock_root 2>/dev/null || true; sync_boot_entries 2>/dev/null || true' EXIT
+
     # 5. Run pacman
     _msg "Running: pacman $*"
-    /usr/bin/pacman "$@"
-    pacman_exit=$?
+    pacman_exit=0
+    /usr/bin/pacman "$@" || pacman_exit=$?
 
     # 5b. Update system.yaml user_packages for explicit installs/removes
     if [[ "$pacman_exit" -eq 0 ]]; then
@@ -301,7 +306,8 @@ if is_immutable_root; then
         fi
     fi
 
-    # 6. Lock root
+    # 6. Lock root (trap also runs on exit, but explicit call keeps the order
+    #    deterministic for the steps below)
     lock_root
 
     # 7. sbctl sign-all (if Secure Boot active)
