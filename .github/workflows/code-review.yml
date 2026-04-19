@@ -3,7 +3,7 @@ name: Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [dev, master]
+    branches: [dev]
 
 permissions:
   pull-requests: write

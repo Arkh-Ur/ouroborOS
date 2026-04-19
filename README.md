@@ -17,7 +17,7 @@
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**. Includes `our-aur` (containerized AUR helper) and `our-flat` (Flatpak wrapper).
 
-> **Status:** v0.4.0 — Phase 4 complete. AUR helper and Flatpak wrapper added. See [Known Limitations](#known-limitations).
+> **Status:** v0.5.0 — Phase 5 in progress. Declarative `system.yaml` manifest and OTA updates. See [docs.ouroboros.la](https://arkh-ur.github.io/ouroborOS/) for full documentation.
 
 ---
 
@@ -31,6 +31,10 @@ An ArchLinux-based Linux distribution with an **immutable root filesystem**, a f
 | Network | systemd-networkd + iwd | NetworkManager |
 | Swap | zram (no swap partition) | Swap partition |
 | Installer | TUI state machine + unattended YAML | Manual |
+| AUR packages | Containerized via systemd-nspawn | Manual makepkg |
+| Flatpak | Built-in `our-flat` wrapper | Manual setup |
+| Security | Secure Boot + FIDO2 + LUKS + TPM2 | Manual setup |
+| WiFi/Bluetooth | `our-wifi` + `our-bluetooth` wrappers | Manual iwctl/bt |
 
 ---
 
@@ -177,8 +181,8 @@ sudo our-flat -Su
 | UEFI only | By design — no plans to change |
 | x86_64 only | By design — no plans to add ARM |
 | No GUI installer | TUI + unattended YAML only |
-| No Secure Boot by default | TPM2/MOK deferred to Phase 5 |
-| English only | Multi-language deferred |
+| Secure Boot | Supported via `sbctl` — opt-in during install |
+| Multi-language | Installer: en, es_CL, de_DE · Wiki: en, es |
 
 ---
 
@@ -194,24 +198,26 @@ ouroborOS/
 │   │   └── ops/             # disk.sh · configure.sh · snapshot.sh
 │   ├── scripts/             # build-iso.sh · flash-usb.sh · setup-dev-env.sh
 │   └── ouroborOS-profile/   # archiso profile (packages, airootfs, efiboot)
+├── wiki/                    # Astro + Starlight docs site (docs.ouroboros.la)
 ├── docs/                    # Architecture, user guide, developer guide
 ├── templates/               # install-config.yaml template
 ├── tests/                   # Docker-based CI test suite
-└── .github/workflows/       # build.yml · test.yml · lint.yml
+└── .github/workflows/       # build.yml · test.yml · lint.yml · wiki-deploy.yml
 ```
 
 ---
 
 ## Documentation
 
+**Full documentation**: [docs.ouroboros.la](https://arkh-ur.github.io/ouroborOS/)
+
 | Document | Description |
 |----------|-------------|
-| [User Guide](docs/user-guide.md) | Installation, upgrades, rollback, WiFi |
-| [Developer Guide](docs/developer-guide.md) | Build, test, contribute |
 | [Architecture Overview](docs/architecture/overview.md) | System design and layer diagram |
 | [Immutability Strategy](docs/architecture/immutability-strategy.md) | Btrfs layout and snapshot flow |
 | [Installer Phases](docs/architecture/installer-phases.md) | FSM states and transitions |
 | [Configuration Format](docs/installer/configuration-format.md) | YAML schema reference |
+| [systemd-homed](docs/architecture/systemd-homed.md) | Home directory management |
 
 ---
 

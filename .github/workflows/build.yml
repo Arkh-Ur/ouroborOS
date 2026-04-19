@@ -5,7 +5,7 @@ on:
     branches: [dev, main]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [dev]
   workflow_dispatch:
 
 jobs:
