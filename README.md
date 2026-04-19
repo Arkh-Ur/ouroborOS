@@ -18,6 +18,9 @@
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg" alt="Build ISO"></a>
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg" alt="Test Suite"></a>
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
+</p>
+
+<p align="center">
   <a href="https://ko-fi.com/Y8Y61XEME9"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a>
 </p>
 
