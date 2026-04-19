@@ -17,6 +17,9 @@ export default {
       },
       defaultLocale: 'root',
       customCss: ['./src/styles/custom.css'],
+      components: {
+        Footer: './src/components/CustomFooter.astro',
+      },
       sidebar: [
         {
           label: 'Getting Started',
