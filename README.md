@@ -7,6 +7,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Arkh-Ur/ouroborOS/releases/latest"><img src="https://img.shields.io/github/v/release/Arkh-Ur/ouroborOS?label=latest&color=067B3B" alt="Latest Release"></a>
+  <img src="https://img.shields.io/github/release-date/Arkh-Ur/ouroborOS?label=published&color=419E6E" alt="Release Date">
+  <img src="https://img.shields.io/badge/platform-x86__64-083F28?logo=linux&logoColor=white" alt="Platform">
+  <img src="https://img.shields.io/badge/based_on-Arch_Linux-1793D1?logo=arch-linux&logoColor=white" alt="Arch Linux">
+  <img src="https://img.shields.io/github/license/Arkh-Ur/ouroborOS?color=067B3B" alt="License">
+</p>
+
+<p align="center">
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg" alt="Build ISO"></a>
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg" alt="Test Suite"></a>
   <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
