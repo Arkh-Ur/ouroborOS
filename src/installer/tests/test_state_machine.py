@@ -1127,7 +1127,9 @@ class TestUpdateSystemYamlPackages:
         return text[begin:end]
 
     def _run(self, tmp_path: Path, yaml_content: dict, operation: str, pkgs: list[str]) -> dict:
-        import yaml, subprocess  # noqa: PLC0415,E401
+        import subprocess  # noqa: PLC0415
+
+        import yaml  # noqa: PLC0415
         yaml_file = tmp_path / "system.yaml"
         yaml_file.write_text(yaml.dump(yaml_content, default_flow_style=False))
         args = ["python3", "-", str(yaml_file), operation, *pkgs]

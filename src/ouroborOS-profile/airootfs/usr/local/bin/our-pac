@@ -288,7 +288,15 @@ if is_immutable_root; then
     # Guarantee root is re-locked on ANY exit path (success, error, SIGINT, SIGTERM).
     # Without this, `set -e` aborts mid-flow if pacman returns non-zero (e.g. user
     # cancels with "n") and root stays writable until next reboot.
-    trap 'lock_root 2>/dev/null || true; sync_boot_entries 2>/dev/null || true' EXIT
+    # _pac_cleanup_done=1 is set after the explicit lock+sync below so the trap
+    # skips the redundant second call on the success path.
+    _pac_cleanup_done=0
+    trap '
+        if [[ "$_pac_cleanup_done" -eq 0 ]]; then
+            lock_root 2>/dev/null || true
+            sync_boot_entries 2>/dev/null || true
+        fi
+    ' EXIT
 
     # 5. Stale lock check — remove db.lck only if no pacman process is running
     _PACMAN_LOCK="/var/lib/pacman/db.lck"
@@ -324,8 +332,9 @@ if is_immutable_root; then
     # 8. sbctl sign-all (if Secure Boot active)
     sign_after_upgrade
 
-    # 9. Sync boot entries
+    # 9. Sync boot entries — mark cleanup done so the EXIT trap skips the duplicate
     sync_boot_entries
+    _pac_cleanup_done=1
 
     # 9. Write upgrade log
     if [[ -n "$snap_name" ]]; then
