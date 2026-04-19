@@ -1,10 +1,19 @@
-# ouroborOS
+<p align="center">
+  <img src="assets/ouroboros-logo.svg" alt="ouroborOS" width="480">
+</p>
 
-[![Build ISO](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml)
-[![Test Suite](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml)
-[![Lint](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg)](https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml)
+<p align="center">
+  <em>Modern immutable Arch Linux</em>
+</p>
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61XEME9)
+<p align="center">
+  <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/build.yml/badge.svg" alt="Build ISO"></a>
+  <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/test.yml/badge.svg" alt="Test Suite"></a>
+  <a href="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml"><img src="https://github.com/Arkh-Ur/ouroborOS/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
+  <a href="https://ko-fi.com/Y8Y61XEME9"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a>
+</p>
+
+<hr>
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**. Includes `our-aur` (containerized AUR helper) and `our-flat` (Flatpak wrapper).
 
@@ -223,6 +232,12 @@ ouroborOS is an independent open-source project. If it saves you time or you wan
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61XEME9)
 
 ---
+
+<p align="center">
+  <a href="https://github.com/Arkh-Ur">
+    <img src="assets/arkh-ur-logo.svg" alt="Arkh-Ur" width="200">
+  </a>
+</p>
 
 ## License
 
