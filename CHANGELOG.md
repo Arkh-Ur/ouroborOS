@@ -5,6 +5,42 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-19
+
+### Added
+
+- **`.snapshot.yaml` metadata** — every snapshot now contains a `.snapshot.yaml` file
+  with `snapshot`, `created`, `type` (`install` | `pre-update` | `manual` | `rebase`),
+  `system_version`, `system_yaml_hash` (SHA-256 of `/etc/ouroboros/system.yaml`), and
+  `packages_count`. Written at install time (FINISH state) and at runtime by
+  `our-snapshot create`.
+- **`write_snapshot_metadata()`** — new bash function in
+  `airootfs/usr/local/lib/ouroboros/snapshot.sh` used by `our-snapshot` and
+  `ouroboros-rebase` to write per-snapshot metadata.
+- **`our-snapshot info`** — now displays `.snapshot.yaml` content when present.
+- **`ouroboros-rebase`** — new script at `/usr/local/bin/ouroboros-rebase`. Reads
+  `system.yaml`, compares `base_packages + user_packages` against installed packages
+  (`pacman -Qq`), and applies the diff. Supports `--dry-run` (show diff without applying)
+  and `--from-channel` (fetch manifest from `channel_url` before comparing). Creates
+  read-only pre-rebase and post-rebase snapshots with metadata.
+
+### Fixed
+
+- `_write_install_snapshot_metadata()` in `state_machine.py` temporarily unlocks the
+  install snapshot (`btrfs property set ro false`) before writing `.snapshot.yaml`,
+  then re-locks it. The snapshot is created read-only in SNAPSHOT state; writing to it
+  in FINISH previously raised `OSError: [Errno 30] Read-only file system`.
+- `our-snapshot create` and `ouroboros-rebase` now create snapshots as writable first,
+  write `.snapshot.yaml`, then set `ro=true`. This avoids `btrfs property set ro false`
+  failures on installed systems where the subvolume change can be blocked.
+
+### Tests
+
+- `TestInstallSnapshotMetadata` — 6 new tests: metadata written, type is install,
+  version present, sha256 hash present, skipped when no snapshot dir, fallback when
+  no system.yaml.
+- **577 tests passing** (14 skipped), 0 failures.
+
 ## [0.5.0] - 2026-04-19
 
 ### Added
