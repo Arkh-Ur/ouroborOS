@@ -9,7 +9,7 @@ export default {
   },
   integrations: [
     starlight({
-      title: 'Docs ouroborOS',
+      title: 'ouroborOS Wiki',
       tagline: 'Modern immutable Arch Linux',
       logo: {
         src: './src/assets/logo.svg',
@@ -109,7 +109,7 @@ export default {
         },
         es: {
           label: 'Español',
-          lang: 'es-CL',
+          lang: 'es',
           sidebar: [
             {
               label: 'Primeros Pasos',
@@ -213,7 +213,7 @@ export default {
         {
           tag: 'script',
           attrs: { type: 'text/javascript' },
-          content: `(function(){var k='ouroboros-lang';if(document.cookie.indexOf(k+'=')!==-1)return;var p=window.location.pathname;if(p.startsWith('/es'))return;var l=navigator.languages||[navigator.language||'en'];for(var i=0;i<l.length;i++){if(l[i].toLowerCase().startsWith('es')){document.cookie=k+'=es;path=/;max-age='+31536000;var t=p==='/'?'/es':'/es'+p;window.location.replace(t);return;}}document.cookie=k+'=en;path=/;max-age='+31536000;})();`,
+          content: `(function(){function a(){document.querySelectorAll('.expressive-code').forEach(function(e){if(e.querySelector('.ec-lang-badge'))return;var c=e.querySelector('code[class*="language-"]');if(!c)return;var l=c.className.match(/language-(\\w+)/);if(!l)return;var b=document.createElement('span');b.className='ec-lang-badge';b.setAttribute('data-lang',l[1]);b.textContent=l[1];var f=e.querySelector('.frame');if(f)f.prepend(b)})}document.addEventListener('astro:page-load',a);document.addEventListener('astro:after-swap',a);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',a);else a()})();`,
         },
       ],
     }),
@@ -221,6 +221,9 @@ export default {
   vite: {
     server: {
       allowedHosts: ['asus-arch.emperor-betta.ts.net'],
+    },
+    ssr: {
+      noExternal: ['zod'],
     },
   },
 }

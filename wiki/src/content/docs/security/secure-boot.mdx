@@ -273,63 +273,306 @@ sudo ouroboros-secureboot add-key secureboot.crt
 sudo ouroboros-secureboot remove-key secureboot.crt
 ```
 
-## Workflow Management
+## TPM2 Integration
 
-### Safe Boot Process
+### TPM2 Auto-Unlock for LUKS
+
+ouroboros-secureboot provides TPM2 integration for LUKS partitions with automatic unlock at boot using Platform Configuration Registers (PCRs):
 
 ```bash
-# 1. Check Secure Boot status
+# Check TPM2 status and PCR values
+sudo ouroboros-secureboot tpm2-status
+
+# Enroll TPM2 on LUKS partition (PCR 7+14)
+sudo ouroboros-secureboot tpm2-enroll
+
+# Auto-enroll from crypttab if no device specified
+sudo ouroboros-secureboot tpm2-enroll
+```
+
+#### TPM2 PCR Configuration
+
+The tool uses PCR 7 (Secure Boot state) and PCR 14 (boot entries) for LUKS encryption key binding:
+
+```bash
+# Check PCR values manually
+tpm2_pcrread sha256:7   # Secure Boot state PCR
+tpm2_pcrread sha256:14  # Boot entries PCR
+
+# Verify LUKS TPM2 slots
+systemd-cryptenroll --list /dev/vda2
+```
+
+### TPM2 Workflow
+
+```bash
+# 1. Check TPM2 device presence
+sudo ouroboros-secureboot tpm2-status
+
+# 2. Enroll LUKS partition with TPM2
+sudo ouroboros-secureboot tpm2-enroll /dev/vda2
+
+# 3. Verify enrollment
+systemd-cryptenroll --list /dev/vda2
+
+# 4. Test auto-unlock (reboot and verify)
+```
+
+## systemd Integration
+
+### Automatic Re-signing after Systemd Updates
+
+systemd-boot-update.service overwrites the signed bootloader on every reboot. Always re-sign after systemd upgrades:
+
+```bash
+# After upgrading systemd and rebooting:
+sudo ouroboros-secureboot sign-all
+
+# Check if systemd-boot EFI needs explicit signing
+ls -la /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+
+# Verify bootloader signature
+sbctl verify /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+```
+
+### Key Storage and Persistence
+
+Secure Boot keys are stored in `/var/lib/sbctl/` (on the writable `@var` subvolume):
+
+```bash
+# Key storage locations
+ls -la /var/lib/sbctl/
+ls -la /var/lib/sbctl/keys/
+ls -la /var/lib/sbctl/db/
+ls -la /var/lib/sbctl/certificates/
+
+# Backup keys manually
+cp -r /var/lib/sbctl /path/to/backup/
+
+# Restore keys
+cp -r /path/to/backup/sbctl /var/lib/
+```
+
+## Advanced Operations
+
+### Key Rotation
+
+Rotate keys while maintaining system bootability:
+
+```bash
+# Backup existing keys, create new ones, re-sign all
+sudo ouroboros-secureboot rotate-keys
+
+# Custom key rotation workflow
+# 1. Backup keys manually
+cp -a /var/lib/sbctl /var/lib/sbctl-backup-$(date +%Y%m%dT%H%M%S)
+
+# 2. Create new keys
+sbctl create-keys
+
+# 3. Re-enroll in firmware (requires Setup Mode)
+sbctl enroll-keys
+
+# 4. Re-sign all binaries
+sbctl sign-all
+```
+
+### Dual-Boot and Hardware Compatibility
+
+For dual-boot systems or hardware with signed ROMs, include Microsoft keys:
+
+```bash
+# Setup with Microsoft OEM keys
+sudo ouroboros-secureboot setup --include-ms-keys
+
+# Check firmware setup mode
+sbctl status | grep -i "setup mode"
+
+# Verify third-party driver compatibility
+sbctl verify /usr/lib/modules/*/kernel/drivers/**/*.ko
+```
+
+## Monitoring and Diagnostics
+
+### Continuous Monitoring
+
+Monitor system integrity changes with sbctl hooks:
+
+```bash
+# Check signature status
 sudo ouroboros-secureboot status
 
-# 2. Enable Secure Boot
-sudo ouroboros-secureboot setup
-
-# 3. Sign system files
-sudo ouroboros-secureboot sign-all
-
-# 4. Verify system
+# Verify all binaries
 sudo ouroboros-secureboot verify
 
-# 5. Configure monitoring
-sudo ouroboros-secureboot enable-monitoring
+# Check for unsigned binaries after updates
+sbctl verify | grep -v "^✓" | grep -v "^$"
+
+# Monitor PCR values for TPM2
+tpm2_pcrread sha256:7
+tpm2_pcrread sha256:14
 ```
 
-### Update Process
+### Diagnostic Commands
 
 ```bash
-# 1. Pre-update backup
-sudo ouroboros-securebackup create-backup
+# Check Secure Boot support
+mokutil --sb-state
 
-# 2. Update system
-our-pac update
+# Verify EFI variables
+efivar -l | grep -i secure
 
-# 3. Re-sign files
-sudo ouroboros-secureboot sign-all
+# Check kernel signature
+cat /proc/keys | grep secureboot
 
-# 4. Verify integrity
-sudo ouroboros-secureboot verify
-
-# 5. Check monitoring
-sudo ouroboros-secureboot monitor
+# Diagnose boot entry issues
+bootctl list
+bootctl status
 ```
 
-## Content coming soon...
+## Troubleshooting Common Issues
 
-This section will be expanded with:
+### Post-Systemd Bootloader Issues
 
-- Advanced UEFI firmware configuration
-- Custom key management and PKI setup
-- Secure Boot for virtual machines and containers
-- Integration with TPM2 for enhanced security
-- Secure Boot debugging and forensic analysis
-- Network boot security
-- Firmware update security
-- Secure Boot policies and compliance
-- Integration with hardware security modules
-- Secure Boot performance optimization
+```bash
+# Fix: systemd-boot overwrites signed bootloader
+sudo ouroboros-secureboot sign-all
+
+# Check if systemd-boot is in sbctl tracking
+sbctl list-files | grep systemd-bootx64.efi
+
+# Add systemd-boot to tracking if missing
+sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+```
+
+### Key Enrollment Problems
+
+```bash
+# Check firmware setup mode
+sbctl status | grep -i "setup mode"
+
+# Clear Secure Boot keys and retry
+# (Requires UEFI Setup → Security → Clear Secure Boot Keys)
+
+# Re-enroll keys
+sudo ouroboros-secureboot setup
+```
+
+### TPM2 Enrollment Failures
+
+```bash
+# Check TPM2 device presence
+ls -la /sys/class/tpm/
+
+# Verify PCR values
+tpm2_pcrread sha256:7
+tpm2_pcrread sha256:14
+
+# Check LUKS device for enrollment
+systemd-cryptenroll --list /dev/vda2
+
+# Manually enroll TPM2 slot
+systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7+14 /dev/vda2
+```
+
+## Migration and Recovery
+
+### Backup Strategy
+
+```bash
+# Create full Secure Boot backup
+tar -czf secure-boot-backup-$(date +%Y%m%d).tar.gz /var/lib/sbctl/
+
+# Backup individual components
+cp -r /var/lib/sbctl/keys/ /path/to/backup/
+cp -r /var/lib/sbctl/certificates/ /path/to/backup/
+```
+
+### Recovery Procedures
+
+```bash
+# Restore from backup
+tar -xzf secure-boot-backup-2024-01-15.tar.gz -C /
+
+# Rebuild key database if corrupted
+sbctl remove-keys
+sbctl create-keys
+sbctl enroll-keys
+
+# Force re-sign all binaries
+sbctl sign-all --force
+```
+
+## Best Practices
+
+### Security Considerations
+
+1. **Backup keys regularly**: `/var/lib/sbctl/` should be backed up to external storage
+2. **Document PCR values**: Record PCR 7 and 14 values after enrollment for forensic analysis
+3. **Test rollback**: Verify rollback works before deploying to production
+4. **Monitor firmware updates**: Check Setup Mode status after firmware updates
+
+### Performance Optimization
+
+1. **Avoid excessive signing**: Only sign files that actually need Secure Boot
+2. **Monitor PCR impact**: Changes to boot entries affect PCR 14, requiring re-signing
+3. **Schedule signing during maintenance**: Use `sign-all` during scheduled downtime
+4. **Cache verification results**: Use `status` command for quick signature checks
+
+## Workflow Management
+
+### Initial Setup Workflow
+
+```bash
+# 1. Enable Setup Mode in UEFI firmware
+# (Reboot → UEFI Setup → Security → Secure Boot → Clear keys)
+
+# 2. Full setup with Microsoft keys (for dual-boot/hardware compatibility)
+sudo ouroboros-secureboot setup --include-ms-keys
+
+# 3. Verify setup
+sudo ouroboros-secureboot status
+
+# 4. Reboot and verify Secure Boot is active
+reboot
+```
+
+### System Update Workflow
+
+```bash
+# 1. Check pre-update status
+sudo ouroboros-secureboot status
+
+# 2. Update system
+our-pac -Syu
+
+# 3. Re-sign after systemd updates (critical!)
+sudo ouroboros-secureboot sign-all
+
+# 4. Verify post-update integrity
+sudo ouroboros-secureboot verify
+```
+
+### TPM2 Integration Workflow
+
+```bash
+# 1. Check TPM2 readiness
+sudo ouroboros-secureboot tpm2-status
+
+# 2. Enroll LUKS partition with TPM2
+sudo ouroboros-secureboot tpm2-enroll
+
+# 3. Test auto-unlock (reboot and verify)
+reboot
+
+# 4. Monitor PCR values for changes
+sudo ouroboros-secureboot tpm2-status
+```
 
 :::danger
 
-Always back up your Secure Boot keys before making changes. Losing Secure Boot keys may prevent system boot and require firmware reset.
+**WARNING**: Always back up your Secure Boot keys before making changes. Losing Secure Boot keys may prevent system boot and require firmware reset.
+
+Keep `/var/lib/sbctl/` backed up to external storage and document your enrollment process.
 
 :::

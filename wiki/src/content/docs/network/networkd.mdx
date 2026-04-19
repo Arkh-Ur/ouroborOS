@@ -50,9 +50,60 @@ ls -la /etc/systemd/network/
 tree /etc/systemd/network/
 ```
 
-## Basic Network Configuration
+## Default Network Configuration
 
-### Static IP Configuration
+### ouroborOS Default Files
+
+ouroborOS comes with pre-configured network files. Here are the actual configurations:
+
+#### Wired Network (`/etc/systemd/network/20-wired.network`)
+
+```ini
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+
+[DHCP]
+RouteMetric=10
+UseDNS=true
+```
+
+#### Wireless Network (`/etc/systemd/network/25-wireless.network`)
+
+```ini
+[Match]
+Name=wl*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=20
+UseDNS=true
+```
+
+#### DNS Resolution (`/etc/systemd/resolved.conf`)
+
+```ini
+[Resolve]
+DNS=1.1.1.1 9.9.9.9
+FallbackDNS=8.8.8.8
+DNSOverTLS=opportunistic
+DNSSEC=allow-downgrade
+```
+
+### Custom Configuration
+
+You can add custom network configurations by creating additional `.network` files:
+
+#### Static IP Configuration
 
 ```ini
 # /etc/systemd/network/10-static.network
@@ -63,23 +114,9 @@ Name=enp0s3
 Address=192.168.1.100/24
 Gateway=192.168.1.1
 DNS=8.8.8.8 8.8.4.4
-DNS=1.1.1.1
 ```
 
-### DHCP Configuration
-
-```ini
-# /etc/systemd/network/20-dhcp.network
-[Match]
-Name=enp0s3
-
-[Network]
-DHCP=yes
-Domains=example.com
-Gateway=on
-```
-
-### Multiple DNS Servers
+#### Multiple DNS Servers
 
 ```ini
 # /etc/systemd/network/30-dns.network
@@ -93,7 +130,7 @@ DNS=1.1.1.1
 DNS=9.9.9.9
 ```
 
-## Advanced Configuration
+## Advanced Configuration Options
 
 ### Bonding (Link Aggregation)
 
@@ -137,16 +174,6 @@ Id=10
 VLANId=10
 ```
 
-```ini
-# /etc/systemd/network/70-vlan.network
-[Match]
-Name=vlan10
-
-[Network]
-Address=192.168.10.100/24
-Gateway=192.168.10.1
-```
-
 ### Bridge Configuration
 
 ```ini
@@ -167,16 +194,19 @@ ForwardDelaySec=0
 
 ```bash
 # Enable and start network services
-systemctl enable systemd-networkd
-systemctl start systemd-networkd
+sudo systemctl enable systemd-networkd
+sudo systemctl start systemd-networkd
 
 # Enable and start DNS resolution
-systemctl enable systemd-resolved
-systemctl start systemd-resolved
+sudo systemctl enable systemd-resolved
+sudo systemctl start systemd-resolved
 
 # Enable and start time sync
-systemctl enable systemd-timesyncd
-systemctl start systemd-timesyncd
+sudo systemctl enable systemd-timesyncd
+sudo systemctl start systemd-timesyncd
+
+# Enable WiFi (if iwd is configured)
+sudo systemctl enable iwd.service
 ```
 
 ### Network Status
@@ -193,19 +223,28 @@ networkctl address
 
 # Show DNS configuration
 systemd-resolve --status
+
+# Show wireless status (if iwd is enabled)
+iwctl station wlan0 show
 ```
 
 ### Network Configuration Reload
 
 ```bash
 # Reload network configurations
-systemctl reload systemd-networkd
+sudo systemctl reload systemd-networkd
 
 # Restart network service
-systemctl restart systemd-networkd
+sudo systemctl restart systemd-networkd
+
+# Restart DNS resolution
+sudo systemctl restart systemd-resolved
 
 # Show network logs
 journalctl -u systemd-networkd -f
+
+# Show DNS logs
+journalctl -u systemd-resolved -f
 ```
 
 ## DNS Configuration
@@ -292,29 +331,62 @@ iperf3 -c speedtest.server.net
 ```ini
 # /etc/iwd/main.conf
 [General]
-EnableNetworkConfiguration=true
-AddressRandomization=performance
+EnableNetworkConfiguration=false
 
 [Network]
 EnableIPv6=true
+RoutePriorityOffset=300
 ```
 
 ### Networkd+iwd Integration
 
 ```ini
-# /etc/systemd/network/20-wireless.network
+# /etc/systemd/network/25-wireless.network
 [Match]
-Name=wlp3s0
+Name=wl*
 
 [Network]
 DHCP=yes
-DNS=8.8.8.8
-Domains=example.com
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=20
+UseDNS=true
+```
+
+### WiFi PSK Configuration
+
+Network passwords are stored in `/var/lib/iwd/`:
+
+```bash
+# PSK files have 600 permissions
+ls -la /var/lib/iwd/
+
+# Format for regular SSIDs: SSID.psk
+# Format for special SSIDs: =hex.psk
 ```
 
 ## Time Synchronization
 
 ### systemd-timesyncd Configuration
+
+The default configuration includes:
+
+```bash
+# Enable and start time sync
+sudo systemctl enable systemd-timesyncd
+sudo systemctl start systemd-timesyncd
+
+# Check time status
+timedatectl status
+
+# Enable NTP
+timedatectl set-ntp true
+```
+
+### Custom NTP Configuration
 
 ```ini
 # /etc/systemd/timesyncd.conf
@@ -325,69 +397,68 @@ PollIntervalMinSec=32
 PollIntervalMaxSec=2048
 ```
 
-### Time Management
-
-```bash
-# Enable time sync
-systemctl enable systemd-timesyncd
-systemctl start systemd-timesyncd
-
-# Show time status
-timedatectl status
-
-# Set time manually
-timedatectl set-time "2024-01-01 12:00:00"
-
-# Enable NTP
-timedatectl set-ntp true
-```
-
 ## Network Security
+
+### Default Security Settings
+
+The ouroborOS default configurations include:
+
+```ini
+# /etc/systemd/network/20-wired.network
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=10
+UseDNS=true
+```
 
 ### Firewall Integration
 
 ```bash
-# Enable firewalld
-systemctl enable firewalld
-systemctl start firewalld
+# Install and enable firewall (optional)
+sudo our-pac -S nftables
+sudo systemctl enable nftables
+sudo systemctl start nftables
 
-# Add firewall rules
-firewall-cmd --add-service=http --permanent
-firewall-cmd --add-service=https --permanent
-firewall-cmd --reload
+# Add basic rules
+sudo nft add table inet filter
+sudo nft add chain inet filter input { type filter hook input priority 0 \; }
+sudo nft add rule inet filter input ct state related,established accept
+sudo nft add rule inet filter input icmp type echo-request accept
 ```
 
-### Network Hardening
+## Configuration File Locations
 
-```ini
-# /etc/systemd/network/99-security.network
-[Match]
-Name=enp0s3
+```bash
+# Network configuration files
+/etc/systemd/network/
+├── 20-wired.network
+├── 25-wireless.network
+└── custom.network
 
-[Network]
-IPv6AcceptRA=no
-LLMNR=no
-MulticastDNS=no
-ProxyARP=no
+# DNS configuration
+/etc/systemd/resolved.conf
+/etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+
+# WiFi configuration
+/etc/iwd/main.conf
+/var/lib/iwd/ (PSK files)
+
+# Time sync configuration
+/etc/systemd/timesyncd.conf
 ```
 
-## Content coming soon...
+## Notes
 
-This section will be expanded with:
-
-- Network automation with systemd-networkd
-- Advanced bonding and teaming configurations
-- VPN integration with WireGuard and OpenVPN
-- Network monitoring and performance tuning
-- Security hardening guidelines
-- Network scripting and automation
-- Load balancing configurations
-- Network failover mechanisms
-- Integration with cloud services
-- Network troubleshooting tools
-
-:::tip
-
-Always backup network configuration files before making changes. Use `networkctl` to verify configuration syntax and test changes in a development environment first.
-
-:::
+- **Network priority**: Wired connections have metric 10, wireless have metric 20
+- **DNS resolution**: Uses systemd-resolved with DoT (DNS over TLS)
+- **WiFi management**: Handled by iwd, integrated with networkd
+- **Time sync**: Uses systemd-timesyncd with NTP pool
+- **Service dependencies**: Network services are properly ordered and dependent

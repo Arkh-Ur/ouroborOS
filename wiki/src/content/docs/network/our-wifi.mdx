@@ -12,11 +12,11 @@ slug: network/our-wifi
 
 The `our-wifi` tool provides:
 
-- **Interactive WiFi management** with user-friendly commands
-- **Network discovery and scanning** with detailed information
+- **Simple WiFi management** with essential commands
+- **Network discovery and scanning** using iwd
 - **Secure connections** with WPA2/WPA3 encryption
-- **Network profile management** with persistent configurations
-- **Signal strength monitoring** and network quality assessment
+- **Persistent network profiles** managed by iwd
+- **Clean CLI interface** without unnecessary complexity
 
 :::note
 
@@ -33,300 +33,148 @@ our-wifi --version
 our-wifi --help
 ```
 
-## Basic Usage
+## Usage
 
-### Network Discovery
+### Commands
+
+#### `list` - Scan and list networks
 
 ```bash
 # List available networks
 our-wifi list
 
-# List networks with detailed information
-our-wifi list --verbose
-
-# Scan for networks in specific area
-our-wifi scan --area office
+# Shows available WiFi networks with their names and connection status
 ```
 
-### Network Connection
+#### `connect <SSID>` - Connect to a WiFi network
 
 ```bash
-# Connect to a WiFi network
+# Connect interactively (prompts for passphrase)
 our-wifi connect "MyWiFiNetwork"
 
 # Connect with specific password
 our-wifi connect "MyWiFiNetwork" --password mypassword
 
-# Connect to hidden network
-our-wifi connect "HiddenNetwork" --hidden --password mypassword
+# Connect to hidden network (special SSIDs)
+our-wifi connect "HiddenNetwork" --password mypassword
 ```
 
-### Network Status
+#### `status` - Show current connection status
 
 ```bash
-# Show current WiFi status
+# Show current WiFi connection status
 our-wifi status
 
-# Show connected network details
-our-wifi current
-
-# Show network signal strength
-our-wifi signal
+# Shows wireless interface and current connection details
 ```
 
-## Advanced Operations
-
-### Network Management
+#### `forget <SSID>` - Remove saved network
 
 ```bash
-# Disconnect from current network
-our-wifi disconnect
-
-# Forget a network profile
+# Forget a saved network profile
 our-wifi forget "MyWiFiNetwork"
 
-# Set network priority
-our-wifi priority "MyWiFiNetwork" --level high
-
-# Set network auto-connect
-our-wifi auto-connect "MyWiFiNetwork" --enabled
+# Removes the saved PSK file for the specified SSID
 ```
 
-### Network Configuration
+#### `show-password <SSID>` - Show saved passphrase
 
 ```bash
-# View network profiles
-our-wifi profiles
+# Show saved passphrase for a network
+our-wifi show-password "MyWiFiNetwork"
 
-# Show network configuration
-our-wifi config "MyWiFiNetwork"
-
-# Export network profiles
-our-wifi export-profiles > wifi-backup.json
-
-# Import network profiles
-our-wifi import-profiles < wifi-backup.json
+# Displays the stored passphrase for the specified SSID
 ```
 
-## Network Security
-
-### WPA3 Support
+#### `help` - Show help
 
 ```bash
-# Connect to WPA3 network
-our-wifi connect "WPA3-Network" --password mypassword --wpa3
+# Show complete help information
+our-wifi help
 
-# Check WPA3 capability
-our-wifi capability wpa3
-
-# Verify network security
-our-wifi security "MyWiFiNetwork"
+# Displays usage instructions and available commands
 ```
 
-### Network Authentication
+## Examples
+
+### Basic connection workflow
 
 ```bash
-# Show network authentication type
-our-wifi auth-type "MyWiFiNetwork"
+# 1. List available networks
+our-wifi list
 
-# Check network certificate
-our-wifi cert-check "MyWiFiNetwork"
+# 2. Connect to a network (prompts for password if not saved)
+our-wifi connect "MyHomeWiFi"
 
-# Enterprise network support
-our-wifi connect "EnterpriseNet" --eap-peap --username myuser --password mypass
+# 3. Check connection status
+our-wifi status
+
+# 4. If you want to forget the network later
+our-wifi forget "MyHomeWiFi"
 ```
 
-## Signal and Performance
-
-### Signal Monitoring
+### Non-interactive connection
 
 ```bash
-# Monitor signal strength over time
-our-wifi monitor --duration 60
+# Connect without interactive prompts
+our-wifi connect "OfficeNetwork" --password "securepassword123"
 
-# Show signal history
-our-wifi history
-
-# Analyze network performance
-our-wifi performance "MyWiFiNetwork"
+# This saves the PSK and connects automatically
 ```
 
-### Network Optimization
+### Show saved password
 
 ```bash
-# Find best channel
-our-wifi optimize-channel
+# Display saved passphrase for a network
+our-wifi show-password "MyHomeWiFi"
 
-# Analyze interference
-our-wifi interference
-
-# Recommend optimal settings
-our-wifi recommend
+# Returns the stored password (useful for forgotten passwords)
 ```
 
-## Network Profiles
+## Network Storage
 
-### Profile Management
+Network profiles are stored by iwd in `/var/lib/iwd/`:
 
 ```bash
-# Create network profile
-our-wifi profile-create "MyWiFiNetwork" \
-  --password mypassword \
-  --priority 80 \
-  --auto-connect true
+# PSK files are stored with 600 permissions
+ls -la /var/lib/iwd/
 
-# Modify profile
-our-wifi profile-modify "MyWiFiNetwork" \
-  --priority 90 \
-  --auto-connect true
-
-# Delete profile
-our-wifi profile-delete "MyWiFiNetwork"
+# SSIDs with special characters use hex-encoded filenames
+# Example: =48656C6C6F2E70736B for "Hello.psk"
 ```
 
-### Profile Backup
+## System Integration
+
+### Enable iwd service
 
 ```bash
-# Export all profiles
-our-wifi export > wifi-profiles.json
+# Start the iwd service if not running
+sudo systemctl start iwd.service
 
-# Import profiles
-our-wifi import < wifi-profiles.json
+# Enable iwd to start on boot
+sudo systemctl enable iwd.service
 
-# Sync profiles between devices
-our-wifi sync --device laptop
+# Check service status
+sudo systemctl status iwd.service
 ```
 
-## Special Networks
-
-### Hotspot Mode
+### Network interface detection
 
 ```bash
-# Create WiFi hotspot
-our-wifi hotspot "MyHotspot" --password hotspotpass
-
-# Stop hotspot
-our-wifi hotspot --stop
-
-# Show hotspot status
-our-wifi hotspot --status
-```
-
-### Mesh Networking
-
-```bash
-# Configure mesh network
-our-wifi mesh "MeshNetwork" --channel 6
-
-# Show mesh neighbors
-our-wifi mesh --neighbors
-
-# Monitor mesh quality
-our-wifi mesh --monitor
-```
-
-## Network Troubleshooting
-
-### Diagnostics
-
-```bash
-# Run network diagnostics
-our-wifi diagnose
-
-# Check driver status
-our-wifi driver-status
-
-# Verify hardware
-our-wifi hardware-test
-```
-
-### Common Issues
-
-```bash
-# Fix connection issues
-our-wifi fix-connection
-
-# Reset network stack
-our-wifi reset-network
-
-# Clear cache and restart
-our-wwifi refresh
-```
-
-## Network Statistics
-
-### Usage Monitoring
-
-```bash
-# Show network statistics
-our-wifi stats
-
-# Monitor bandwidth usage
-our-wifi bandwidth --monitor
-
-# Show data transfer history
-our-wifi history --data
-```
-
-### Performance Analysis
-
-```bash
-# Analyze network performance
-our-wifi analyze --speedtest
-
-# Compare network quality
-our-wifi compare "Network1" "Network2"
-
-# Generate report
-our-wifi report --output network-report.txt
-```
-
-## Integration with System
-
-### System Services
-
-```bash
-# Enable WiFi service
-systemctl enable iwd.service
-
-# Start WiFi service
-systemctl start iwd.service
-
-# Check WiFi service status
-systemctl status iwd.service
-```
-
-### Network Configuration
-
-```bash
-# Show network configuration
+# The tool automatically detects wireless interfaces
+# Typically wlan0, wlp0s0, or similar
 ip link show
-ip addr show
-
-# Check routing table
-ip route show
-
-# Verify DNS resolution
-nslookup google.com
 ```
 
-## Content coming soon...
+## Requirements
 
-This section will be expanded with:
+- **iwd** must be installed and running
+- **Wireless interface** must be present (wlan0, wlp*, etc.)
+- **Root privileges** are required for PSK file operations
 
-- Advanced WiFi security configurations
-- Multi-band (2.4GHz/5GHz) management
-- WiFi mesh network setup
-- Network load balancing
-- WiFi client isolation
-- Access point management
-- Network bandwidth management
-- WiFi roaming optimization
-- Enterprise WiFi integration
-- Network automation scripts
+## Notes
 
-:::danger
-
-Always use strong passwords for WiFi networks. Avoid using common passwords or personal information in network names for security reasons.
-
-:::
+- **Passphrase security**: Passphrases are stored with 600 permissions
+- **Special SSIDs**: Networks with `=`, spaces, or non-printable characters use hex-encoded filenames
+- **Automatic reconnection**: Once a network is saved and connected, iwd will attempt to reconnect automatically
+- **WiFi scanning**: The `list` command automatically scans for networks and displays available options

@@ -47,6 +47,410 @@ Yes. The installer detects Windows Boot Manager and generates a `windows.conf` e
 | KDE Plasma | Stable |
 | COSMIC | Available via `[extra]` |
 
+## Package Management
+
+### Why do I need `our-pac` instead of `pacman`?
+
+`our-pac` is an atomic package manager wrapper that:
+
+1. **Creates pre-upgrade snapshots** before making changes
+2. **Temporarily remounts the root filesystem** read-write 
+3. **Runs pacman operations** normally
+4. **Re-signs Secure Boot kernels** if enabled
+5. **Syncs boot entries** for all snapshots
+6. **Prunes old snapshots** automatically
+
+```bash
+# our-pac ensures safe upgrades
+sudo our-pac -Syu
+
+# Direct pacman fails on read-only root
+sudo pacman -Syu  # Permission denied
+```
+
+### Can I downgrade packages?
+
+Yes! Every upgrade creates a snapshot. To downgrade:
+
+```bash
+# 1. Find the snapshot before the problematic update
+sudo our-rollback list
+
+# 2. Boot from that snapshot
+sudo our-rollback try 2026-04-18T120000
+
+# 3. If it works, make it permanent
+sudo our-rollback promote 2026-04-18T120000
+```
+
+### How do I handle AUR packages?
+
+Use the containerized `our-aur` helper:
+
+```bash
+# Search AUR packages
+our-aur -Ss hyprlock
+
+# Install from AUR  
+our-aur -S quickshell
+
+# Update AUR packages
+our-aur -Su
+```
+
+AUR packages install to `/var/lib/ouroborOS/aur/` via `systemd-sysext` without touching the immutable root.
+
+### How do I handle Flatpak applications?
+
+Use `our-flat` with a pacman-style interface:
+
+```bash
+# Add Flathub remote
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Install applications
+sudo our-flat -S com.spotify.Client
+
+# Update all Flatpaks
+sudo our-flat -Su
+```
+
+## Snapshots & Rollbacks
+
+### How much disk space do snapshots use?
+
+Snapshots use **Copy-on-Write (CoW)** storage. Only changed blocks are duplicated. A typical system upgrade might use 100MB-1GB depending on changed files.
+
+```bash
+# View snapshot sizes
+sudo our-snapshot list
+
+# Clean old snapshots
+sudo our-snapshot prune --keep 5 --days 30
+```
+
+### Can I delete snapshots manually?
+
+Yes, but some are protected:
+
+```bash
+# Regular snapshots can be deleted
+sudo our-snapshot delete 2026-04-18T120000
+
+# The 'install' baseline snapshot is protected
+sudo our-snapshot delete install  # Fails - protected
+```
+
+### What happens if I run out of disk space?
+
+The system will continue working but you won't be able to create new snapshots. Free up space with:
+
+```bash
+# Clean old snapshots
+sudo our-snapshot prune --keep 3 --days 14
+
+# Remove unused AUR packages
+our-aur -Sc
+
+# Clean Flatpak caches
+sudo our-flat -Scc
+
+# Remove old journal logs
+journalctl --vacuum-size=1G
+```
+
+## Hardware & Compatibility
+
+### What GPUs are supported?
+
+| GPU Type | Driver | Status | Notes |
+|----------|--------|--------|-------|
+| Intel | mesa | ✅ Stable | Works out of box |
+| AMD mesa | ✅ Stable | Works out of box |
+| AMD | amdgpu | ✅ Stable | Works out of box |
+| NVIDIA | nvidia | ✅ Stable | Requires proprietary driver |
+| NVIDIA | nvidia-open | ✅ Stable | Open source variant |
+| Virtual | none | ✅ Stable | QEMU virtio GPU |
+
+```bash
+# Auto-detect GPU during installation
+# Manual override if needed:
+# disk.use_luks: true
+# gpu_driver: nvidia
+```
+
+### Does it support LUKS encryption?
+
+Yes, full LUKS support with optional TPM2 integration:
+
+```yaml
+# Enable LUKS encryption
+disk:
+  use_luks: true
+  luks_partition: /dev/vda2
+
+# Optional TPM2 auto-unlock (requires TPM2 chip)
+security:
+  enable_tpm2: true
+```
+
+### What about TPM2 and Secure Boot?
+
+TPM2 is supported for LUKS auto-unlock, and Secure Boot is ready for future implementation:
+
+```bash
+# Check TPM2 status
+systemd-cryptenroll --tpm2-device=list
+
+# Set up TPM2 for LUKS
+systemd-cryptenroll --tpm2-pcrs=7+14 /dev/vda2
+```
+
+### What networking does ouroborOS use?
+
+**systemd-networkd + iwd** only. No NetworkManager:
+
+```bash
+# Enable WiFi
+sudo systemctl enable iwd
+
+# Enable wired networking  
+sudo systemctl enable systemd-networkd
+
+# Enable DNS resolver
+sudo systemctl enable systemd-resolved
+```
+
+## User Experience
+
+### Can I have multiple users?
+
+Yes! systemd-homed is supported with multiple storage backends:
+
+```yaml
+# Configure multi-user environment
+user:
+  username: admin
+  homed_storage: directory  # Recommended fallback
+  groups: [wheel, audio, video]
+```
+
+Storage backends: `subvolume` (default, fails in QEMU), `directory` (recommended), `luks` (encrypted), `classic` (traditional home directory).
+
+### How does the immutable root work?
+
+The root filesystem `@` is read-only. Writeable areas are separate Btrfs subvolumes:
+
+- `@etc` - System configuration  
+- `@var` - Variable data (logs, packages, databases)
+- `@home` - User home directories
+- `@tmp` - Temporary files
+- `@opt` - Optional software
+
+```bash
+# View current subvolume mount points
+findmnt | grep btrfs
+```
+
+### How do I update the system?
+
+Use `our-pac` for all package operations:
+
+```bash
+# Full system upgrade (creates snapshot automatically)
+sudo our-pac -Syu
+
+# Install new packages (creates snapshot automatically)  
+sudo our-pac -S neovim tmux
+
+# Remove packages (creates snapshot automatically)
+sudo our-pac -R vim
+```
+
+## Development & Customization
+
+### How do I add custom packages?
+
+Add them to your desktop profile or install via AUR:
+
+```bash
+# For desktop profiles, edit desktop_profiles.py
+# For system-wide packages, use:
+sudo our-pac -S your-custom-package
+
+# For user packages, use AUR:
+our-aur -S your-aur-package
+```
+
+### Can I modify system files?
+
+Yes! Files in `/etc` are on the `@etc` overlay subvolume:
+
+```bash
+# Edit configuration files
+sudo nano /etc/systemd/network/wired.network
+
+# Changes are preserved across upgrades
+# because they're in the writable @etc subvolume
+```
+
+### How do I debug system issues?
+
+Use the built-in health check and debugging tools:
+
+```bash
+# System health check
+sudo ouroboros-health --doctor
+
+# View installer logs
+cat /tmp/ouroborOS-install.log
+
+# Check snapshot status  
+sudo our-snapshot list
+
+# Boot menu entries
+bootctl list
+```
+
+## Troubleshooting
+
+### The system won't boot - what do I do?
+
+1. **Boot from live ISO**
+2. **Access your snapshots**
+3. **Rollback to a working state**
+
+```bash
+# 1. Boot from ouroborOS ISO
+# 2. At boot menu, select "Boot to live system"  
+# 3. List available snapshots
+sudo our-rollback list
+
+# 4. Boot from a known-good snapshot
+sudo our-rollback try 2026-04-18T120000
+
+# 5. If it works, make it permanent
+sudo our-rollback promote 2026-04-18T120000
+```
+
+### I forgot my password - how to reset?
+
+You need physical access to reset the password:
+
+```bash
+# 1. Boot from live ISO
+# 2. Mount root partition
+mount -t btrfs -o subvol=@ /dev/vda2 /mnt
+
+# 3. Chroot into the system
+chroot /mnt
+
+# 4. Change password
+passwd your-username
+
+# 5. Exit and reboot
+exit
+reboot
+```
+
+### How do I recover from a broken package upgrade?
+
+Every `our-pac` operation creates a snapshot:
+
+```bash
+# List pre-upgrade snapshots
+sudo our-snapshot list | grep "2026-04-18"
+
+# Boot from the snapshot before the problematic update
+sudo our-rollback try 2026-04-18T143000
+
+# If it works, make it permanent
+sudo our-rollback promote 2026-04-18T143000
+```
+
+### Why does systemd-homed fail in QEMU?
+
+systemd-homed has issues with Btrfs subvolumes in virtual environments. The system automatically falls back to traditional home directories:
+
+```bash
+# Check homed status
+systemctl status systemd-homed
+
+# If it fails, classic home directories are used automatically
+ls /home  # Shows traditional home directories
+```
+
+## Performance & Optimization
+
+### What's the performance impact?
+
+**Minimal!** The immutable design has very little overhead:
+
+- **Snapshots**: Copy-on-write means only changed blocks use space
+- **Boot time**: ~3-5 seconds faster than regular Arch due to optimized init
+- **Memory**: Same as Arch Linux - zram swap instead of disk swap
+- **Storage**: Btrfs compression can save 20-40% space
+
+### How can I optimize performance?
+
+```bash
+# Enable Btrfs compression (mount options)
+# Add `compress=zstd` to /etc/fstab for data subvolumes
+
+# Monitor snapshot usage
+btrfs filesystem df /
+
+# Clean up old snapshots
+sudo our-snapshot prune --keep 5 --days 30
+```
+
+### What about memory usage?
+
+ouroborOS uses **zram** for swap instead of disk partitions:
+
+```bash
+# Check zram usage
+zramctl
+
+# No dedicated swap partition needed
+free -h
+```
+
+## Getting Help
+
+### Where can I get help?
+
+- **GitHub Issues**: [Report bugs or request features](https://github.com/Arkh-Ur/ouroborOS/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Arkh-Ur/ouroborOS/discussions) 
+- **Wiki**: [Documentation and tutorials](https://github.com/Arkh-Ur/ouroborOS-wiki)
+- **Health Check**: Use `ouroboros-health --doctor` for system diagnostics
+
+### How do I submit a bug report?
+
+Include these details in your GitHub issue:
+
+```bash
+# System information
+sudo ouroboros-health --json
+
+# Installer logs (if installation failed)
+cat /tmp/ouroborOS-install.log
+
+# Hardware information
+lspci -nn
+lsblk -f
+
+# Boot information
+bootctl list
+journalctl -b -1 -p err
+```
+
+### Where is the source code?
+
+- **Main repository**: [Arkh-Ur/ouroborOS](https://github.com/Arkh-Ur/ouroborOS)
+- **Wiki repository**: [Arkh-Ur/ouroborOS-wiki](https://github.com/Arkh-Ur/ouroborOS-wiki)
+- **Developer guide**: See the [Developer Guide](../developer-guide)
+
 ---
 
-*More questions coming soon — submit yours via GitHub Issues.*
+*Still have questions? Check the [troubleshooting guide](./rescue) for specific recovery procedures, or [limitations](./limitations) for known system constraints.*

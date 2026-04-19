@@ -50,4 +50,446 @@ homectl update admin --fido2-device=auto
 
 ---
 
-*Content coming soon — home directory migration, recovery, and advanced homed configurations.*
+## Configuration Options
+
+### Storage Backend Selection
+
+```yaml
+# installer/config.py options for user.homed_storage:
+#   subvolume  - Btrfs subvolume (default, but fails in QEMU)
+#   directory  - Standard directory (simple, reliable)
+#   luks       - LUKS-encrypted image file 
+#   classic    - Skip systemd-homed entirely (useradd)
+```
+
+### Recommended Configuration
+
+```yaml
+user:
+  username: admin
+  homed_storage: classic  # Most reliable for ouroborOS Btrfs layout
+```
+
+```yaml
+user:
+  username: admin
+  homed_storage: directory  # Alternative if you want homed features
+```
+
+```yaml
+user:
+  username: admin
+  homed_storage: luks       # For encrypted home directories
+```
+
+## Installation Process
+
+### Classic User Creation (Default)
+
+```bash
+# Installation creates classic user unconditionally
+useradd -m -G wheel,video,audio,input -s /bin/bash admin
+echo "admin:password" | chpasswd
+```
+
+### First Boot Migration Process
+
+```bash
+# ouroboros-homed-migration.service runs automatically on first boot
+# if homed_storage != "classic"
+journalctl -u ouroboros-homed-migration.service
+```
+
+### Migration Workflow
+
+```bash
+# 1. Service triggers on first boot
+sudo systemctl status ouroboros-homed-migration.service
+
+# 2. Attempts to convert classic user to systemd-homed
+homectl create --storage=subvolume --shell=/bin/bash admin
+
+# 3. If successful: home directory migrated to homed management
+# 4. If failed: automatic rollback to classic user
+```
+
+## Storage Backend Details
+
+### Directory Storage
+
+```bash
+# Create user with directory storage
+homectl create --storage=directory --shell=/bin/bash admin
+
+# Home directory: /home/admin (standard directory)
+# Benefits: Simple, reliable, Btrfs CoW inherited from @home
+```
+
+**Pros:**
+- Simple setup and management
+- Full Btrfs copy-on-write semantics (inherits from @home)
+- Compatible with existing tools
+- No nested subvolume issues
+
+**Cons:**
+- No per-user encryption
+- No portable home directories
+- Less isolation between users
+
+### LUKS Storage
+
+```bash
+# Create user with LUKS-encrypted home directory
+homectl create --storage=luks --shell=/bin/bash admin
+
+# Home directory: /home/admin/.home (encrypted image file)
+# Benefits: Per-user encryption, portable, strong isolation
+```
+
+**Pros:**
+- Strong encryption per user
+- Portable home directories
+- Excellent isolation
+- TPM2/FIDO2 unlock support
+
+**Cons:**
+- Performance overhead
+- More complex recovery
+- Requires additional storage space
+
+### Subvolume Storage (Not Recommended)
+
+```bash
+# This will FAIL in ouroborOS due to nested subvolume limitation
+homectl create --storage=subvolume --shell=/bin/bash admin
+
+# Error: Cannot create subvolume inside existing Btrfs subvolume
+# Fallback: Uses classic user automatically
+```
+
+## Migration Status Verification
+
+### Check Migration Logs
+
+```bash
+# View migration service logs
+journalctl -u ouroboros-homed-migration.service
+
+# Check if migration succeeded
+if systemctl is-enabled --quiet systemd-homed.service; then
+    echo "systemd-homed is enabled"
+else
+    echo "Using classic user (migration failed or skipped)"
+fi
+```
+
+### Manual Migration Status Check
+
+```bash
+# Check current user management type
+id admin
+ls -la /home/admin
+ls -la /home/.homes/
+
+# Verify homed status
+homectl list 2>/dev/null || echo "systemd-homed not active"
+```
+
+## Recovery and Fallback
+
+### Automatic Fallback to Classic User
+
+If systemd-homed migration fails:
+
+```bash
+# Migration service automatically rolls back
+# User remains as classic /etc/passwd user
+# No data loss occurs
+journalctl -u ouroboros-homed-migration.service | grep -A5 "failed"
+```
+
+### Manual Migration Retry
+
+```bash
+# If migration failed but you want to retry
+sudo rm /etc/ouroboros/homed-migration-pending
+sudo systemctl restart ouroboros-homed-migration.service
+
+# Monitor progress
+journalctl -f -u ouroboros-homed-migration.service
+```
+
+### Recovery from Homed Issues
+
+```bash
+# If systemd-homed becomes problematic
+# 1. Disable homed migration service
+sudo systemctl disable ouroboros-homed-migration.service
+
+# 2. Remove migration markers
+sudo rm /etc/ouroboros/homed-migration-pending
+sudo rm /etc/ouroboros/homed-migration.conf
+
+# 3. System will use classic user on next boot
+```
+
+## Performance and Behavior
+
+### Classic User Performance
+
+```bash
+# Btrfs behavior with classic users
+# Home directory inherits CoW from @home subvolume
+btrfs subvolume show /home/admin
+
+# Snapshot operations work normally
+our-snapshot create admin-backup
+```
+
+### LUKS Storage Performance
+
+```bash
+# LUKS performance impact
+cryptsetup benchmark /home/admin/.home
+
+# Typical performance with LUKS:
+# - Throughput: ~70-80% of raw disk
+# - Latency: Additional 5-10ms for I/O operations
+```
+
+### Memory Usage
+
+```bash
+# systemd-homed service memory usage
+systemctl status systemd-homed.service
+systemd-analyze memory systemd-homed.service
+
+# Classic user memory usage: minimal (no additional services)
+```
+
+## Security Considerations
+
+### Classic User Security
+
+```bash
+# Standard Unix permissions and Btrfs snapshots
+ls -la /home/admin
+our-snapshot list | grep admin
+
+# Manual backup options
+tar -czf admin-home-backup.tar.gz /home/admin
+```
+
+### LUKS Storage Security
+
+```bash
+# LUKS encryption details
+cryptsetup luksDump /home/admin/.home
+
+# Per-user encryption keys
+ls -la /home/.homes/admin/
+
+# Integration with system TPM2/FIDO2
+homectl update admin --tpm2-device=auto
+```
+
+### Access Control
+
+```bash
+# User access control with classic users
+getfacl /home/admin
+setfacl -m u:anotheruser:r-x /home/admin
+
+# File ownership and permissions
+chown -R admin:admin /home/admin
+chmod 750 /home/admin
+```
+
+## Integration with System Features
+
+### Snapshot Management
+
+```bash
+# Btrfs snapshots work with classic users
+our-snapshot create admin-before-update
+our-snapshot list | grep admin
+
+# Snapshot migration
+our-snapshot promote admin-backup
+```
+
+### Package Management
+
+```bash
+# Package installation same for all user types
+sudo our-pac -S neovim
+
+# AUR packages via our-aur
+sudo our-aur -S hyprland
+
+# Flatpak applications
+sudo our-flat -S spotify
+```
+
+### System Updates and Rollback
+
+```bash
+# Update workflow identical for all user types
+sudo our-pac -Syu
+
+# Rollback using snapshots
+our-rollback now
+reboot
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Issue: Migration fails on first boot
+journalctl -u ouroboros-homed-migration.service
+
+# Issue: systemd-homed service won't start
+systemctl status systemd-homed.service
+journalctl -u systemd-homed.service
+
+# Issue: Home directory permissions
+ls -la /home/admin
+getfacl /home/admin
+```
+
+### Debug Commands
+
+```bash
+# Detailed homed diagnostics
+homectl --verbose list
+homectl --verbose info admin
+
+# Systemd service debugging
+systemctl mask systemd-homed.service  # Temporarily disable
+systemctl unmask systemd-homed.service  # Re-enable
+
+# Filesystem checks
+btrfs check /dev/vda1
+btrfs filesystem usage /
+```
+
+### Performance Issues
+
+```bash
+# Monitor homed performance
+systemd-analyze blame | grep homed
+journalctl -u systemd-homed.service -f
+
+# Disk I/O monitoring
+iostat -x 1
+iotop -o -P
+```
+
+## Migration Guide
+
+### From Classic to LUKS Storage
+
+```bash
+# 1. Backup existing home directory
+sudo tar -czf /tmp/admin-home-backup.tar.gz /home/admin
+
+# 2. Create LUKS home directory
+homectl create --storage=luks --shell=/bin/bash admin
+
+# 3. Restore data
+sudo tar -xzf /tmp/admin-home-backup.tar.gz -C /home/admin
+
+# 4. Set proper permissions
+sudo chown -R admin:admin /home/admin
+```
+
+### From LUKS to Classic Storage
+
+```bash
+# 1. Backup LUKS home
+sudo tar -czf /tmp/admin-homed-backup.tar.gz /home/admin
+
+# 2. Create classic home directory
+sudo mkdir -p /home/admin
+sudo cp -r /home/admin/.home/* /home/admin/
+sudo chown -R admin:admin /home/admin
+
+# 3. Clean up LUKS files
+sudo rm -rf /home/admin/.home
+sudo rm -f /home/.homes/admin/.home
+```
+
+### Portable Home Directory
+
+```bash
+# Export LUKS home directory
+homectl export admin --path=/tmp/admin-home.tar
+
+# Import on another system
+homectl import --path=/tmp/admin-home.tar admin
+
+# Verify migration
+homectl list
+ls -la /home/admin
+```
+
+## Best Practices
+
+### Classic User Configuration
+
+```yaml
+# Recommended for most ouroborOS users
+user:
+  username: admin
+  homed_storage: classic  # Most reliable
+  groups: [wheel, audio, video, input]
+  shell: /bin/bash
+```
+
+**Benefits:**
+- Stable and reliable
+- Full Btrfs features via snapshots
+- Simple maintenance
+- No additional overhead
+
+### LUKS User Configuration
+
+```yaml
+# For users needing encrypted home directories
+user:
+  username: admin
+  homed_storage: luks
+  groups: [wheel, audio, video, input]
+  shell: /bin/bash
+```
+
+**Benefits:**
+- Strong encryption
+- Portable home directories
+- Per-user isolation
+- TPM2/FIDO2 integration
+
+### Directory User Configuration
+
+```yaml
+# For users wanting homed features without complexity
+user:
+  username: admin
+  homed_storage: directory
+  groups: [wheel, audio, video, input]
+  shell: /bin/bash
+```
+
+**Benefits:**
+- systemd-homed management
+- Standard directory structure
+- Btrfs CoW semantics
+- No encryption overhead
+
+## Summary
+
+systemd-homed provides advanced home directory management capabilities in ouroborOS, but with important limitations due to the Btrfs subvolume layout. The **classic** storage backend offers the most reliable experience, while **directory** provides a middle ground, and **LUKS** offers the strongest security for portable, encrypted home directories.
+
+For most users, the classic configuration provides excellent functionality with Btrfs snapshot integration and all ouroborOS features working seamlessly. The automatic fallback mechanism ensures system stability even when advanced features encounter limitations.

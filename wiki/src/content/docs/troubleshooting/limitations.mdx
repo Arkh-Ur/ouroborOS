@@ -32,6 +32,472 @@ Some ouroborOS behaviors are intentional design decisions. Others are temporary 
 Check the [Vision & Roadmap](/roadmap/declarative-vision) section for planned features and timelines.
 :::
 
+## Detailed Limitations & Workarounds
+
+### UEFI Only
+
+**Why**: Modern firmware standard with secure boot, faster boot, and better hardware support.
+
+**Workarounds**:
+
+```bash
+# If you have Legacy BIOS/UEFI dual-boot mode:
+# 1. Enable CSM (Compatibility Support Module) in firmware
+# 2. Use Legacy Boot Mode instead of UEFI
+# 3. Consider a different distribution for Legacy BIOS systems
+
+# Virtual machine workaround (QEMU with Legacy BIOS):
+# This won't work - ouroborOS requires UEFI firmware
+qemu-system-x86_64 -bios /usr/share/seabios/bios.bin  # ❌ Won't boot
+```
+
+**Recommendation**: Use a UEFI-compatible system or choose a distribution that supports Legacy BIOS.
+
+### x86_64 Only
+
+**Why**: ARM/aarch64 support removed in v0.4.12 due to lack of hardware validation resources.
+
+**Workarounds**:
+
+```bash
+# For ARM systems, consider these alternatives:
+# - Arch Linux ARM (official)
+# - Manjaro ARM
+# - EndeavourOS ARM
+
+# If you need ARM support for ouroborOS:
+# 1. Monitor GitHub discussions for ARM reinstatement
+# 2. Consider sponsoring ARM hardware development
+# 3. Use x86_64 emulation on ARM64 (performance impact)
+```
+
+**Recommendation**: Use official ARM distributions until ouroborOS has ARM validation hardware.
+
+### No NetworkManager
+
+**Why**: systemd-networkd + iwd provides lighter, more systemd-native networking.
+
+**Workarounds**:
+
+```bash
+# Basic networking setup:
+# 1. Enable systemd-networkd
+sudo systemctl enable systemd-networkd
+
+# 2. Create network configuration (example for wired)
+cat > /etc/systemd/network/ethernet.network << 'EOF'
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+EOF
+
+# 3. Enable iwd for wireless
+sudo systemctl enable iwd
+
+# 4. Connect to WiFi manually
+iwctl station list
+iwctl station wlan0 connect your-ssid
+
+# For complex networking needs, use containers:
+our-container --isolated --network=bridge complex-network-setup
+```
+
+**Advanced Configuration**:
+
+```bash
+# Bonding (combining multiple interfaces)
+cat > /etc/systemd/network/bond.netdev << 'EOF'
+[NetDev]
+Name=bond0
+Kind=bond
+EOF
+
+cat > /etc/systemd/network/bond.network << 'EOF'
+[Match]
+Name=bond0
+
+[Network]
+DHCP=yes
+Bond=ens3+ens4
+EOF
+
+# VLAN support
+cat > /etc/systemd/network/vlan100.network << 'EOF'
+[Match]
+Name=eth0
+
+[Network]
+VLAN=100
+DHCP=yes
+EOF
+```
+
+**Recommendation**: Learn systemd-networkd - it's more powerful than NetworkManager for most use cases.
+
+### No GRUB
+
+**Why**: systemd-boot is faster, simpler, and integrates better with UEFI.
+
+**Workarounds**:
+
+```bash
+# systemd-boot vs GRUB comparison:
+# systemd-boot advantages:
+# - ~0.5 second boot time improvement
+# - Simpler configuration
+# - Better UEFI integration
+# - Automatic entry generation
+
+# Manual systemd-boot management:
+# 1. View current entries
+bootctl list
+
+# 2. Add custom entry
+cat > /boot/loader/entries/custom.conf << 'EOF'
+title Custom Kernel
+linux /vmlinuz-linux-custom
+initrd /intel-ucode.img
+initrd /initramfs-linux-custom.img
+options root="PARTUUID=$(blkid -s PARTUUID -o value /dev/sdX2)" rw rootflags=subvol=@
+EOF
+
+# 3. Update bootloader
+bootctl update
+
+# 4. Remove entries
+rm /boot/loader/entries/old-entry.conf
+```
+
+**Advanced Configuration**:
+
+```bash
+# Timeout configuration
+cat > /boot/loader/loader.conf << 'EOF'
+default ouroborOS.conf
+timeout 3
+console-mode keep
+editor no
+EOF
+
+# Kernel parameters
+# Add to options line in boot entries:
+# loglevel=3 (quiet boot)
+# nowatchdog (disable watchdog timer)
+# i915.modeset=1 (Intel GPU specific)
+```
+
+**Recommendation**: Embrace systemd-boot - it's superior for UEFI systems.
+
+### No Swap Partition
+
+**Why**: zram provides instant swap with no disk I/O overhead.
+
+**Workarounds**:
+
+```bash
+# Monitor and configure zram:
+# 1. Check zram status
+zramctl
+
+# 2. Monitor swap usage
+swapon --show
+free -h
+
+# 3. If you need more swap space:
+# Edit kernel parameters (add to boot entry options):
+# zram_size=8G (reserve 8GB for zram)
+# swappiness=60 (adjust swap aggressiveness)
+
+# 4. Check compression ratio
+zramctl --output=DISKSIZE,COMPR_RATIO,DATA_SIZE
+```
+
+**Disk Swap Fallback** (if zram is insufficient):
+
+```bash
+# Create a swap file on /var (writable subvolume)
+fallocate -l 4G /var/swapfile
+chmod 600 /var/swapfile
+mkswap /var/swapfile
+swapon /var/swapfile
+
+# Add to /etc/fstab for persistence
+echo '/var/swapfile none swap defaults 0 0' >> /etc/fstab
+```
+
+**Recommendation**: zram is superior for most use cases - much faster than disk swap.
+
+### Read-Only Root
+
+**Why**: Immutability prevents system corruption from failed updates and enables atomic rollbacks.
+
+**Workarounds**:
+
+```bash
+# Understanding writable areas:
+# @etc - Configuration files
+# @var - Package databases, logs, caches  
+# @home - User data
+# @tmp - Temporary files
+# @opt - Optional software
+
+# Accessing different areas:
+# 1. Check current mounts
+findmnt | grep btrfs
+
+# 2. Edit configuration (safe)
+sudo nano /etc/systemd/network/wired.network
+
+# 3. Temporary write access to root (for debugging)
+mount -o remount,rw /
+# ... perform operations ...
+mount -o remount,ro /
+
+# 4. Package management (automated by our-pac)
+sudo our-pac -S neovim  # Handles remounting automatically
+```
+
+**Persistent Customizations**:
+
+```bash
+# Adding custom scripts
+mkdir -p /usr/local/bin/custom-scripts
+chmod 755 /usr/local/bin/custom-scripts
+
+# Custom services
+mkdir -p /etc/systemd/system/custom-service.d
+cat > /etc/systemd/system/custom-service.d/override.conf << 'EOF'
+[Service]
+Environment=CUSTOM_VAR=value
+EOF
+
+# Rebuild systemd after changes
+systemctl daemon-reload
+```
+
+**Recommendation**: Embrace the immutable design - it's what makes ouroborOS safe and reliable.
+
+## No GUI Installer
+
+**Status**: TUI + YAML only (Phase 6 planned for GUI)
+
+**Workarounds**:
+
+```bash
+# Current options:
+# 1. Interactive TUI (recommended for most users)
+ouroborOS-installer
+
+# 2. Unattended YAML installation
+ouroborOS-installer --config install-config.yaml
+
+# 3. Remote installation (SSH)
+# Boot ISO, then:
+ssh installer@192.168.1.100
+ouroborOS-installer --config /path/to/config.yaml
+
+# Customizing the TUI experience:
+# Edit src/installer/tui.py to modify screens and workflows
+```
+
+**Automated Installation Scripts**:
+
+```bash
+#!/bin/bash
+# Example automated installation script
+CONFIG_FILE="/tmp/auto-install.yaml"
+
+cat > "$CONFIG_FILE" << 'EOF'
+user:
+  username: admin
+  password: changeme
+  shell: /bin/bash
+  groups: [wheel, audio, video]
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/New_York
+
+desktop:
+  profile: minimal
+EOF
+
+ouroborOS-installer --config "$CONFIG_FILE"
+```
+
+**Recommendation**: The TUI is quite capable - most users find it more efficient than GUI installers.
+
+## No OTA Image-Based Updates
+
+**Status**: `ouroboros-update` checks channel YAML (Phase 6 planned for OTA)
+
+**Workarounds**:
+
+```bash
+# Current update method:
+# 1. Package updates via our-pac (creates snapshots)
+sudo our-pac -Syu
+
+# 2. Manual system updates (when available)
+# Check for system updates
+sudo ouroboros-update --check
+
+# Apply updates
+sudo ouroboros-update --apply
+
+# 3. Channel-based updates (experimental)
+cat > /etc/ouroborOS/update-channel.yaml << 'EOF'
+channel: stable
+mirror: https://updates.ouroboros.example.com/stable
+EOF
+```
+
+**Custom Update Scripts**:
+
+```bash
+#!/bin/bash
+# Custom update script
+echo "Starting custom update process..."
+
+# Create pre-update snapshot
+sudo our-snapshot create pre-custom-update
+
+# Update packages
+sudo our-pac -Syu
+
+# Update AUR packages
+our-aur -Su
+
+# Update Flatpak packages
+sudo our-flat -Su
+
+# Clean up old snapshots
+sudo our-snapshot prune --keep 5 --days 30
+
+echo "Update complete"
+```
+
+**Recommendation**: The current snapshot-based system is actually more reliable than OTA updates.
+
+## systemd-homed Fails in QEMU
+
+**Status**: Auto-fallback to `useradd` (upstream systemd bug)
+
+**Workarounds**:
+
+```bash
+# Check homed status:
+systemctl status systemd-homed
+
+# If systemd-homed fails, classic home directories are used automatically:
+ls /home  # Shows traditional home directories
+
+# Manual user creation (if needed):
+sudo useradd -m -s /bin/bash username
+sudo passwd username
+
+# For development/testing with QEMU:
+# Use directory backend explicitly in config:
+user:
+  homed_storage: directory  # More reliable in VMs
+```
+
+**Best Practices**:
+
+```bash
+# For production systems with Btrfs:
+# Use subvolume backend (default)
+user:
+  homed_storage: subvolume
+
+# For development/QEMU:
+# Use directory backend  
+user:
+  homed_storage: directory
+
+# For encrypted home directories:
+user:
+  homed_storage: luks
+```
+
+**Recommendation**: The automatic fallback works well - no action needed for most users.
+
+## Multi-Language Installer
+
+**Status**: English only (wiki supports en/es/de)
+
+**Workarounds**:
+
+```bash
+# Current language support:
+# 1. Installer is English only
+# 2. Documentation is multilingual
+# 3. System locale can be set during installation
+
+# Setting system locale during install:
+# In TUI, select locale:
+# en_US.UTF-8 (default)
+# es_CL.UTF-8 (Chilean Spanish) 
+# de_DE.UTF-8 (German)
+
+# Post-install locale configuration:
+sudo localectl set-locale LANG=es_CL.UTF-8
+sudo localectl set-locale-keymap es
+
+# Language packs for applications:
+sudo our-pac -S lang-es lang-de
+```
+
+**Community Translation Efforts**:
+
+```bash
+# Contributing translations:
+# 1. Fork the wiki repository
+# 2. Translate documentation files
+# 3. Submit pull requests
+
+# For installer translations:
+# Monitor GitHub issues for Phase 6 multi-language support
+```
+
+**Recommendation**: Help expand the translation project by contributing to the wiki.
+
+## Future Roadmap
+
+| Phase | Target | Expected Timeline |
+|-------|--------|-------------------|
+| Phase 5 | Multi-user system.yaml | v0.5.0 (2026-Q2) |
+| Phase 6 | GUI installer + OTA updates | v0.6.0 (2026-Q3) |
+| Phase 7 | Full multi-language support | v0.7.0 (2026-Q4) |
+| Phase 8 | ARM64 support | v0.8.0 (2027-Q1) |
+
+## Contributing to Improvements
+
+```bash
+# Help address limitations:
+# 1. Report bugs on GitHub
+# 2. Suggest improvements in Discussions
+# 3. Contribute code (see Developer Guide)
+# 4. Sponsor hardware for testing
+
+# Bug reporting template:
+echo "## Bug Report
+**Environment**: [Hardware details]
+**Issue**: [Describe the problem]
+**Expected**: [What should happen]
+**Actual**: [What actually happens]
+**Steps to reproduce**: [How to trigger the issue]
+**Workaround**: [Any temporary solution found]
+" > bug-report.md
+```
+
 ---
 
-*Content coming soon — detailed per-limitation workarounds and migration guides.*
+*Have you encountered a limitation not listed here? Please [file a GitHub issue](https://github.com/Arkh-Ur/ouroborOS/issues) with detailed information about your use case.*

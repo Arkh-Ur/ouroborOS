@@ -1,65 +1,65 @@
 ---
-title: Desktop Themes
-description: Customization and theming guide for ouroborOS desktop environments
+title: Temas de Escritorio
+description: Guía de personalización y temas para entornos de escritorio de ouroborOS
 slug: desktop/themes
 ---
 
-# Desktop Themes and Customization
+# Temas y Personalización del Escritorio
 
-orooborOS provides comprehensive theming capabilities across all supported desktop environments. Whether you prefer a minimal aesthetic or a highly customized workspace, the system supports easy theme management and consistent styling.
+ouroborOS proporciona capacidades completas de theming en todos los entornos de escritorio soportados. Ya sea que prefieras una estética minimalista o un espacio de trabajo altamente personalizado, el sistema admite una fácil gestión de temas y estilos consistentes.
 
-## Overview
+## Resumen
 
-The theming system in ouroborOS is designed to be:
+El sistema de theming en ouroborOS está diseñado para ser:
 
-- **Consistent**: All desktop environments follow similar color palette conventions
-- **Customizable**: Easy to modify colors, icons, and layouts
-- **Persistent**: Theme changes are preserved across reboots and updates
-- **Cross-desktop**: Works across Hyprland, Niri, GNOME, and KDE
+- **Consistente**: Todos los entornos de escritorio siguen convenciones similares de paleta de colores
+- **Personalizable**: Fácil de modificar colores, iconos y diseños
+- **Persistente**: Los cambios de tema se preservan a través de reinicios y actualizaciones
+- **Multi-entorno**: Funciona en Hyprland, Niri, GNOME y KDE
 
 :::note
 
-Theme management is integrated with the `our-pac` package manager. When you update system packages, your theme customizations are preserved automatically.
+La gestión de temas está integrada con el gestor de paquetes `our-pac`. Cuando actualizas paquetes del sistema, tus personalizaciones de tema se preservan automáticamente.
 
 :::
 
-## Color Palette
+## Paleta de Colores
 
-### Default Color Scheme
+### Esquema de Colores Predeterminado
 
-orooborOS uses an emerald/teal color palette that provides a fresh, modern appearance:
+ouroborOS utiliza una paleta de colores esmeralda/teal que proporciona una apariencia fresca y moderna:
 
 ```yaml
-# Default color scheme
+# Esquema de colores predeterminado
 colors:
-  primary: "#10b981"    # Emerald (dark mode accent)
-  secondary: "#059669" # Dark Emerald (light mode accent)  
-  background: "#0f172a" # Very Dark (header background)
-  surface: "#1e293b"    # Card backgrounds
-  text: "#f1f5f9"       # Primary text
-  text-secondary: "#94a3b8" # Secondary text
+  primary: "#10b981"    # Esmeralda (acento modo oscuro)
+  secondary: "#059669" # Esmeralda Oscuro (acento modo claro)  
+  background: "#0f172a" # Muy Oscuro (fondo de encabezado)
+  surface: "#1e293b"    # Fondo de tarjetas
+  text: "#f1f5f9"       # Texto primario
+  text-secondary: "#94a3b8" # Texto secundario
 ```
 
-### Theme Customization
+### Personalización de Temas
 
-You can customize colors by modifying theme files in your home directory:
+Puedes personalizar colores modificando archivos de tema en tu directorio home:
 
 ```bash
-# Theme configuration directory
+# Directorio de configuración de temas
 ~/.config/ouroborOS/themes/
 
-# Create custom theme
+# Crear tema personalizado
 mkdir -p ~/.config/ouroborOS/themes/my-theme
 ```
 
-## Desktop-Specific Theming
+## Themado Específico por Entorno de Escritorio
 
-### Hyprland Themes
+### Hyprland
 
-Hyprland configuration is located at `~/.config/hypr/hyprland.conf`:
+La configuración de Hyprland se encuentra en `~/.config/hypr/hyprland.conf`:
 
 ```ini
-# Hyprland theme configuration
+# Configuración de tema Hyprland
 $accent = #10b981
 $background = #0f172a
 $surface = #1e293b
@@ -74,12 +74,12 @@ general {
 }
 ```
 
-### Niri Themes
+### Niri
 
-Niri configuration is in `~/.config/niri/config.kdl`:
+La configuración de Niri está en `~/.config/niri/config.kdl`:
 
 ```kdl
-// Niri theme configuration
+// Configuración de tema Niri
 $accent: #10b981;
 $background: #0f172a;
 $surface: #1e293b;
@@ -91,60 +91,60 @@ windowRules {
 }
 ```
 
-### GNOME Themes
+### GNOME
 
-GNOME themes are managed through extensions:
+Los temas de GNOME se gestionan a través de extensiones:
 
 ```bash
-# Install GNOME tweaks
+# Instalar GNOME tweaks
 our-pac install gnome-tweaks
 
-# Theme installation
+# Instalación de temas
 gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
 ```
 
-### KDE Themes
+### KDE
 
-KDE customization through System Settings:
+Personalización de KDE a través de System Settings:
 
 ```bash
-# KDE theme management
+# Gestión de temas KDE
 systemsettings5
 ```
 
-## Theme Packages
+## Paquetes de Temas
 
-Pre-built theme packages are available through our repositories:
+Están disponibles paquetes de temas pre-construidos a través de nuestros repositorios:
 
 ```bash
-# Install additional themes
+# Instalar temas adicionales
 our-pac install ouroborOS-themes-collection
 our-pac install ouroborOS-icons
 our-pac install ouroborOS-cursors
 ```
 
-## Dynamic Theme Switching
+## Cambio Dinámico de Temas
 
-orooborOS supports automatic theme switching based on time of day:
+ouroborOS admite cambio automático de tema basado en la hora del día:
 
 ```yaml
 # ~/.config/ouroborOS/theme-switcher.yaml
 theme:
   day:
     colors:
-      primary: "#059669"  # Light emerald
+      primary: "#059669"  # Esmeralda claro
       background: "#ffffff"
   night:
     colors:
-      primary: "#10b981"  # Dark emerald  
+      primary: "#10b981"  # Esmeralda oscuro  
       background: "#0f172a"
 ```
 
-## Desktop Environment-Specific Theming
+## Personalización Específica por Entorno de Escritorio
 
-### Hyprland Configuration
+### Configuración Hyprland
 
-Hyprland configurations are stored in `~/.config/hypr/hyprland.conf`. Here's a complete example with theme integration:
+Las configuraciones de Hyprland se almacenan en `~/.config/hypr/hyprland.conf`. Aquí tienes un ejemplo completo con integración de tema:
 
 ```ini
 # ~/.config/hypr/hyprland.conf
@@ -154,20 +154,20 @@ $surface = #1e293b
 $text = #f1f5f9
 $text-secondary = #94a3b8
 
-# Window rules and animations
+# Reglas de ventana y animaciones
 windowrule = float, ^(firefox)$
 windowrule = float, ^(mpv)$
 windowrule = float, ^(pavucontrol)$
 windowrule = opacity 0.95, ^(.*)$
 
-# Monitor configuration
+# Configuración de monitor
 monitor = HDMI-A-1, 1920x1080@144, 0x0, auto
 
-# Workspace setup
+# Configuración de workspace
 workspace = 1, monitor:HDMI-A-1
 workspace = 2, monitor:HDMI-A-1
 
-# Input configuration
+# Configuración de entrada
 input {
     kb_layout = us
     kb_variant = 
@@ -183,7 +183,7 @@ input {
     }
 }
 
-# General configuration
+# Configuración general
 general {
     gaps_in = 5
     gaps_out = 10
@@ -193,7 +193,7 @@ general {
     layout = dwindle
 }
 
-# Decoration configuration
+# Configuración de decoración
 decoration {
     rounding = 10
     blur {
@@ -207,7 +207,7 @@ decoration {
     shadow_render_power = 6
 }
 
-# Animations configuration
+# Configuración de animaciones
 animations {
     enabled = true
     bezier = myBezier, 0.05, 0.9, 0.1, 1.05
@@ -219,13 +219,13 @@ animations {
     animation = workspaces, 1, 6, default
 }
 
-# Exec (autostart)
+# Ejecutar (autostart)
 exec = waybar
 exec = hyprpaper --image ~/wallpapers/forest.jpg
 exec = hyprpolkitagent
 exec = dunst
 
-# Launcher
+# Lanzador
 $mainMod = SUPER
 
 bind = $mainMod, Return, exec, foot
@@ -261,7 +261,7 @@ bind = $mainMod, SHIFT, 8, movetoworkspace, 8
 bind = $mainMod, SHIFT, 9, movetoworkspace, 9
 bind = $mainMod, SHIFT, 0, movetoworkspace, 10
 
-# Media keys
+# Teclas multimedia
 bind = ,XF86AudioRaiseVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ +5%
 bind = ,XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -5%
 bind = ,XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle
@@ -270,27 +270,27 @@ bind = ,XF86AudioNext, exec, playerctl next
 bind = ,XF86AudioPrev, exec, playerctl previous
 ```
 
-### Hyprland Theme Tools
+### Herramientas de Tema Hyprland
 
-orooborOS includes several Hyprland-specific theming utilities:
+ouroborOS incluye varias utilidades específicas de theming para Hyprland:
 
 ```bash
-# Install additional Hyprland theming packages
+# Instalar paquetes adicionales de theming Hyprland
 our-pac install hyprcursor hyprlang hyprutils hyprwayland-scanner
 
-# Hyprpaper for wallpaper management
+# Hyprpaper para gestión de wallpapers
 hyprpaper --config ~/.config/hypr/hyprpaper.conf
 
-# Hyprpolkitagent for authentication
+# Hyprpolkitagent para autenticación
 hyprpolkitagent
 
-# Hyprlock for screen locking
+# Hyprlock para bloqueo de pantalla
 hyprlock --config ~/.config/hypr/hyprlock.conf
 ```
 
-### Niri Configuration
+### Configuración Niri
 
-Niri configurations are stored in `~/.config/niri/config.kdl`. Here's a complete example:
+Las configuraciones de Niri se almacenan en `~/.config/niri/config.kdl`. Aquí tienes un ejemplo completo:
 
 ```kdl
 // ~/.config/niri/config.kdl
@@ -300,7 +300,7 @@ $surface: #1e293b;
 $text: #f1f5f9;
 $text-secondary: #94a3b8;
 
-// Display configuration
+// Configuración de display
 outputs = {
     "HDMI-A-1" = {
         mode = "1920x1080@144Hz";
@@ -309,7 +309,7 @@ outputs = {
     };
 };
 
-// Workspace configuration
+// Configuración de workspace
 workspaces = {
     "1" = output = "HDMI-A-1";
     "2" = output = "HDMI-A-1";
@@ -323,7 +323,7 @@ workspaces = {
     "10" = output = "HDMI-A-1";
 };
 
-// Layout configuration
+// Configuración de layout
 layout = {
     focus-ring = {
         active-color = $accent;
@@ -333,7 +333,7 @@ layout = {
     gap-size = 10px;
 };
 
-// Keyboard configuration
+// Configuración de teclado
 keyboard = {
     xkb = {
         layout = "us";
@@ -342,7 +342,7 @@ keyboard = {
     repeat-rate = 60;
 };
 
-// Input configuration
+// Configuración de entrada
 input = {
     touchpad = {
         tap-to-click = true;
@@ -354,14 +354,14 @@ input = {
     };
 };
 
-// Mouse configuration
+// Configuración de mouse
 mouse = {
     follow-focus = "never";
     accel-profile = "flat";
     accel-speed = 0;
 };
 
-// Window rules
+// Reglas de ventana
 window-rules = {
     match app-id "firefox" {
         spawn-on-workspace = "2";
@@ -374,12 +374,12 @@ window-rules = {
     };
 };
 
-// Spawn applications on startup
+// Lanzar aplicaciones al inicio
 spawn-on-startup = "waybar";
 spawn-on-startup = "dunst";
 spawn-on-startup = "fuzzel";
 
-// Keyboard bindings
+// Atajos de teclado
 $mainMod = "Super";
 
 bind = $mainMod Return { spawn = "foot"; }
@@ -412,7 +412,7 @@ bind = $mainMod Shift 8 { move-to-workspace = "8"; }
 bind = $mainMod Shift 9 { move-to-workspace = "9"; }
 bind = $mainMod Shift 0 { move-to-workspace = "10"; }
 
-// Media keys
+// Teclas multimedia
 bind = "XF86AudioRaiseVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ +5%"; }
 bind = "XF86AudioLowerVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ -5%"; }
 bind = "XF86AudioMute" { spawn = "pactl set-sink-mute @DEFAULT_SINK@ toggle"; }
@@ -421,15 +421,15 @@ bind = "XF86AudioNext" { spawn = "playerctl next"; }
 bind = "XF86AudioPrev" { spawn = "playerctl previous"; }
 ```
 
-### Niri Theme Components
+### Componentes de Tema Niri
 
-Niri supports theming through its configuration system:
+Niri admite theming a través de su sistema de configuración:
 
 ```bash
-# Install Niri theme packages
+# Instalar paquetes de tema Niri
 our-pac install niri mako fuzzel waybar
 
-# Configure notification daemon (mako)
+# Configurar daemon de notificaciones (mako)
 cat > ~/.config/mako/config << EOF
 {
     "font": "JetBrains Mono, 12",
@@ -452,7 +452,7 @@ cat > ~/.config/mako/config << EOF
 }
 EOF
 
-# Configure app launcher (fuzzel)
+# Configurar launcher de aplicaciones (fuzzel)
 cat > ~/.config/fuzzel/config << EOF
 {
     "main": {
@@ -473,95 +473,95 @@ cat > ~/.config/fuzzel/config << EOF
 EOF
 ```
 
-### GNOME Theme Customization
+### Personalización de Tema GNOME
 
-GNOME themes are managed through extensions and system settings:
+Los temas de GNOME se gestionan a través de extensiones y configuración del sistema:
 
 ```bash
-# Install GNOME tools
+# Instalar herramientas GNOME
 our-pac install gnome-tweaks gnome-extensions
 
-# Install user themes extension
+# Instalar extensión de temas de usuario
 gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
 
-# Install GNOME Shell integration
+# Instalar integración GNOME Shell
 gnome-extensions install dash-to-dock@micxgx.gmail.com
 
-# Configure themes via GNOME Tweaks
+# Configurar temas mediante GNOME Tweaks
 gnome-tweaks
 
-# Install additional themes
+# Instalar temas adicionales
 our-pac install adw-gtk3-theme capitaine-cursors
 
-# Configure system themes
+# Configurar temas del sistema
 gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
 gsettings set org.gnome.desktop.interface icon-theme "Yaru"
-gsettings set org.gnome.desktop.interface cursor-theme " capitaine-cursors"
+gsettings set org.gnome.desktop.interface cursor-theme "capitaine-cursors"
 gsettings set org.gnome.desktop.wm.preferences theme "Adwaita-dark"
 ```
 
-### KDE Plasma Theme Customization
+### Personalización de Tema KDE Plasma
 
-KDE Plasma theming is managed through System Settings:
+El theming de KDE Plasma se gestiona a través de System Settings:
 
 ```bash
-# Install KDE system settings
+# Instalar configuración del sistema KDE
 systemsettings5
 
-# Configure global theme
-# Plasma Look and Feel → Global Theme → Select theme
+# Configurar tema global
+# Plasma Look and Feel → Global Theme → Seleccionar tema
 
-# Configure desktop widget
+# Configurar widget de escritorio
 # Workspace → Add Widgets → Configure
 
-# Configure window decoration
+# Configurar decoración de ventana
 # Window Decorations → Configure
 
-# Install additional themes
+# Instalar temas adicionales
 our-pac install plasma5-themes-breath plasma5-themes-breeze-enhanced
 
-# Configure Plasma Desktop
-plasma-apply-wallpaperimage --file /path/to/wallpaper.jpg
-plasma-apply-colorscheme --path /path/to/colorscheme.colors
+# Configurar Escritorio Plasma
+plasma-apply-wallpaperimage --file /ruta/al/wallpaper.jpg
+plasma-apply-colorscheme --path /ruta/al/colorscheme.colors
 ```
 
-### COSMIC Theme Configuration
+### Configuración de Tema COSMIC
 
-COSMIC desktop provides built-in theming:
+El escritorio COSMIC proporciona theming integrado:
 
 ```bash
-# Install COSMIC theme components
+# Instalar componentes de tema COSMIC
 our-pac install cosmic-theme cosmic-settings
 
-# Configure COSMIC theme
+# Configurar tema COSMIC
 cosmic-settings
 
-# Change wallpaper
-cosmic-bg --image /path/to/wallpaper.jpg
+# Cambiar wallpaper
+cosmic-bg --image /ruta/al/wallpaper.jpg
 
-# Configure colors and appearance
+# Configurar colores y apariencia
 cosmic-settings appearance
 ```
 
-## Theme Package Management
+## Gestión de Paquetes de Temas
 
-### Pre-built Theme Collections
+### Colecciones de Temas Pre-construidos
 
 ```bash
-# Install theme collections from official repositories
+# Instalar colecciones de temas desde repositorios oficiales
 our-pac install ouroborOS-theme-collection
 our-pac install ouroborOS-icons
 our-pac install ouroborOS-cursors
 
-# Install AUR themes (if available)
+# Instalar temas AUR (si están disponibles)
 our-aur install hyprland-themes-git
 our-aur install niri-themes
 ```
 
-### Custom Theme Development
+### Desarrollo de Temas Personalizados
 
 ```bash
-# Theme development directory structure
+# Estructura de directorio de desarrollo de temas
 ~/.config/ouroborOS/themes/my-theme/
 ├── hyprland/
 │   └── hyprland.conf
@@ -577,44 +577,44 @@ our-aur install niri-themes
     ├── colors.json
     └── fonts.conf
 
-# Create theme package for distribution
+# Crear paquete de tema para distribución
 cd ~/.config/ouroborOS/themes/my-theme
 tar -czf my-theme.tar.gz .
 ```
 
-## Theme Backup and Migration
+## Respaldo y Migración de Temas
 
-### Backup Current Theme Configuration
+### Respaldo de Configuración de Tema Actual
 
 ```bash
-# Create theme backup
+# Crear respaldo de tema
 theme-backup() {
     local backup_dir="~/.themes-backup/$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$backup_dir"
     
-    # Backup desktop-specific configs
+    # Respaldar configs específicos de escritorio
     cp -r ~/.config/hypr/ "$backup_dir/hypr" 2>/dev/null || true
     cp -r ~/.config/niri/ "$backup_dir/niri" 2>/dev/null || true
     cp -r ~/.config/gtk-*.0/ "$backup_dir/gtk" 2>/dev/null || true
     cp -r ~/.config/plasma* "$backup_dir/plasma" 2>/dev/null || true
     cp -r ~/.local/share/gnome* "$backup_dir/gnome-shell" 2>/dev/null || true
     
-    echo "Theme backup saved to: $backup_dir"
+    echo "Respaldo de tema guardado en: $backup_dir"
 }
 
-# Backup current theme
+# Respaldar tema actual
 theme-backup
 ```
 
-### Migrate Theme Between Systems
+### Migrar Tema Entre Sistemas
 
 ```bash
-# Export theme configuration
+# Exportar configuración de tema
 theme-export() {
     local output_dir="theme-$(date +%Y%m%d)"
     mkdir -p "$output_dir"
     
-    # Collect theme files
+    # Recopilar archivos de tema
     cp ~/.config/hypr/hyprland.conf "$output_dir/" 2>/dev/null || true
     cp ~/.config/niri/config.kdl "$output_dir/" 2>/dev/null || true
     cp ~/.config/gtk-3.0/settings.ini "$output_dir/" 2>/dev/null || true
@@ -622,19 +622,19 @@ theme-export() {
     cp -r ~/.themes/* "$output_dir/themes/" 2>/dev/null || true
     cp -r ~/.icons/* "$output_dir/icons/" 2>/dev/null || true
     
-    # Create archive
+    # Crear archivo
     tar -czf "$output_dir.tar.gz" "$output_dir"
     rm -rf "$output_dir"
     
-    echo "Theme exported to: $output_dir.tar.gz"
+    echo "Tema exportado a: $output_dir.tar.gz"
 }
 
-# Export theme
+# Exportar tema
 theme-export
 ```
 
 :::caution
 
-Always backup your theme configurations before major system updates to prevent customization loss.
+Siempre respalda tus configuraciones de tema antes de actualizaciones importantes del sistema para evitar pérdida de personalizaciones.
 
 :::
