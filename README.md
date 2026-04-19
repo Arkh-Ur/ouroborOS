@@ -241,4 +241,9 @@ ouroborOS is an independent open-source project. If it saves you time or you wan
 
 ## License
 
-To be defined.
+This project uses a dual-license approach:
+
+| Component | License |
+|-----------|---------|
+| Code (installer, scripts, tools) | [GNU GPL v3](LICENSE) |
+| Documentation & Wiki | [CC BY-SA 4.0](wiki/LICENSE) |
