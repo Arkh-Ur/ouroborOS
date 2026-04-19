@@ -132,8 +132,9 @@ cmd_create() {
     fi
 
     _info "Creating snapshot '${name}'..."
-    create_snapshot "/" "$dest" --readonly
+    create_snapshot "/" "$dest"
     write_snapshot_metadata "$name" "manual"
+    btrfs property set "$dest" ro true
     _info "Writing boot entry for '${name}'..."
     generate_snapshot_boot_entry "$name" "$ESP" "quiet"
     _ok "Snapshot '${name}' created."

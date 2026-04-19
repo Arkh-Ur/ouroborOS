@@ -110,7 +110,6 @@ print(len(d.get('base_packages', []) + d.get('user_packages', [])))
         sys_hash="sha256:$(sha256sum "$system_yaml" | cut -d' ' -f1)"
     fi
 
-    btrfs property set "$snap_dir" ro false 2>/dev/null || true
     cat > "$yaml_file" <<EOF
 snapshot: ${snap_name}
 created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -119,7 +118,6 @@ system_version: ${version}
 system_yaml_hash: ${sys_hash}
 packages_count: ${pkg_count}
 EOF
-    btrfs property set "$snap_dir" ro true 2>/dev/null || true
     _log_ok "Snapshot metadata written: ${yaml_file}"
 }
 

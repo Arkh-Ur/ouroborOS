@@ -122,8 +122,9 @@ source "$SNAPSHOT_LIB"
 
 SNAP_PRE="pre-rebase-$(date +%Y-%m-%dT%H%M%S)"
 _info "Creating pre-rebase snapshot: ${SNAP_PRE}"
-create_snapshot "/" "/.snapshots/${SNAP_PRE}" --readonly
+create_snapshot "/" "/.snapshots/${SNAP_PRE}"
 write_snapshot_metadata "$SNAP_PRE" "pre-update"
+btrfs property set "/.snapshots/${SNAP_PRE}" ro true
 generate_snapshot_boot_entry "$SNAP_PRE" /boot "quiet ro" 2>/dev/null || true
 
 # --- Apply changes ----------------------------------------------------------
@@ -150,8 +151,9 @@ trap - EXIT
 
 SNAP_POST="post-rebase-$(date +%Y-%m-%dT%H%M%S)"
 _info "Creating post-rebase snapshot: ${SNAP_POST}"
-create_snapshot "/" "/.snapshots/${SNAP_POST}" --readonly
+create_snapshot "/" "/.snapshots/${SNAP_POST}"
 write_snapshot_metadata "$SNAP_POST" "rebase"
+btrfs property set "/.snapshots/${SNAP_POST}" ro true
 generate_snapshot_boot_entry "$SNAP_POST" /boot "quiet ro" 2>/dev/null || true
 
 _ok "Rebase complete. Pre-rebase snapshot: ${SNAP_PRE}"
