@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# ouroboros-rebase — reconcile installed packages with system.yaml manifest
+#
+# Reads /etc/ouroboros/system.yaml, compares base_packages + user_packages
+# against the currently installed package set, and applies the diff with pacman.
+#
+# Usage:
+#   ouroboros-rebase [--dry-run] [--from-channel]
+#
+# Options:
+#   --dry-run        Show what would change without applying it
+#   --from-channel   Download the channel manifest (channel_url) and use it
+#                    instead of the local system.yaml base_packages
+#
+# Exit codes:
+#   0  Nothing to do OR changes applied successfully
+#   1  Fatal error (no system.yaml, pacman failure, etc.)
+set -euo pipefail
+
+readonly PROGRAM="ouroboros-rebase"
+readonly SYSTEM_YAML="/etc/ouroboros/system.yaml"
+readonly SNAPSHOT_LIB="/usr/local/lib/ouroboros/snapshot.sh"
+
+_info() { printf '\033[0;34m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_err()  { printf '\033[0;31m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+[[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+
+# --- Argument parsing -------------------------------------------------------
+
+DRY_RUN=0
+FROM_CHANNEL=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run)      DRY_RUN=1; shift ;;
+        --from-channel) FROM_CHANNEL=1; shift ;;
+        --help|-h)
+            cat <<EOF
+Usage: ${PROGRAM} [--dry-run] [--from-channel]
+
+  --dry-run        Show diff between manifest and installed packages (no changes)
+  --from-channel   Fetch manifest from channel_url in system.yaml before comparing
+
+EOF
+            exit 0
+            ;;
+        *) _die "Unknown option: $1. Use --help for usage." ;;
+    esac
+done
+
+# --- Read manifest ----------------------------------------------------------
+
+[[ -f "$SYSTEM_YAML" ]] || _die "system.yaml not found at ${SYSTEM_YAML}. Is ouroborOS installed?"
+
+if [[ "$FROM_CHANNEL" -eq 1 ]]; then
+    _info "Fetching manifest from channel..."
+    CHANNEL_URL=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('$SYSTEM_YAML'))
+print(d.get('channel_url', ''))
+" 2>/dev/null) || _die "Cannot read channel_url from system.yaml"
+
+    [[ -n "$CHANNEL_URL" ]] || _die "channel_url not set in system.yaml"
+
+    CHANNEL_DATA=$(curl -fsSL --max-time 15 "$CHANNEL_URL" 2>/dev/null) \
+        || _die "Failed to fetch channel manifest from ${CHANNEL_URL}"
+
+    mapfile -t MANIFEST_PKGS < <(python3 -c "
+import yaml, sys
+d = yaml.safe_load(sys.stdin)
+pkgs = sorted(set(d.get('base_packages', [])))
+for p in pkgs: print(p)
+" <<< "$CHANNEL_DATA" 2>/dev/null) || _die "Cannot parse channel manifest"
+    _ok "Channel manifest loaded (${#MANIFEST_PKGS[@]} base packages)"
+else
+    mapfile -t MANIFEST_PKGS < <(python3 -c "
+import yaml
+d = yaml.safe_load(open('$SYSTEM_YAML'))
+pkgs = sorted(set(d.get('base_packages', []) + d.get('user_packages', [])))
+for p in pkgs: print(p)
+" 2>/dev/null) || _die "Cannot parse ${SYSTEM_YAML}"
+fi
+
+# --- Compare with installed -------------------------------------------------
+
+mapfile -t INSTALLED_PKGS < <(pacman -Qq 2>/dev/null | sort)
+
+mapfile -t TO_INSTALL < <(comm -23 \
+    <(printf '%s\n' "${MANIFEST_PKGS[@]}" | sort) \
+    <(printf '%s\n' "${INSTALLED_PKGS[@]}" | sort))
+
+mapfile -t TO_REMOVE < <(comm -13 \
+    <(printf '%s\n' "${MANIFEST_PKGS[@]}" | sort) \
+    <(printf '%s\n' "${INSTALLED_PKGS[@]}" | sort))
+
+if [[ ${#TO_INSTALL[@]} -eq 0 && ${#TO_REMOVE[@]} -eq 0 ]]; then
+    _ok "Nothing to do — installed packages match the manifest."
+    exit 0
+fi
+
+[[ ${#TO_INSTALL[@]} -gt 0 ]] && \
+    _info "To install (${#TO_INSTALL[@]}): ${TO_INSTALL[*]}"
+[[ ${#TO_REMOVE[@]} -gt 0 ]] && \
+    _info "To remove  (${#TO_REMOVE[@]}): ${TO_REMOVE[*]}"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    _info "[dry-run] No changes applied."
+    exit 0
+fi
+
+# --- Pre-rebase snapshot ----------------------------------------------------
+
+[[ -r "$SNAPSHOT_LIB" ]] || _die "Snapshot library not found: ${SNAPSHOT_LIB}"
+# shellcheck source=/dev/null
+source "$SNAPSHOT_LIB"
+
+[[ -d "/.snapshots" ]] || _die "/.snapshots not mounted — cannot create safety snapshot."
+
+SNAP_PRE="pre-rebase-$(date +%Y-%m-%dT%H%M%S)"
+_info "Creating pre-rebase snapshot: ${SNAP_PRE}"
+create_snapshot "/" "/.snapshots/${SNAP_PRE}" --readonly
+write_snapshot_metadata "$SNAP_PRE" "pre-update"
+generate_snapshot_boot_entry "$SNAP_PRE" /boot "quiet ro" 2>/dev/null || true
+
+# --- Apply changes ----------------------------------------------------------
+
+_info "Unlocking root for package changes..."
+btrfs property set / ro false
+trap 'btrfs property set / ro true 2>/dev/null || true' EXIT
+
+if [[ ${#TO_INSTALL[@]} -gt 0 ]]; then
+    _info "Installing missing packages..."
+    pacman -S --needed --noconfirm "${TO_INSTALL[@]}"
+fi
+
+if [[ ${#TO_REMOVE[@]} -gt 0 ]]; then
+    _info "Removing extra packages..."
+    pacman -Rns --noconfirm "${TO_REMOVE[@]}" || \
+        _warn "Some packages could not be removed (may be dependencies) — continuing."
+fi
+
+btrfs property set / ro true
+trap - EXIT
+
+# --- Post-rebase snapshot ---------------------------------------------------
+
+SNAP_POST="post-rebase-$(date +%Y-%m-%dT%H%M%S)"
+_info "Creating post-rebase snapshot: ${SNAP_POST}"
+create_snapshot "/" "/.snapshots/${SNAP_POST}" --readonly
+write_snapshot_metadata "$SNAP_POST" "rebase"
+generate_snapshot_boot_entry "$SNAP_POST" /boot "quiet ro" 2>/dev/null || true
+
+_ok "Rebase complete. Pre-rebase snapshot: ${SNAP_PRE}"

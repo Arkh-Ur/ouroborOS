@@ -125,6 +125,63 @@ create_install_snapshot() {
     _log_ok "Installation snapshot created at ${snapshot_path}"
 }
 
+# --- Snapshot metadata ------------------------------------------------------
+
+# write_snapshot_metadata SNAP_NAME [TYPE]
+#   — write /.snapshots/NAME/.snapshot.yaml with capture-time metadata
+#
+# Args:
+#   SNAP_NAME — name of the snapshot (must exist under /.snapshots/)
+#   TYPE      — one of: install | pre-update | manual | rebase (default: manual)
+#
+# When system.yaml exists at /etc/ouroboros/system.yaml (runtime), the metadata
+# includes the version, package count, and a SHA-256 of the manifest.
+# Called by our-snapshot create, our-pac (pre-upgrade), and ouroboros-rebase.
+write_snapshot_metadata() {
+    local snap_name="$1"
+    local snap_type="${2:-manual}"
+    local snap_dir="/.snapshots/${snap_name}"
+    local yaml_file="${snap_dir}/.snapshot.yaml"
+    local system_yaml="/etc/ouroboros/system.yaml"
+
+    [[ -d "$snap_dir" ]] || return 0   # silencioso si el directorio no existe
+
+    local version="unknown" pkg_count=0 sys_hash="none"
+
+    if [[ -f "$system_yaml" ]] && command -v python3 &>/dev/null; then
+        version=$(python3 -c "
+import yaml, sys
+try:
+    d = yaml.safe_load(open('$system_yaml'))
+    print(d.get('version', 'unknown'))
+except Exception:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+        pkg_count=$(python3 -c "
+import yaml
+try:
+    d = yaml.safe_load(open('$system_yaml'))
+    print(len(d.get('base_packages', []) + d.get('user_packages', [])))
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0)
+
+        sys_hash="sha256:$(sha256sum "$system_yaml" | cut -d' ' -f1)"
+    fi
+
+    # Read-only snapshots can't be written to — write directly (not inside snap)
+    cat > "$yaml_file" <<EOF
+snapshot: ${snap_name}
+created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+type: ${snap_type}
+system_version: ${version}
+system_yaml_hash: ${sys_hash}
+packages_count: ${pkg_count}
+EOF
+    _log_ok "Snapshot metadata written: ${yaml_file}"
+}
+
 # --- Boot entry generation --------------------------------------------------
 
 # generate_snapshot_boot_entry SNAPSHOT_NAME ESP_PATH KERNEL_PARAMS
@@ -301,6 +358,21 @@ if [[ "${1:-}" == "--action" ]]; then
             fi
             create_install_snapshot "$target"
             generate_snapshot_boot_entry "install" "${target}/boot" "quiet ro"
+            ;;
+        write_snapshot_metadata)
+            snap_name="" snap_type="manual"
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --name) snap_name="${2:?--name requires a value}"; shift 2 ;;
+                    --type) snap_type="${2:?--type requires a value}"; shift 2 ;;
+                    *) _log_error "Unknown option: $1"; exit 1 ;;
+                esac
+            done
+            if [[ -z "$snap_name" ]]; then
+                _log_error "write_snapshot_metadata requires --name"
+                exit 1
+            fi
+            write_snapshot_metadata "$snap_name" "$snap_type"
             ;;
         *)
             _log_error "Unknown action: $action"

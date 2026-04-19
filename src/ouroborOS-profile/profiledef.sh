@@ -32,6 +32,7 @@ file_permissions=(
   ["/usr/local/bin/our-snapshot"]="0:0:755"
   ["/usr/local/bin/our-wifi"]="0:0:755"
   ["/usr/local/bin/ouroboros-firstboot"]="0:0:755"
+  ["/usr/local/bin/ouroboros-rebase"]="0:0:755"
   ["/usr/local/bin/ouroboros-secureboot"]="0:0:755"
   ["/usr/local/bin/ouroboros-snapshot-on-boot"]="0:0:755"
 )

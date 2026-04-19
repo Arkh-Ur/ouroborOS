@@ -899,6 +899,7 @@ STUB
         our-flat
         our-aur
         ouroboros-secureboot
+        ouroboros-rebase
     )
     for _tool in "${_p3_tools[@]}"; do
         local _src="/usr/local/bin/${_tool}"

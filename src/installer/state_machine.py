@@ -968,9 +968,44 @@ class Installer:
         system_yaml_path.chmod(0o644)
         log.info("system.yaml written: %s", system_yaml_path)
 
+    def _write_install_snapshot_metadata(self) -> None:
+        """Write .snapshot.yaml inside the install snapshot after system.yaml exists."""
+        import hashlib  # noqa: PLC0415
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        snap_dir = Path(self.config.install_target) / ".snapshots" / "install"
+        if not snap_dir.exists():
+            log.debug("Install snapshot dir not found — skipping .snapshot.yaml")
+            return
+
+        system_yaml = Path(self.config.install_target) / "etc" / "ouroboros" / "system.yaml"
+        if system_yaml.exists():
+            raw = system_yaml.read_bytes()
+            sys_hash = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+            version = self.config.to_system_yaml()["version"]
+            pkg_count = len(self.config.installed_packages)
+        else:
+            sys_hash = "none"
+            version = "unknown"
+            pkg_count = 0
+
+        created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        metadata = (
+            f"snapshot: install\n"
+            f"created: {created}\n"
+            f"type: install\n"
+            f"system_version: {version}\n"
+            f"system_yaml_hash: {sys_hash}\n"
+            f"packages_count: {pkg_count}\n"
+        )
+        snap_yaml = snap_dir / ".snapshot.yaml"
+        snap_yaml.write_text(metadata, encoding="utf-8")
+        log.info("Install snapshot metadata written: %s", snap_yaml)
+
     def _handle_finish(self) -> None:
         """FINISH — write system.yaml, show summary, then reboot or shutdown."""
         self._write_system_yaml()
+        self._write_install_snapshot_metadata()
 
         if self.tui:
             self.tui.finish_install_progress()

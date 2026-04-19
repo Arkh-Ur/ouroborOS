@@ -133,6 +133,7 @@ cmd_create() {
 
     _info "Creating snapshot '${name}'..."
     create_snapshot "/" "$dest" --readonly
+    write_snapshot_metadata "$name" "manual"
     _info "Writing boot entry for '${name}'..."
     generate_snapshot_boot_entry "$name" "$ESP" "quiet"
     _ok "Snapshot '${name}' created."
@@ -189,6 +190,13 @@ cmd_info() {
     local size
     size=$(btrfs filesystem du -s "$path" 2>/dev/null | tail -1 | awk '{print $1, $2}' || echo "?")
     printf 'Size:       %s\n'  "$size"
+
+    local meta_file="${path}/.snapshot.yaml"
+    if [[ -f "$meta_file" ]]; then
+        echo ""
+        echo "--- .snapshot.yaml ---"
+        cat "$meta_file"
+    fi
 
     btrfs subvolume show "$path" 2>/dev/null || true
 }

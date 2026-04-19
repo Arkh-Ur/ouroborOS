@@ -983,21 +983,24 @@ class TestHandleFinish:
     def test_action_none_stays_up(self) -> None:
         installer = self._make_installer("none")
         with patch("os.system") as mock_system, \
-             patch.object(installer, "_write_system_yaml"):
+             patch.object(installer, "_write_system_yaml"), \
+             patch.object(installer, "_write_install_snapshot_metadata"):
             installer._handle_finish()
         mock_system.assert_not_called()
 
     def test_action_shutdown_calls_poweroff(self) -> None:
         installer = self._make_installer("shutdown")
         with patch("os.system") as mock_system, \
-             patch.object(installer, "_write_system_yaml"):
+             patch.object(installer, "_write_system_yaml"), \
+             patch.object(installer, "_write_install_snapshot_metadata"):
             installer._handle_finish()
         mock_system.assert_called_once_with("poweroff")
 
     def test_action_reboot_calls_reboot(self) -> None:
         installer = self._make_installer("reboot")
         with patch("os.system") as mock_system, \
-             patch.object(installer, "_write_system_yaml"):
+             patch.object(installer, "_write_system_yaml"), \
+             patch.object(installer, "_write_install_snapshot_metadata"):
             installer._handle_finish()
         mock_system.assert_called_once_with("reboot")
 
@@ -1007,7 +1010,8 @@ class TestHandleFinish:
         mock_tui.show_post_install_action.return_value = "none"
         installer.tui = mock_tui
         with patch("os.system"), \
-             patch.object(installer, "_write_system_yaml"):
+             patch.object(installer, "_write_system_yaml"), \
+             patch.object(installer, "_write_install_snapshot_metadata"):
             installer._handle_finish()
         mock_tui.finish_install_progress.assert_called_once()
         mock_tui.show_summary.assert_called_once()
@@ -1110,6 +1114,72 @@ class TestSystemYaml:
         data = yaml.safe_load(yaml_file.read_text())
         assert data["system"]["hostname"] == "test-host"
         assert "base" in data["base_packages"]
+# ---------------------------------------------------------------------------
+
+
+class TestInstallSnapshotMetadata:
+    """Tests for _write_install_snapshot_metadata() in state_machine.py."""
+
+    def _make_installer(self, tmp_path: Path) -> Installer:
+        inst = Installer()
+        inst.tui = None
+        inst.config.install_target = str(tmp_path)
+        inst.config.installed_packages = ["base", "linux-zen", "python"]
+        return inst
+
+    def _setup_dirs(self, tmp_path: Path, with_system_yaml: bool = True) -> None:
+        snap_dir = tmp_path / ".snapshots" / "install"
+        snap_dir.mkdir(parents=True)
+        if with_system_yaml:
+            sys_yaml = tmp_path / "etc" / "ouroboros" / "system.yaml"
+            sys_yaml.parent.mkdir(parents=True)
+            sys_yaml.write_text(
+                "version: '0.5.1'\nchannel: stable\nbase_packages: [base, linux-zen]\n"
+                "user_packages: []\naur_packages: []\n",
+                encoding="utf-8",
+            )
+
+    def test_metadata_written(self, tmp_path: Path) -> None:
+        self._setup_dirs(tmp_path)
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()
+        snap_yaml = tmp_path / ".snapshots" / "install" / ".snapshot.yaml"
+        assert snap_yaml.exists()
+
+    def test_metadata_type_is_install(self, tmp_path: Path) -> None:
+        self._setup_dirs(tmp_path)
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()
+        content = (tmp_path / ".snapshots" / "install" / ".snapshot.yaml").read_text()
+        assert "type: install" in content
+
+    def test_metadata_contains_version(self, tmp_path: Path) -> None:
+        self._setup_dirs(tmp_path)
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()
+        content = (tmp_path / ".snapshots" / "install" / ".snapshot.yaml").read_text()
+        assert "system_version:" in content
+
+    def test_metadata_contains_hash(self, tmp_path: Path) -> None:
+        self._setup_dirs(tmp_path)
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()
+        content = (tmp_path / ".snapshots" / "install" / ".snapshot.yaml").read_text()
+        assert "system_yaml_hash: sha256:" in content
+
+    def test_metadata_skipped_if_no_snapshot_dir(self, tmp_path: Path) -> None:
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()  # Should not raise
+        snap_yaml = tmp_path / ".snapshots" / "install" / ".snapshot.yaml"
+        assert not snap_yaml.exists()
+
+    def test_metadata_without_system_yaml(self, tmp_path: Path) -> None:
+        self._setup_dirs(tmp_path, with_system_yaml=False)
+        inst = self._make_installer(tmp_path)
+        inst._write_install_snapshot_metadata()
+        content = (tmp_path / ".snapshots" / "install" / ".snapshot.yaml").read_text()
+        assert "system_yaml_hash: none" in content
+        assert "system_version: unknown" in content
 # ---------------------------------------------------------------------------
 
 
