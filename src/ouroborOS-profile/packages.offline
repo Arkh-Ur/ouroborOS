@@ -1,0 +1,83 @@
+# ouroborOS — offline cache manifest
+#
+# Extra packages downloaded by --with-cache ON TOP of packages.x86_64
+# and the installer base set (linux-zen-headers, sudo, zram-generator).
+#
+# This file covers: desktop profiles, display managers, shells, microcode,
+# and any extra_packages commonly used in unattended configs.
+#
+# To add profile packages: list them here and rebuild with --with-cache.
+
+# Microcode (both — installer detects which one at runtime)
+intel-ucode
+amd-ucode
+
+# Shells (bash is in base)
+zsh
+fish
+
+# Display managers (Wayland-native)
+gdm
+sddm
+
+# Minimal profile: (no extra packages)
+
+# Hyprland profile
+hyprland
+xdg-desktop-portal-hyprland
+waybar
+foot
+hyprlauncher
+hyprpolkitagent
+hyprlock
+hypridle
+hyprpaper
+hyprsunset
+hyprland-qt-support
+dunst
+grim
+slurp
+thunar
+qt5-wayland
+qt6-wayland
+
+# niri profile
+niri
+xdg-desktop-portal-gnome
+fuzzel
+polkit-gnome
+mako
+swaylock
+swaybg
+swayidle
+
+# GNOME profile
+gnome
+gnome-tweaks
+xdg-user-dirs
+
+# KDE profile
+plasma-meta
+dolphin
+konsole
+kate
+gwenview
+ark
+ffmpegthumbs
+
+# COSMIC profile
+cosmic-session
+cosmic-comp
+cosmic-terminal
+cosmic-files
+cosmic-launcher
+cosmic-settings
+cosmic-settings-daemon
+cosmic-applets
+cosmic-notifications
+cosmic-bg
+cosmic-idle
+cosmic-panel
+cosmic-osd
+cosmic-app-library
+xdg-desktop-portal-cosmic

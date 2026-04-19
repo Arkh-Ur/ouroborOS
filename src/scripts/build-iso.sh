@@ -298,12 +298,11 @@ inject_version() {
 inject_version
 
 # ── Offline Package Cache ─────────────────────────────────────────────────────
-# Pre-downloads base packages into the airootfs so the installer can work
+# Pre-downloads packages into the airootfs so the installer can work
 # without an internet connection. Opt-in via --with-cache.
 build_offline_cache() {
     local cache_dest="${PROFILE_DIR}/airootfs/var/cache/pacman/pkg"
     local pkg_list="${PROFILE_DIR}/packages.x86_64"
-    # pacman drops privileges to alpm for downloads — needs a writable path under /var
     local tmp_cache="/var/cache/pacman/ouroboros-offline-cache"
 
     [[ -f "$pkg_list" ]] || { log_warn "--with-cache: packages.x86_64 not found — skipping cache"; return 0; }
@@ -316,15 +315,37 @@ build_offline_cache() {
     chmod 755 "$tmp_cache"
 
     local pkgs=()
+
+    # 1) ISO live packages
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// }" ]] && continue
         pkgs+=("$line")
     done < "$pkg_list"
 
+    # 2) Installer target packages not already in packages.x86_64
+    #    Source of truth: _handle_install() in state_machine.py
+    local installer_pkgs=(
+        linux-zen-headers
+        sudo
+        zram-generator
+    )
+    pkgs+=("${installer_pkgs[@]}")
+
+    # 3) Extra packages from manifest (profiles, DMs, shells, etc.)
+    #    Optional: create packages.offline in the profile dir to extend the cache.
+    local offline_manifest="${PROFILE_DIR}/packages.offline"
+    if [[ -f "$offline_manifest" ]]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            pkgs+=("$line")
+        done < "$offline_manifest"
+        log_info "Including packages from packages.offline manifest"
+    fi
+
     pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}" || true
 
-    # Copy downloaded packages to airootfs (erofs will include them in the ISO)
     find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
     rm -rf "$tmp_cache"
 
