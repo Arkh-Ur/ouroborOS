@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ouroborOS OTA update check
+Documentation=https://github.com/Arkh-Ur/ouroborOS
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

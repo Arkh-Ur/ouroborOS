@@ -14,6 +14,7 @@ set -euo pipefail
 #   -p, --profile DIR    Archiso profile directory (default: ./ouroborOS-profile)
 #   -c, --clean          Clean working directory before build
 #   -s, --sign           GPG-sign the ISO after build
+#   --with-cache         Pre-download packages into ISO for offline installation
 #   --e2e-config=PATH    Inject unattended test config (for CI/E2E only; not for production)
 #   -h, --help           Show this help message
 #
@@ -35,6 +36,7 @@ CLEAN_BUILD=false
 SIGN_ISO=false
 E2E_CONFIG=""
 VERSION=""
+WITH_CACHE=false
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -68,6 +70,7 @@ while [[ $# -gt 0 ]]; do
         --output=*)          OUTPUT_DIR="${1#*=}"; shift ;;
         -c|--clean)          CLEAN_BUILD=true; shift ;;
         -s|--sign)           SIGN_ISO=true; shift ;;
+        --with-cache)        WITH_CACHE=true; shift ;;
         --version=*)         VERSION="${1#*=}"; shift ;;
         --e2e-config=*)      E2E_CONFIG="${1#*=}"; shift ;;
         --e2e-config)        E2E_CONFIG="$2"; shift 2 ;;
@@ -294,11 +297,44 @@ inject_version() {
 }
 inject_version
 
+# ── Offline Package Cache ─────────────────────────────────────────────────────
+# Pre-downloads base packages into the airootfs so the installer can work
+# without an internet connection. Opt-in via --with-cache.
+build_offline_cache() {
+    local cache_dest="${PROFILE_DIR}/airootfs/var/cache/pacman/pkg"
+    local pkg_list="${PROFILE_DIR}/packages.x86_64"
+
+    [[ -f "$pkg_list" ]] || { log_warn "--with-cache: packages.x86_64 not found — skipping cache"; return 0; }
+
+    log_section "Building Offline Package Cache"
+    log_info "Downloading packages for offline install..."
+
+    mkdir -p "$cache_dest"
+
+    local pkgs=()
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// }" ]] && continue
+        pkgs+=("$line")
+    done < "$pkg_list"
+
+    pacman --noconfirm --cachedir "$cache_dest" --downloadonly -Syw "${pkgs[@]}" 2>/dev/null || true
+
+    local count
+    count=$(find "$cache_dest" -name "*.pkg.tar.zst" | wc -l)
+    log_ok "Offline cache: ${count} packages at ${cache_dest}"
+}
+
+if [[ "$WITH_CACHE" == true ]]; then
+    build_offline_cache
+fi
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 log_section "Building ISO"
 log_info "Profile:  $PROFILE_DIR"
 log_info "Work dir: $WORK_DIR"
 log_info "Output:   $OUTPUT_DIR"
+[[ "$WITH_CACHE" == true ]] && log_info "Mode:     offline cache enabled"
 echo ""
 
 BUILD_START=$(date +%s)

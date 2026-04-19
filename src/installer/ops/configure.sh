@@ -1186,6 +1186,25 @@ GREETD_EOF
         log_warn "our-snapshot-prune units not found on live ISO — skipping."
     fi
 
+    # ouroboros-update.timer — daily OTA update check.
+    # Compares local system version against the published channel manifest.
+    # Writes /var/lib/ouroborOS/update-available if a newer version is found.
+    local UPDATE_BIN_SRC="/usr/local/bin/ouroboros-update"
+    local UPDATE_SVC_SRC="/etc/systemd/system/ouroboros-update.service"
+    local UPDATE_TIMER_SRC="/etc/systemd/system/ouroboros-update.timer"
+    if [[ -f "${UPDATE_BIN_SRC}" && -f "${UPDATE_SVC_SRC}" && -f "${UPDATE_TIMER_SRC}" ]]; then
+        cp "${UPDATE_BIN_SRC}" "${TARGET}/usr/local/bin/ouroboros-update"
+        chmod 0755 "${TARGET}/usr/local/bin/ouroboros-update"
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${UPDATE_SVC_SRC}" "${TARGET}/etc/systemd/system/ouroboros-update.service"
+        cp "${UPDATE_TIMER_SRC}" "${TARGET}/etc/systemd/system/ouroboros-update.timer"
+        mkdir -p "${TARGET}/var/lib/ouroborOS"
+        in_chroot systemctl enable ouroboros-update.timer
+        log_ok "ouroboros-update.timer enabled (daily OTA check)."
+    else
+        log_warn "ouroboros-update units not found on live ISO — skipping."
+    fi
+
     # ouroboros-snapshot-on-boot — early-boot service that auto-creates and promotes
     # a new snapshot when the system boots from @snapshots/X instead of @.
     # This preserves all existing snapshots as restore points.

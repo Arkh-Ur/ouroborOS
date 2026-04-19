@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# ouroboros-update — check for available OTA updates via the stable channel
+#
+# Compares the local system version against the published channel manifest.
+# If a newer version is available, writes a flag file so the user can be notified.
+#
+# Usage:
+#   ouroboros-update --check [--channel-url URL]
+#
+# Options:
+#   --check              Check for updates (default action)
+#   --channel-url URL    Override the channel URL (useful for testing)
+#   --status             Print current update status and exit
+#
+# Exit codes:
+#   0  No update needed OR update flag written successfully
+#   1  Fatal error (no system.yaml, network failure, etc.)
+set -euo pipefail
+
+readonly PROGRAM="ouroboros-update"
+readonly SYSTEM_YAML="/etc/ouroboros/system.yaml"
+readonly STATE_DIR="/var/lib/ouroborOS"
+readonly UPDATE_FLAG="${STATE_DIR}/update-available"
+
+_info() { printf '\033[0;34m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_err()  { printf '\033[0;31m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+# --- Argument parsing -------------------------------------------------------
+
+ACTION="check"
+CHANNEL_URL_OVERRIDE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --check)           ACTION="check"; shift ;;
+        --status)          ACTION="status"; shift ;;
+        --channel-url)     CHANNEL_URL_OVERRIDE="$2"; shift 2 ;;
+        --channel-url=*)   CHANNEL_URL_OVERRIDE="${1#*=}"; shift ;;
+        --help|-h)
+            cat <<EOF
+Usage: ${PROGRAM} [--check] [--channel-url URL] [--status]
+
+  --check              Check for available updates (default)
+  --channel-url URL    Override channel URL (for testing)
+  --status             Show current update status
+
+EOF
+            exit 0
+            ;;
+        *) _die "Unknown option: $1. Use --help for usage." ;;
+    esac
+done
+
+# --- Status action ----------------------------------------------------------
+
+if [[ "$ACTION" == "status" ]]; then
+    if [[ -f "$UPDATE_FLAG" ]]; then
+        _info "Update available: $(cat "$UPDATE_FLAG")"
+        _info "Apply with: ouroboros-rebase --from-channel"
+    else
+        _ok "System is up to date."
+    fi
+    exit 0
+fi
+
+# --- Check action -----------------------------------------------------------
+
+[[ -f "$SYSTEM_YAML" ]] || _die "system.yaml not found at ${SYSTEM_YAML}. Is ouroborOS installed?"
+
+# Read local version and channel URL
+LOCAL_VERSION=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('$SYSTEM_YAML'))
+print(d.get('version', '0.0.0'))
+" 2>/dev/null) || _die "Cannot read version from ${SYSTEM_YAML}"
+
+if [[ -n "$CHANNEL_URL_OVERRIDE" ]]; then
+    CHANNEL_URL="$CHANNEL_URL_OVERRIDE"
+else
+    CHANNEL_URL=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('$SYSTEM_YAML'))
+print(d.get('channel_url', ''))
+" 2>/dev/null) || _die "Cannot read channel_url from ${SYSTEM_YAML}"
+    [[ -n "$CHANNEL_URL" ]] || _die "channel_url not set in ${SYSTEM_YAML}"
+fi
+
+_info "Local version:   ${LOCAL_VERSION}"
+_info "Checking channel: ${CHANNEL_URL}"
+
+# Fetch channel manifest
+if [[ "$CHANNEL_URL" == file://* ]]; then
+    CHANNEL_FILE="${CHANNEL_URL#file://}"
+    [[ -f "$CHANNEL_FILE" ]] || _die "Channel file not found: ${CHANNEL_FILE}"
+    CHANNEL_DATA=$(cat "$CHANNEL_FILE")
+else
+    CHANNEL_DATA=$(curl -fsSL --max-time 15 "$CHANNEL_URL" 2>/dev/null) \
+        || _die "Failed to fetch channel manifest from ${CHANNEL_URL}"
+fi
+
+REMOTE_VERSION=$(python3 -c "
+import yaml, sys
+d = yaml.safe_load(sys.stdin)
+print(d.get('version', '0.0.0'))
+" <<< "$CHANNEL_DATA" 2>/dev/null) || _die "Cannot parse channel manifest"
+
+
+_info "Remote version:  ${REMOTE_VERSION}"
+
+# Compare versions (semver-style: split by '.' compare numerically)
+_version_gt() {
+    local a="$1" b="$2"
+    python3 -c "
+a = tuple(int(x) for x in '${a}'.split('.'))
+b = tuple(int(x) for x in '${b}'.split('.'))
+exit(0 if a > b else 1)
+" 2>/dev/null
+}
+
+if _version_gt "$REMOTE_VERSION" "$LOCAL_VERSION"; then
+    _info "Update available: ${LOCAL_VERSION} → ${REMOTE_VERSION}"
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$REMOTE_VERSION" > "$UPDATE_FLAG"
+    _ok "Update flag written: ${UPDATE_FLAG}"
+    _info "Apply with: ouroboros-rebase --from-channel"
+else
+    _ok "System is up to date (${LOCAL_VERSION})."
+    rm -f "$UPDATE_FLAG"
+fi

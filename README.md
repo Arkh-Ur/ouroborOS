@@ -28,7 +28,7 @@
 
 An ArchLinux-based Linux distribution with an **immutable root filesystem**, a fully **systemd-native** stack, and a built-in **snapshot-based upgrade system**. Includes `our-aur` (containerized AUR helper) and `our-flat` (Flatpak wrapper).
 
-> **Status:** v0.5.0 — Phase 5 in progress. Declarative `system.yaml` manifest and OTA updates. See [docs.ouroboros.la](https://arkh-ur.github.io/ouroborOS/) for full documentation.
+> **Status:** v0.5.2 — Phase 5 in progress. OTA update daemon (`ouroboros-update`), offline install cache, and declarative `system.yaml` manifest. See [docs.ouroboros.la](https://arkh-ur.github.io/ouroborOS/) for full documentation.
 
 ---
 
@@ -138,6 +138,39 @@ Every upgrade creates a timestamped Btrfs snapshot with a matching boot entry. T
 1. Reboot the machine.
 2. At the systemd-boot menu, select `ouroborOS snapshot (YYYY-MM-DDTHHMMSS)`.
 3. The system boots into the read-only snapshot — your previous state, intact.
+
+---
+
+## OTA updates
+
+`ouroboros-update` checks daily for new versions via the stable channel manifest:
+
+```bash
+# Check manually
+sudo ouroboros-update --check
+
+# See current update status
+ouroboros-update --status
+
+# Apply an available update
+sudo ouroboros-rebase --from-channel
+```
+
+The timer runs automatically after install. When an update is available, a flag is written
+to `/var/lib/ouroborOS/update-available`.
+
+---
+
+## Offline installation
+
+Build the ISO with a pre-downloaded package cache for environments without internet:
+
+```bash
+sudo bash src/scripts/build-iso.sh --with-cache
+```
+
+The resulting ISO includes all base packages in `/var/cache/pacman/pkg/`. The installer
+detects the cache automatically and uses it without downloading anything.
 
 ---
 

@@ -35,4 +35,5 @@ file_permissions=(
   ["/usr/local/bin/ouroboros-rebase"]="0:0:755"
   ["/usr/local/bin/ouroboros-secureboot"]="0:0:755"
   ["/usr/local/bin/ouroboros-snapshot-on-boot"]="0:0:755"
+  ["/usr/local/bin/ouroboros-update"]="0:0:755"
 )

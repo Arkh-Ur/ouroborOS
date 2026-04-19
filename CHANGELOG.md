@@ -5,6 +5,39 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-04-19
+
+### Added
+
+- **`channels/stable.yaml`** — OTA channel manifest published automatically by CI with
+  each release tag. Contains `version`, `released`, `min_compatible_version`,
+  `changelog_url`, and `base_packages` list. Served from the public repo at
+  `https://raw.githubusercontent.com/Arkh-Ur/ouroborOS/main/channels/stable.yaml`.
+- **`ouroboros-update`** — new script at `/usr/local/bin/ouroboros-update`. Reads
+  `channel_url` from `/etc/ouroboros/system.yaml`, fetches the remote channel manifest,
+  and compares versions (semver). Writes `/var/lib/ouroborOS/update-available` flag when
+  a newer version is available. Supports `--channel-url` override for testing and
+  `--status` to check current update state.
+- **`ouroboros-update.timer`** — systemd timer that runs `ouroboros-update --check`
+  daily (with 30-minute randomized delay). Enabled automatically during install.
+- **`ouroboros-update.service`** — oneshot systemd unit for the update check, runs
+  after `network-online.target` and only if `/etc/ouroboros/system.yaml` exists.
+- **Offline install cache** (`build-iso.sh --with-cache`) — new build flag that
+  pre-downloads all `packages.x86_64` into the ISO at
+  `/var/cache/pacman/pkg/*.pkg.tar.zst`. The installer auto-detects the cache and passes
+  `--cachedir` to `pacstrap`, enabling fully offline installation.
+
+### Changed
+
+- `build.yml` release job now generates `channels/stable.yaml` and commits it before
+  pushing to the public repo, so the file is always up to date after each release.
+- `configure.sh` installs and enables `ouroboros-update.timer` on every new install.
+- `profiledef.sh` adds `ouroboros-update` to `file_permissions` (0755).
+
+### Tests
+
+- 577 tests passing (no regressions from v0.5.1).
+
 ## [0.5.1] - 2026-04-19
 
 ### Added

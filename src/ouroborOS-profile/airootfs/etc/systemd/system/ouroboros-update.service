@@ -1,0 +1,12 @@
+[Unit]
+Description=ouroborOS OTA update check
+Documentation=https://github.com/Arkh-Ur/ouroborOS
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/ouroboros/system.yaml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ouroboros-update --check
+StandardOutput=journal
+StandardError=journal

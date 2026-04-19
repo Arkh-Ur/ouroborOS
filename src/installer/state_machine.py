@@ -702,6 +702,13 @@ class Installer:
             pass
         return None
 
+    def _detect_offline_cache(self) -> str | None:
+        """Return path to pre-populated pacman cache if ISO was built with --with-cache."""
+        cache = Path("/var/cache/pacman/pkg")
+        if cache.is_dir() and any(cache.glob("*.pkg.tar.zst")):
+            return str(cache)
+        return None
+
     def _handle_install(self) -> None:
         """INSTALL — pacstrap base system with automatic retries."""
         target = self.config.install_target
@@ -766,7 +773,12 @@ class Installer:
         # Capture for system.yaml generation at FINISH
         self.config.installed_packages = list(packages)
 
-        cmd = ["pacstrap", "-K", target] + packages
+        offline_cache = self._detect_offline_cache()
+        if offline_cache:
+            log.info("Offline package cache detected at %s — using --cachedir", offline_cache)
+            cmd = ["pacstrap", "-K", "--cachedir", offline_cache, target] + packages
+        else:
+            cmd = ["pacstrap", "-K", target] + packages
         max_retries = 10
 
         for attempt in range(1, max_retries + 1):

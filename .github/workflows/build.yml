@@ -160,6 +160,24 @@ jobs:
             --output out/ \
             --version="${VERSION}"
 
+      - name: Generate channels/stable.yaml
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          RELEASED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          PKGS=$(grep -v '^#' src/ouroborOS-profile/packages.x86_64 | grep -v '^$' | sort | sed 's/^/  - /')
+          cat > channels/stable.yaml <<CHANEOF
+          # channels/stable.yaml — ouroborOS OTA stable channel
+          # Generated automatically by CI on tag ${TAG}
+          version: ${VERSION}
+          released: ${RELEASED}
+          min_compatible_version: 0.5.0
+          changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/${TAG}
+          base_packages:
+          ${PKGS}
+          CHANEOF
+          cat channels/stable.yaml
+
       - name: Generate SHA256 checksum
         run: |
           cd out/
@@ -229,6 +247,11 @@ jobs:
             exit 0
           fi
           git config --global --add safe.directory '*'
+          git config user.name "ouroborOS CI"
+          git config user.email "ci@ouroboros.dev"
+          # Commit the generated channels/stable.yaml so the public repo has it
+          git add channels/stable.yaml
+          git diff --cached --quiet || git commit -m "chore(channels): update stable.yaml for ${{ github.ref_name }}"
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
           git push public "HEAD:refs/heads/main" --force
