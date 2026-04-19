@@ -1,0 +1,537 @@
+---
+title: System Rescue & Rollbacks
+description: How to rescue and roll back a broken ouroborOS installation using Btrfs snapshots.
+slug: troubleshooting/rescue
+---
+
+# System Rescue & Rollbacks
+
+Every `our-pac` operation creates a Btrfs snapshot before making changes. If an update breaks your system, you can roll back to a known-good state in seconds — no live USB required.
+
+## Quick Rollback via Boot Menu
+
+The simplest rollback method uses the systemd-boot menu:
+
+```bash
+# 1. Reboot your machine
+sudo reboot
+
+# 2. At the systemd-boot menu, select a snapshot entry:
+#    ouroborOS snapshot (2026-04-18T143000)
+```
+
+:::tip
+Boot menu entries are automatically generated for every snapshot. Just pick the one from before the problematic update.
+:::
+
+## Rollback from Running System
+
+```bash
+# Boot into snapshot for next boot only (non-destructive)
+sudo our-rollback now
+
+# Permanently promote a snapshot to be the active system
+sudo our-rollback promote
+```
+
+## Advanced Rollback Operations
+
+### Test Before Promoting
+
+Use `our-rollback try` to boot from a snapshot without making it permanent:
+
+```bash
+# List available snapshots
+sudo our-rollback list
+
+# Boot once from a specific snapshot (non-destructive)
+sudo our-rollback try 2026-04-18T143000
+
+# If the snapshot works, make it permanent
+sudo our-rollback promote 2026-04-18T143000
+
+# If it fails, reboot — system returns to current state automatically
+```
+
+### Undo Last Promote
+
+If a promotion caused issues and you have an `@.old` backup:
+
+```bash
+# Restore from the previous @.old snapshot
+sudo our-rollback undo
+```
+
+### Snapshot Management
+
+```bash
+# Create manual snapshot with custom name
+sudo our-snapshot create pre-firefox-upgrade
+
+# List all snapshots with sizes and types
+sudo our-snapshot list
+
+# Get detailed info about a specific snapshot
+sudo our-snapshot info 2026-04-18T143000
+
+# Delete old snapshots (keep 5 recent, 30 days max)
+sudo our-snapshot prune --keep 5 --days 30
+
+# Sync missing boot entries
+sudo our-snapshot sync-boot-entries
+```
+
+## Chroot Rescue
+
+If you need to access your system files for repairs:
+
+```bash
+# 1. Boot from a known-good snapshot
+sudo our-rollback try 2026-04-18T143000
+
+# 2. Mount your current root system for editing
+mkdir /mnt/old-root
+mount -t btrfs -o subvol=@ /dev/nvme0n1p2 /mnt/old-root
+
+# 3. Chroot into the broken system for repairs
+chroot /mnt/old-root
+
+# 4. Make your repairs (e.g., fix broken packages)
+pacman -Syu
+pacman -S --overwrite '*' problematic-package
+
+# 5. Exit and reboot
+exit
+reboot
+```
+
+## Live ISO Recovery
+
+If your system won't boot at all, use the live ISO:
+
+```bash
+# Boot from the ouroborOS ISO
+# At the boot menu, select "Boot to live system"
+
+# 1. Find your root partition
+lsblk -f
+# Look for the partition with "ouroborOS" label
+
+# 2. Mount your system
+mount -t btrfs -o subvol=@ /dev/sdX2 /mnt
+
+# 3. Access your files
+ls /mnt/home
+ls /mnt/etc
+
+# 4. Backup important data
+cp -r /mnt/home/user/important-backup ~/Downloads/
+
+# 5. If needed, manually rollback snapshot
+mount -t btrfs -o subvolid=5 /dev/sdX2 /mnt/top
+cd /mnt/top
+mv @ @.broken
+mv @snapshots/2026-04-18T143000 @
+umount /mnt/top
+```
+
+## Btrfs Repair Operations
+
+### Check Filesystem Health
+
+```bash
+# Check Btrfs filesystem for errors
+sudo btrfs check /dev/sdX2
+
+# Scan for repairable errors
+sudo btrfs check --repair /dev/sdX2
+
+# Balance Btrfs filesystem
+sudo btrfs balance start /dev/sdX2
+
+# Scrub for bad blocks
+sudo btrfs scrub start /dev/sdX2
+```
+
+### Snapshot Recovery
+
+If a snapshot is corrupted:
+
+```bash
+# List snapshots to identify the problematic one
+sudo our-snapshot list
+
+# Delete corrupted snapshot (if safe to do so)
+sudo our-snapshot delete corrupted-snapshot-name
+
+# Restore from a working snapshot
+sudo our-rollback try working-snapshot-name
+sudo our-rollback promote working-snapshot-name
+```
+
+### Emergency System Reset
+
+If the system is completely broken and you need to start over:
+
+```bash
+# 1. Boot from live ISO
+# 2. Mount root partition
+mount -t btrfs -o subvolid=5 /dev/sdX2 /mnt
+
+# 3. Remove the current @ subvolume
+cd /mnt
+btrfs subvolume delete @
+
+# 4. Restore from the baseline 'install' snapshot
+btrfs subvolume snapshot @snapshots/install @
+
+# 5. Reboot
+umount /mnt
+reboot
+```
+
+## Boot Menu Recovery
+
+### systemd-boot Entry Management
+
+```bash
+# View all boot entries
+bootctl list
+
+# Manually regenerate boot entries
+sudo our-snapshot sync-boot-entries
+
+# Set default boot entry
+bootctl set-default ouroborOS.conf
+
+# Create one-shot boot entry
+bootctl set-oneshot ouroborOS-snapshot-2026-04-18T143000.conf
+```
+
+### Emergency Boot Configuration
+
+If systemd-boot is corrupted:
+
+```bash
+# 1. Boot from live ISO
+# 2. Mount ESP (EFI System Partition)
+mount /dev/sdX1 /boot
+
+# 3. Restore basic boot entry
+cat > /boot/loader/entries/ouroborOS.conf << 'EOF'
+title ouroborOS (recovery)
+linux /vmlinuz-linux
+initrd /intel-ucode.img
+initrd /initramfs-linux.img
+options root="PARTUUID=$(blkid -s PARTUUID -o value /dev/sdX2)" rw rootflags=subvol=@ loglevel=3
+EOF
+
+# 4. Update loader configuration
+cat > /boot/loader/loader.conf << 'EOF'
+default ouroborOS.conf
+timeout 5
+console-mode keep
+EOF
+
+# 5. Reinstall systemd-boot
+bootctl --path=/boot install
+
+# 6. Reboot
+reboot
+```
+
+## Network Rescue
+
+If network access is needed during recovery:
+
+```bash
+# Enable networking in live environment
+systemctl start systemd-networkd
+systemctl start systemd-resolved
+
+# Connect to WiFi if needed
+iwctl station list
+iwctl station wlan0 connect your-ssid
+```
+
+## Advanced Network Debugging
+
+### Network Interface Diagnostics
+
+```bash
+# Comprehensive network interface analysis
+ip -s -d link show
+ip -4 addr show
+ip -6 addr show
+
+# Check for network interface errors
+ethtool -S eth0
+ethtool -a eth0
+
+# Monitor network packet drops
+watch -n 1 "cat /proc/net/dev | grep eth0"
+
+# Network interface statistics
+netstat -i
+netstat -s
+```
+
+### Deep Network Protocol Analysis
+
+```bash
+# TCP/IP stack analysis
+ss -tulnp
+ss -s
+ss -4 state established
+ss -6 state established
+
+# Connection tracking analysis
+sudo conntrack -L -p tcp --state ESTABLISHED
+sudo conntrack -L -p udp --state ESTABLISHED
+
+# Network packet capture with filtering
+tcpdump -i any -w capture.pcap 'tcp port 80 or tcp port 443'
+tcpdump -i any -nn -vv 'icmp'
+```
+
+### DNS and Resolution Debugging
+
+```bash
+# DNS resolution testing
+dig +trace @1.1.1.1 google.com
+nslookup google.com 8.8.8.8
+host google.com 1.1.1.1
+
+# DNS cache analysis
+systemd-resolve --statistics
+systemd-resolve --flush-caches
+
+# Network service discovery
+avahi-browse -a
+avahi-resolve -a 192.168.1.100
+```
+
+### Advanced Wireless Recovery
+
+```bash
+# Wireless interface hard reset
+sudo rfkill unblock all
+sudo iwconfig wlan0 down
+sudo iwconfig wlan0 up
+
+# Network manager debugging (if present)
+sudo nmcli connection show
+sudo nmcli device status
+sudo nmcli device wifi list
+
+# Manual wireless configuration
+sudo wpa_passphrase YOUR_SSID YOUR_PASSPHRASE > /etc/wpa_supplicant.conf
+sudo wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf -B
+sudo dhcpcd wlan0
+```
+
+### Network Configuration Recovery
+
+```bash
+# Backup current network configuration
+sudo tar -czf network-backup-$(date +%Y%m%d).tar.gz \
+  /etc/systemd/network/ \
+  /etc/iwd/ \
+  /etc/resolv.conf \
+  /etc/hosts
+
+# Restore from backup
+sudo tar -xzf network-backup-20260418.tar.gz -C /
+
+# Regenerate network configuration
+sudo systemd-networkd --flush-caches
+sudo iwd --scan
+```
+
+## Advanced Recovery Procedures
+
+### Multi-Stage Recovery Strategy
+
+```bash
+# Step 1: Network access verification
+ping -c 4 8.8.8.8
+ping -c 4 google.com
+
+# Step 2: System connectivity test
+curl -I https://archlinux.org
+wget --spider https://aur.archlinux.org
+
+# Step 3: Package database sync
+sudo pacman -Sy
+sudo pacman -Syy --overwrite '*'
+
+# Step 4: System health check
+sudo ouroboros-health --doctor
+```
+
+### Network Boot Recovery
+
+```bash
+# Create emergency network boot entry
+cat > /boot/loader/entries/ouroborOS-network.conf << 'EOF'
+title ouroborOS (Network Recovery)
+linux /vmlinuz-linux
+initrd /intel-ucode.img
+initrd /initramfs-linux.img
+options root="PARTUUID=$(blkid -s PARTUUID -o value /dev/sdX2)" rw rootflags=subvol=@ loglevel=3 ip=dhcp
+EOF
+
+# Update bootloader configuration
+cat > /boot/loader/loader.conf << 'EOF'
+timeout 10
+console-mode keep
+default ouroborOS.conf
+EOF
+
+# Reinstall bootloader
+sudo bootctl --path=/boot install
+```
+
+### Container Network Recovery
+
+```bash
+# If containers lose network access
+sudo systemctl restart systemd-nspawn
+sudo systemctl restart systemd-networkd
+sudo systemctl restart systemd-resolved
+
+# Test container connectivity
+sudo systemd-nspawn -D /var/lib/containers/test-container --network-veth ping -c 4 8.8.8.8
+
+# Reset container network namespace
+sudo ip netns exec container-id ip link set eth0 down
+sudo ip netns exec container-id ip link set eth0 up
+```
+
+### System Service Recovery
+
+```bash
+# Restart all network-related services
+sudo systemctl restart systemd-networkd
+sudo systemctl restart iwd
+sudo systemctl restart systemd-resolved
+sudo systemctl restart sshd
+
+# Check for service dependencies
+systemctl list-dependencies systemd-networkd
+
+# Enable critical services
+sudo systemctl enable --now systemd-networkd
+sudo systemctl enable --now iwd
+sudo systemctl enable --now systemd-resolved
+```
+
+### Filesystem Network Recovery
+
+```bash
+# If filesystem corruption affects network mounts
+sudo umount /mnt/network-share
+sudo fsck -t nfs4 /dev/sdX1
+
+# Remount network filesystem
+sudo mount -t nfs4 server:/export /mnt/network-share -o vers=4.2
+
+# Check network filesystem health
+sudo nfsiostat -m /mnt/network-share
+sudo showmount -e server
+```
+
+### Emergency Network Setup
+
+```bash
+# Create minimal network configuration for recovery
+cat > /etc/systemd/network/20-wired.network << 'EOF'
+[Match]
+Name=eth0
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1 8.8.8.8
+Gateway=192.168.1.1
+EOF
+
+# Restart networking service
+sudo systemctl restart systemd-networkd
+
+# Verify network connectivity
+ping -c 4 8.8.8.8 && echo "Network recovered successfully"
+```
+
+### Complete System Recovery Workflow
+
+```bash
+# 1. Boot from live ISO
+# 2. Mount the affected system
+mount -t btrfs -o subvol=@ /dev/sdX2 /mnt
+
+# 3. Backup critical data
+cp -r /mnt/var/lib/ouroborOS /mnt/var/backups/
+cp -r /mnt/home/user /mnt/var/backups/
+
+# 4. Perform network diagnostics from live system
+ping -c 4 8.8.8.8
+iwctl station list
+
+# 5. If network issues persist, reconfigure
+networkctl status
+systemctl restart systemd-networkd
+
+# 6. Attempt system repair
+chroot /mnt
+pacman -Syu --overwrite '*'
+exit
+
+# 7. Create recovery snapshot
+btrfs subvolume snapshot /mnt/.snapshots/install /mnt/.snapshots/recovery-$(date +%Y%m%d)
+
+# 8. Reboot and test
+reboot
+```
+
+---
+
+## Recovery Automation
+
+### Automated Snapshot Health Checks
+
+ouroborOS includes automated timers for system health:
+
+```bash
+# Check timer status
+systemctl list-timers | grep -E "snapshot|scrub"
+
+# Manual snapshot health check
+our-snapshot info
+
+# Run Btrfs scrub manually
+our-snapshot scrub
+```
+
+### Remote Administration
+
+For headless or remote recovery, ouroborOS has SSH enabled by default on the live ISO:
+
+```bash
+# Connect to a remote ouroborOS machine
+ssh user@ouroboros.local
+
+# Check system status remotely
+our-snapshot list
+our-rollback status
+
+# Perform remote rollback
+our-rollback now <snapshot-name>
+```
+
+### Recovery Checklist
+
+1. **Boot fails** → Select a working snapshot from the boot menu
+2. **No boot entries** → Boot from ISO, mount `@`, reinstall bootloader
+3. **Corrupted filesystem** → Boot from ISO, run `btrfs scrub start`
+4. **Broken packages** → Boot working snapshot, run `our-pac -Syu`
+5. **Lost password** → Boot from ISO, chroot into `@`, run `passwd`

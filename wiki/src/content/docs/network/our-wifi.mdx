@@ -1,0 +1,180 @@
+---
+title: WiFi Management
+description: WiFi network management with our-wifi in ouroborOS
+slug: network/our-wifi
+---
+
+# WiFi Management (our-wifi)
+
+`our-wifi` is an intuitive WiFi management tool built on top of iwd (iwctl), providing an easy-to-use interface for wireless network discovery, connection, and management. It seamlessly integrates with ouroborOS networking stack.
+
+## Overview
+
+The `our-wifi` tool provides:
+
+- **Simple WiFi management** with essential commands
+- **Network discovery and scanning** using iwd
+- **Secure connections** with WPA2/WPA3 encryption
+- **Persistent network profiles** managed by iwd
+- **Clean CLI interface** without unnecessary complexity
+
+:::note
+
+our-wifi uses iwd (Intel Wireless Daemon) as the backend, which provides modern wireless support with WPA3 security and improved performance compared to traditional NetworkManager.
+
+:::
+
+## Installation
+
+The WiFi manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-wifi --version
+our-wifi --help
+```
+
+## Usage
+
+### Commands
+
+#### `list` - Scan and list networks
+
+```bash
+# List available networks
+our-wifi list
+
+# Shows available WiFi networks with their names and connection status
+```
+
+#### `connect <SSID>` - Connect to a WiFi network
+
+```bash
+# Connect interactively (prompts for passphrase)
+our-wifi connect "MyWiFiNetwork"
+
+# Connect with specific password
+our-wifi connect "MyWiFiNetwork" --password mypassword
+
+# Connect to hidden network (special SSIDs)
+our-wifi connect "HiddenNetwork" --password mypassword
+```
+
+#### `status` - Show current connection status
+
+```bash
+# Show current WiFi connection status
+our-wifi status
+
+# Shows wireless interface and current connection details
+```
+
+#### `forget <SSID>` - Remove saved network
+
+```bash
+# Forget a saved network profile
+our-wifi forget "MyWiFiNetwork"
+
+# Removes the saved PSK file for the specified SSID
+```
+
+#### `show-password <SSID>` - Show saved passphrase
+
+```bash
+# Show saved passphrase for a network
+our-wifi show-password "MyWiFiNetwork"
+
+# Displays the stored passphrase for the specified SSID
+```
+
+#### `help` - Show help
+
+```bash
+# Show complete help information
+our-wifi help
+
+# Displays usage instructions and available commands
+```
+
+## Examples
+
+### Basic connection workflow
+
+```bash
+# 1. List available networks
+our-wifi list
+
+# 2. Connect to a network (prompts for password if not saved)
+our-wifi connect "MyHomeWiFi"
+
+# 3. Check connection status
+our-wifi status
+
+# 4. If you want to forget the network later
+our-wifi forget "MyHomeWiFi"
+```
+
+### Non-interactive connection
+
+```bash
+# Connect without interactive prompts
+our-wifi connect "OfficeNetwork" --password "securepassword123"
+
+# This saves the PSK and connects automatically
+```
+
+### Show saved password
+
+```bash
+# Display saved passphrase for a network
+our-wifi show-password "MyHomeWiFi"
+
+# Returns the stored password (useful for forgotten passwords)
+```
+
+## Network Storage
+
+Network profiles are stored by iwd in `/var/lib/iwd/`:
+
+```bash
+# PSK files are stored with 600 permissions
+ls -la /var/lib/iwd/
+
+# SSIDs with special characters use hex-encoded filenames
+# Example: =48656C6C6F2E70736B for "Hello.psk"
+```
+
+## System Integration
+
+### Enable iwd service
+
+```bash
+# Start the iwd service if not running
+sudo systemctl start iwd.service
+
+# Enable iwd to start on boot
+sudo systemctl enable iwd.service
+
+# Check service status
+sudo systemctl status iwd.service
+```
+
+### Network interface detection
+
+```bash
+# The tool automatically detects wireless interfaces
+# Typically wlan0, wlp0s0, or similar
+ip link show
+```
+
+## Requirements
+
+- **iwd** must be installed and running
+- **Wireless interface** must be present (wlan0, wlp*, etc.)
+- **Root privileges** are required for PSK file operations
+
+## Notes
+
+- **Passphrase security**: Passphrases are stored with 600 permissions
+- **Special SSIDs**: Networks with `=`, spaces, or non-printable characters use hex-encoded filenames
+- **Automatic reconnection**: Once a network is saved and connected, iwd will attempt to reconnect automatically
+- **WiFi scanning**: The `list` command automatically scans for networks and displays available options

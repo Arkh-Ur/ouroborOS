@@ -1,0 +1,341 @@
+---
+title: Interactive Install (TUI)
+description: Learn how to use ouroborOS's interactive TUI installer for a guided installation experience.
+slug: installation/interactive
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Interactive Install (TUI)
+
+The ouroborOS TUI (Text User Interface) installer provides a guided, step-by-step installation experience with automatic hardware detection and intelligent configuration suggestions. This is the recommended installation method for most users.
+
+## Getting Started
+
+### **Launching the Installer**
+1. Boot from the ouroborOS live ISO
+2. At the boot menu, select "Install ouroborOS"
+3. Wait for system detection to complete
+4. The TUI will launch automatically
+
+```bash
+# Manual launch if needed
+sudo /usr/bin/ouroboros-installer --tui
+```
+
+### **Installer Features**
+- **Hardware Auto-Detection**: Automatically detects CPU, GPU, and storage
+- **Network Setup**: WiFi support with automatic connection
+- **Guided Configuration**: Step-by-step system configuration
+- **Real-time Validation**: Validates input as you type
+- **Progress Tracking**: Shows real-time installation progress
+
+## Installation Steps
+
+### **1. Welcome Screen**
+```
+===============================================
+           ouroborOS Installation
+===============================================
+
+Welcome to ouroborOS - Modern immutable Arch Linux
+
+This installer will guide you through the setup process.
+
+Press [Enter] to begin or [ESC] to cancel.
+```
+
+### **2. System Requirements Check**
+The installer automatically checks system requirements and alerts you to any potential issues.
+
+```bash
+# Behind the scenes: System validation
+#!/usr/bin/bash
+check_requirements() {
+    local required_ram=2147483648  # 2GB in bytes
+    local required_disk=21474836480 # 20GB in bytes
+    
+    if [ $(grep MemTotal /proc/meminfo | awk '{print $2}') -lt $required_ram ]; then
+        show_error "Insufficient RAM. Required: 2GB, Found: $(free -h | grep Mem | awk '{print $2}')"
+    fi
+    
+    if [ $(df --output=avail / | tail -1) -lt $required_disk ]; then
+        show_error "Insufficient disk space. Required: 20GB"
+    fi
+}
+```
+
+:::note
+**Automatic Detection**: The installer detects your hardware and suggests optimal configurations based on your system capabilities.
+:::
+
+### **3. Network Configuration**
+Configure your network connection for package downloads and system updates.
+
+```bash
+# Network setup options
+# 1. Wired Ethernet (auto-detected)
+# 2. WiFi (if available)
+# 3. Use existing connection
+```
+
+#### **WiFi Setup**
+```bash
+# Automatic WiFi detection
+iwctl list devices
+# Interactive WiFi connection
+iwctl station wlan0 connect YOUR_NETWORK_NAME
+# Network validation
+ping archlinux.org
+```
+
+:::tip
+**Network Tip**: Use a wired connection during installation for maximum reliability. WiFi is supported but may require additional configuration.
+:::
+
+### **4. Disk Configuration**
+Configure your disk partitions and filesystem layout.
+
+#### **Partition Options**
+```
+1. Auto-layout (recommended)
+   - 512MB EFI partition
+   - Remaining space for Btrfs
+
+2. Manual partitioning
+   - Full control over layout
+   - Custom partition sizes
+
+3. LUKS encryption
+   - Add disk encryption
+   - TPM2 integration support
+```
+
+#### **Btrfs Configuration**
+```yaml
+# Auto-layout configuration
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  subvolumes:
+    root: "@"
+    home: "@home"
+    var: "@var"
+    snapshots: "@snapshots"
+```
+
+:::caution
+**Data Warning**: The installer will completely erase the selected disk. Ensure you have backed up important data before proceeding.
+:::
+
+### **5. System Configuration**
+Configure your system settings and preferences.
+
+#### **Locale and Timezone**
+```yaml
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+```
+
+#### **Hostname Configuration**
+```
+Enter system hostname: ouroboros
+[Enter] to confirm, [ESC] to cancel
+```
+
+#### **User Setup**
+```
+Create user account:
+Username: admin
+Full Name: Administrator
+Password: ********
+Confirm: ********
+Shell: /bin/bash (default)
+```
+
+#### **Security Settings**
+```yaml
+security:
+  secure_boot: false  # Can be enabled later
+  sbctl_include_ms_keys: false
+```
+
+### **6. Desktop Profile Selection**
+Choose your desktop environment from our curated profiles.
+
+#### **Available Profiles**
+```
+1. Minimal - No desktop environment
+2. Hyprland - Tiling WM with Wayland
+3. Niri - Modern tiling Wayland compositor
+4. GNOME - Full desktop environment
+5. KDE Plasma - Feature-rich desktop
+```
+
+#### **Profile Dependencies**
+```yaml
+# Hyprland profile
+desktop:
+  profile: hyprland
+  packages:
+    - hyprland
+    - hyprpaper
+    - hyprcursor
+    - hypridle
+  dm: auto
+```
+
+### **7. Review Configuration**
+Before installation begins, the installer shows a summary of all selected options.
+
+```
+===============================================
+           Installation Summary
+===============================================
+
+System:         ouroboros
+Disk:           /dev/vda (50GB)
+Memory:         8GB
+Network:       Wired (ens33)
+Desktop:        Hyprland
+Users:          admin (wheel group)
+Security:       Standard
+
+Packages to install: 152
+Estimated time: 15-20 minutes
+
+Proceed with installation? [Y/n]
+```
+
+### **8. Installation Progress**
+Watch as the installer performs all operations with real-time feedback.
+
+```bash
+# Installation process overview
+1. Create partitions              [████████████████████] Done
+2. Format filesystem              [████████████████████] Done
+3. Install base packages          [█████████        ] 40%
+4. Configure system              [████████        ] 30%
+5. Setup users                    [███████         ] 20%
+6. Install desktop packages       [████            ] 10%
+7. Create snapshots              [████████████████████] Done
+8. Final configuration           [████████████████████] Done
+
+Installation completed successfully!
+```
+
+## Advanced Options
+
+### **Expert Mode**
+Press `E` during the welcome screen to enable expert mode with additional options.
+
+```
+Expert Mode Options:
+- Custom partition layout
+- Advanced Btrfs configuration
+- Systemd-homed setup
+- Custom kernel options
+- Additional packages selection
+```
+
+### **Installation Scripts**
+The installer supports pre-installation and post-installation scripts.
+
+```bash
+# Pre-install script
+#!/bin/bash
+# Create custom directories
+mkdir -p /mnt/custom
+# Add additional repositories
+echo "custom_repo" >> /mnt/etc/pacman.conf
+
+# Post-install script
+#!/bin/bash
+# Setup custom services
+systemctl enable my-service
+# Configure applications
+cp /mnt/custom/config ~/.config/myapp/
+```
+
+## Troubleshooting
+
+### **Common Issues**
+- **Network Timeout**: Switch to wired connection
+- **Disk Errors**: Check disk identification
+- **Memory Issues**: Free up RAM, close other applications
+- **Package Failures**: Check internet connection
+
+### **Recovery Options**
+```bash
+# Access recovery shell
+Ctrl+Alt+F2 to switch to tty
+# Check logs
+/var/log/ouroboros-installer.log
+# Restart installation
+sudo reboot
+```
+
+:::danger
+**Emergency Recovery**: If the installer fails, you can boot into the live system and manually restore using `our-rollback` command.
+:::
+
+## Post-Installation
+
+### **First Boot**
+After installation completes, the system will reboot automatically.
+
+```bash
+# First boot commands
+# Set timezone
+timedatectl set-timezone America/Santiago
+# Update system
+our-pac upgrade
+# Create initial snapshot
+our-snapshot create post-install
+```
+
+### **Configuration Validation**
+Verify your system configuration:
+
+```bash
+# Check system health
+ouroboros-health check
+# List snapshots
+our-snapshot list
+# Verify rollback capability
+our-rollback status
+```
+
+### **Next Steps**
+1. Connect to your WiFi network with `our-wifi`
+2. Install additional packages with `our-pac`
+3. Configure security settings with `ouroboros-secureboot`
+4. Set up user preferences and desktop customization
+
+The TUI installer provides the best balance between simplicity and control, making it ideal for both new users and experienced system administrators.
+
+<Tabs>
+<TabItem label="Basic Installation">
+```bash
+# Quick install with defaults
+sudo /usr/bin/ouroboros-installer --tui --auto
+# Uses:
+# - Auto partitioning
+# - Default locale
+# - Minimal desktop
+# - Standard security
+```
+</TabItem>
+<TabItem label="Custom Installation">
+```bash
+# Custom installation with specific options
+sudo /usr/bin/ouroboros-installer --tui \
+  --disk /dev/nvme0n1 \
+  --desktop hyprland \
+  --luks \
+  --tpm2
+```
+</TabItem>
+</Tabs>

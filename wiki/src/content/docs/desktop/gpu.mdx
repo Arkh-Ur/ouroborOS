@@ -1,0 +1,420 @@
+---
+title: GPU Configuration
+description: GPU detection, drivers, and configuration for ouroborOS
+slug: desktop/gpu
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# GPU Detection and Configuration
+
+orooborOS automatically detects and configures your GPU during installation, providing optimal performance for both 2D desktop and 3D applications. The system supports a wide range of GPU manufacturers and models.
+
+## Automatic GPU Detection
+
+During installation, the system automatically detects your GPU hardware and installs appropriate drivers:
+
+```bash
+# GPU detection during installation
+lspci | grep -i vga
+# Example outputs:
+# 00:02.0 VGA compatible controller: Intel Corporation HD Graphics 630
+# 01:00.0 VGA compatible controller: NVIDIA Corporation GP107 [GeForce GTX 1050 Ti]
+```
+
+:::tip
+
+The GPU detection system also checks for virtualization environments and configures appropriate GPU passthrough for containers and VMs.
+
+:::
+
+## Supported GPU Types
+
+### Intel Integrated GPUs
+
+- **HD Graphics 2000-6000 series**
+- **Iris Graphics**
+- **UHD Graphics**
+- **Xe Graphics**
+
+```bash
+# Intel GPU verification
+lspci | grep -i "intel.*display"
+glxinfo | grep "OpenGL vendor"
+```
+
+### NVIDIA GPUs
+
+- **GeForce GTX/RTX series**
+- **Quadro professional cards**
+- **GeForce experience support**
+
+```bash
+# NVIDIA GPU verification
+nvidia-smi
+glxinfo | grep "OpenGL renderer"
+```
+
+### AMD GPUs
+
+- **Radeon RX series**
+- **Radeon Pro**
+- **Vega graphics**
+
+```bash
+# AMD GPU verification
+glxinfo | grep "OpenGL renderer"
+radeontop
+```
+
+## Driver Installation and Management
+
+### Automatic Driver Installation
+
+Drivers are automatically installed based on GPU detection:
+
+```bash
+# View current GPU driver status
+our-pac info mesa
+our-pac info nvidia-dkms  # If NVIDIA detected
+our-pac info xf86-video-amdgpu  # If AMD detected
+```
+
+### Manual Driver Management
+
+```bash
+# Install specific drivers
+our-pac install nvidia-dkms    # NVIDIA proprietary
+our-pac install xf86-video-amdgpu  # AMD open source
+our-pac install intel-media-driver  # Intel hardware acceleration
+our-pac install vulkan-radeon    # AMD Vulkan support
+our-pac install vulkan-intel    # Intel Vulkan support
+```
+
+## Configuration Options
+
+<Tabs>
+<TabItem label="NVIDIA">
+
+### NVIDIA Configuration
+
+```bash
+# NVIDIA settings GUI
+nvidia-settings
+
+# NVIDIA configuration file
+cat > /etc/X11/xorg.conf.d/10-nvidia.conf << 'EOF'
+Section "Device"
+    Identifier "nvidia"
+    Driver "nvidia"
+    BusID "PCI:1:0:0"
+    Option "DRI" "3"
+    Option "NoLogo" "true"
+EndSection
+EOF
+```
+
+</TabItem>
+<TabItem label="AMD">
+
+### AMD Configuration
+
+```bash
+# AMD DRI configuration
+cat > /etc/X11/xorg.conf.d/20-amdgpu.conf << 'EOF'
+Section "Device"
+    Identifier "AMDGPU"
+    Driver "amdgpu"
+    Option "DRI" "3"
+EndSection
+EOF
+```
+
+</TabItem>
+<TabItem label="Intel">
+
+### Intel Configuration
+
+```bash
+# Intel DRI configuration
+cat > /etc/X11/xorg.conf.d/20-intel.conf << 'EOF'
+Section "Device"
+    Identifier "Intel"
+    Driver "intel"
+    Option "DRI" "3"
+    Option "AccelMethod" "sna"
+EndSection
+EOF
+```
+
+</TabItem>
+</Tabs>
+
+## GPU Acceleration Features
+
+### 3D Acceleration
+
+```bash
+# Test 3D acceleration
+glxgears
+glxinfo | grep "direct rendering"
+
+# Vulkan support verification
+vulkaninfo
+```
+
+### Video Acceleration
+
+```bash
+# Hardware video decoding test
+ffmpeg -vaapi_device /dev/dri/renderD128 -i input.mp4 -c:v h264_vaapi output.mp4
+```
+
+### GPU Computing
+
+```bash
+# OpenCL support
+clinfo
+
+# CUDA support (NVIDIA)
+nvcc --version
+```
+
+## Performance Optimization
+
+### Power Management
+
+```bash
+# NVIDIA power management
+nvidia-smi -q | grep "Power Management"
+
+# AMD power management
+radeontop
+```
+
+### Thermal Monitoring
+
+```bash
+# GPU temperature monitoring
+nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Check Xorg logs
+journalctl -xeu xorg.service
+
+# Verify DRI setup
+ls -la /dev/dri/
+
+# Check kernel modules
+lsmod | grep -E "(nvidia|amdgpu|i915)"
+
+# Check GPU detection during installation
+lspci | grep -i vga
+
+# Check if GPU is being detected
+lspci -nn | grep -i "0300"
+```
+
+### Driver Reinstallation
+
+```bash
+# Reinstall NVIDIA drivers
+our-pac -S nvidia-dkms
+modprobe -r nvidia
+modprobe nvidia
+
+# Reinstall AMD drivers  
+our-pac -S xf86-video-amdgpu
+modprobe -r amdgpu
+modprobe amdgpu
+
+# Reinstall Intel drivers
+our-pac -S mesa vulkan-intel
+modprobe -r i915
+modprobe i915
+```
+
+### GPU Detection and Auto-Installation
+
+The ouroborOS installer automatically detects and configures GPU drivers during installation. The auto-detection system works as follows:
+
+```bash
+# Manual GPU detection (what the installer does)
+lspci | grep -i vga
+# Sample outputs:
+# 00:02.0 VGA compatible controller: Intel Corporation HD Graphics 630
+# 01:00.0 VGA compatible controller: NVIDIA Corporation GP107 [GeForce GTX 1050 Ti]
+
+# GPU driver mapping logic:
+if lspci | grep -qi "nvidia"; then
+    # Install NVIDIA proprietary drivers
+    pacman -S nvidia nvidia-utils
+elif lspci | grep -qiE "amd|radeon"; then
+    # Install AMD open source drivers
+    pacman -S mesa vulkan-radeon xf86-video-amdgpu
+elif lspci | grep -qi "intel"; then
+    # Install Intel open source drivers
+    pacman -S mesa vulkan-intel
+fi
+```
+
+### GPU Configuration Validation
+
+After installation, verify your GPU configuration:
+
+```bash
+# Check if GPU is detected correctly
+lspci -nn | grep -i "0300"
+
+# Check kernel driver in use
+lspci -nn -k -d "::0300"
+
+# Check if DRI is working
+ls -la /dev/dri/renderD128
+ls -la /dev/dri/card0
+
+# Check Xorg log for GPU errors
+journalctl -xeu xorg.service | grep -i -E "(nvidia|amdgpu|i915|gpu)"
+
+# Check if GPU is being used for rendering
+glxinfo | grep "OpenGL renderer"
+glxinfo | grep "direct rendering"
+```
+
+### NVIDIA-Specific Troubleshooting
+
+```bash
+# NVIDIA GPU information
+nvidia-smi
+
+# Check NVIDIA driver version
+nvidia-smi --query-gpu=driver_version --format=csv,noheader
+
+# Check GPU temperature
+nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader
+
+# Check if NVIDIA kernel module is loaded
+lsmod | grep nvidia
+
+# Check Xorg NVIDIA configuration
+cat /etc/X11/xorg.conf.d/10-nvidia.conf || echo "No NVIDIA Xorg config found"
+
+# Generate NVIDIA Xorg configuration
+nvidia-xconfig -o /etc/X11/xorg.conf.d/10-nvidia.conf
+
+# Test NVIDIA drivers
+glxgears
+vulkaninfo | grep -i nvidia
+```
+
+### AMD-Specific Troubleshooting
+
+```bash
+# Check AMD GPU information
+radeontop
+
+# Check if AMD kernel module is loaded
+lsmod | grep amdgpu
+
+# Check DRI version for AMD
+glxinfo | grep "OpenGL renderer" | grep -i amd
+
+# Check AMD Xorg configuration
+cat /etc/X11/xorg.conf.d/20-amdgpu.conf || echo "No AMD Xorg config found"
+
+# Test AMD drivers
+glxgears
+vulkaninfo | grep -i amd
+
+# Check Vulkan support
+vulkaninfo | grep -i "device name"
+```
+
+### Intel-Specific Troubleshooting
+
+```bash
+# Check Intel GPU information
+intel_gpu_top
+
+# Check if Intel kernel module is loaded
+lsmod | grep i915
+
+# Check DRI version for Intel
+glxinfo | grep "OpenGL renderer" | grep -i intel
+
+# Check Intel Xorg configuration
+cat /etc/X11/xorg.conf.d/20-intel.conf || echo "No Intel Xorg config found"
+
+# Test Intel drivers
+glxgears
+vulkaninfo | grep -i intel
+
+# Check 3D acceleration
+glxinfo | grep "direct rendering"
+```
+
+## Performance Optimization
+
+### Power Management Configuration
+
+```bash
+# NVIDIA power management
+nvidia-smi -q | grep -E "(Power|Power Management)"
+
+# Set NVIDIA power performance mode
+nvidia-smi -pm 1  # Enable power management
+nvidia-smi -i 0 -pl 75  # Set power limit (adjust according to your GPU)
+
+# AMD power management (via Radeon settings)
+sudo radeon-pm 1  # Enable power management
+
+# Intel power management (via Intel GPU tools)
+intel_gpu_top -m  # Monitor power usage
+```
+
+### GPU Acceleration Testing
+
+```bash
+# Test 3D rendering performance
+glxgears -info
+
+# OpenGL performance test
+glxgears -printfps
+
+# Vulkan performance test
+vulkaninfo --summary
+
+# GPU stress test
+sudo our-pac -S glxgears
+glxgears -timeout 30
+```
+
+### System GPU Monitoring
+
+```bash
+# Monitor GPU usage in real-time
+watch -n 1 nvidia-smi  # For NVIDIA
+watch -n 1 radeontop   # For AMD
+watch -n 1 intel_gpu_top  # For Intel
+
+# System-wide GPU monitoring
+sudo our-pac -S nvtop
+nvtop
+
+# GPU temperature monitoring
+sudo our-pac -S radeontop
+radeontop
+
+# Monitor GPU power consumption
+nvidia-smi --query-gpu=power.draw --format=csv,noheader
+```
+
+:::danger
+
+Always back up your Xorg configuration before making changes. Incorrect GPU configuration can prevent graphical login.
+
+:::

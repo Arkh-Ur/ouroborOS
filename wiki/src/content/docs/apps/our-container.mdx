@@ -1,0 +1,707 @@
+---
+title: Container Manager
+description: Guide to using our-container for systemd-nspawn containers in ouroborOS
+slug: apps/our-container
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Container Manager (our-container)
+
+`our-container` is a comprehensive container management wrapper for systemd-nspawn, providing an easy-to-use interface for running isolated Linux environments. It's designed specifically for ouroborOS with integration for GUI applications, networking, and system security.
+
+## Overview
+
+The `our-container` tool provides:
+
+- **17 commands** covering container lifecycle management
+- **Isolated environments** with network namespace separation
+- **GUI support** with Wayland, GPU, and audio passthrough
+- **System integration** with systemd and Btrfs snapshots
+- **Security features** with seccomp and network filtering
+
+:::note
+
+Containers run as systemd services and are automatically managed by the system. This ensures proper startup, shutdown, and resource management.
+
+:::
+
+## Installation
+
+The container manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-container --version
+our-container --help
+```
+
+## Basic Usage
+
+### Container Creation
+
+```bash
+# Create a new Ubuntu container
+our-container create ubuntu-latest --image ubuntu:latest
+
+# Create a Fedora container  
+our-container create fedora-38 --image fedora:38
+
+# Create a Debian container with specific release
+our-container create debian-bookworm --image debian:bookworm
+```
+
+### Container Management
+
+```bash
+# List all containers
+our-container list
+
+# Start a container
+our-container start ubuntu-latest
+
+# Stop a container
+our-container stop ubuntu-latest
+
+# Restart a container
+our-container restart ubuntu-latest
+
+# Remove a container
+our-container remove ubuntu-latest
+```
+
+## Advanced Container Operations
+
+### Isolated Networking
+
+```bash
+# Create container with isolated network (veth pair)
+our-container create isolated-container --network isolated
+
+# Create container with host networking (for testing)
+our-container create host-net-container --network host
+```
+
+### GUI Applications
+
+```bash
+# Start container with GUI support
+our-container start ubuntu-latest --gui
+
+# Start container with GPU passthrough
+our-container start ubuntu-latest --gui --gpu
+
+# Start container with audio support
+our-container start ubuntu-latest --gui --audio
+```
+
+### Container Commands
+
+```bash
+# Execute command in running container
+our-container exec ubuntu-latest -- apt update
+
+# Get shell in container
+our-container shell ubuntu-latest
+
+# View container logs
+our-container logs ubuntu-latest
+
+# View container status
+our-container status ubuntu-latest
+
+# Enter container maintenance mode
+our-container maintenance ubuntu-latest
+```
+
+## Configuration Files
+
+### Container Configuration Directory
+
+Containers are configured in `~/.config/ouroborOS/containers/`:
+
+```bash
+# List container configurations
+ls -la ~/.config/ouroborOS/containers/
+
+# Example configuration
+cat ~/.config/ouroborOS/containers/ubuntu-latest.conf
+```
+
+### Global Configuration
+
+Global settings in `~/.config/ouroborOS/containers.conf`:
+
+```ini
+[containers]
+default_network = isolated
+enable_gpu = true
+enable_audio = true
+auto_remove = false
+```
+
+## Container Lifecycle
+
+### Creating Containers
+
+```bash
+# Create with custom name and image
+our-container create my-dev-env \
+  --image ubuntu:22.04 \
+  --network isolated \
+  --storage btrfs \
+  --autostart true
+```
+
+### Managing Running Containers
+
+```bash
+# Monitor container resource usage
+our-container monitor ubuntu-latest
+
+# View container processes
+our-container ps ubuntu-latest
+
+# Send signal to container
+our-container signal ubuntu-latest --signal SIGTERM
+```
+
+### Backup and Migration
+
+```bash
+# Export container configuration
+our-container export ubuntu-latest > ubuntu-backup.tar.gz
+
+# Import container from backup
+our-container import ubuntu-backup.tar.gz
+```
+
+## Network Configuration
+
+### Network Types
+
+<Tabs>
+<TabItem label="Isolated">
+
+Creates a veth pair with NAT to host network:
+
+```bash
+our-container create web-server --network isolated --port 8080:80
+```
+
+</TabItem>
+<TabItem label="Bridge">
+
+Connects to host bridge network:
+
+```bash
+our-container create db-server --network bridge --ip 192.168.1.100
+```
+
+</TabItem>
+<TabItem label="Host">
+
+Shares host network namespace (use with caution):
+
+```bash
+our-container create testing --network host
+```
+
+</TabItem>
+</Tabs>
+
+### Port Forwarding
+
+```bash
+# Forward container port to host
+our-container create nginx-app \
+  --network isolated \
+  --port 8080:80 \
+  --port 8443:443
+```
+
+## GUI and Audio Support
+
+### Wayland Integration
+
+```bash
+# Start container with full GUI support
+our-container start ubuntu-latest --gui \
+  --wayland-display :1 \
+  --x11-display :0
+```
+
+### GPU Passthrough
+
+```bash
+# GPU acceleration support
+our-container create gaming-container \
+  --network isolated \
+  --gpu nvidia \
+  --gpu render
+```
+
+### Audio Support
+
+```bash
+# PulseAudio integration
+our-container start ubuntu-latest --audio \
+  --pulse-server /run/user/1000/pulse/native
+```
+
+## Security Features
+
+### Seccomp Filtering
+
+```bash
+# Create container with custom seccomp profile
+our-container create secure-container \
+  --seccomp-profile ~/.config/ouroborOS/seccomp-base.json
+```
+
+### Resource Limits
+
+```bash
+# Set resource limits
+our-container create limited-container \
+  --memory 2G \
+  --cpu-shares 512 \
+  --pids-max 100
+```
+
+## Container Templates
+
+### Pre-built Templates
+
+```bash
+# List available templates
+our-container templates
+
+# Use a template
+our-container create from-template python-dev --template python-dev
+```
+
+### Custom Templates
+
+```bash
+# Create custom template
+our-container create-template my-base \
+  --base ubuntu:22.04 \
+  --packages "python3 python3-pip git" \
+  --config ~/.config/ouroborOS/templates/my-base.conf
+```
+
+## Real-time Container Monitoring
+
+### Live Dashboard
+
+```bash
+# Monitor all containers in real-time
+our-container monitor
+# Shows: NAME | STATE | PID | IP
+# Refreshes every 2 seconds, press Ctrl+C to stop
+
+# Monitor specific container
+our-container monitor my-container
+
+# Monitor with custom interval
+our-container monitor --interval 5
+# Refresh every 5 seconds
+```
+
+### Performance Statistics
+
+```bash
+# View performance stats for all containers
+our-container stats
+# Shows CPU, memory, disk, and network usage per container
+
+# Stats for specific container
+our-container stats my-container
+# Detailed performance breakdown
+```
+
+### System Health Check
+
+```bash
+# Run comprehensive diagnostics
+our-container diagnose
+# Checks: systemd-machined, storage, container integrity, network, running containers
+
+# Output example:
+# === ouroborOS Container Diagnostics ===
+# --- Check 1: systemd-machined service ---
+#   [OK] systemd-machined is running
+# --- Check 2: Container storage ---
+#   [OK] Storage exists: /var/lib/machines (btrfs)
+#   [OK] Btrfs filesystem detected — snapshots supported
+# --- Check 3: Container integrity ---
+#   [OK] my-container — state: running
+# --- Check 4: Host network ---
+#   [OK] systemd-networkd is running
+# --- Check 5: Running container health ---
+#   [OK] my-container — PID 1234 alive, RSS: 256.3 MB
+```
+
+## Advanced Container Operations
+
+### Container Lifecycle Management
+
+```bash
+# Create Arch container
+our-container create my-arch-container
+
+# Create Ubuntu container with isolated networking
+our-container create my-ubuntu --ubuntu --isolated
+
+# Create Debian container
+our-container create my-debian debian
+
+# Enter container with all GUI features
+our-container enter my-container --gui
+
+# Enter with isolated network only
+our-container enter my-container --isolated
+
+# Enter with Wayland support
+our-container enter my-container --wayland
+
+# Enter with GPU passthrough
+our-container enter my-container --gpu
+
+# Enter with audio support
+our-container enter my-container --audio
+
+# Enter shell directly in running container
+our-container enter my-container
+```
+
+### Container State Management
+
+```bash
+# Start container (if not running)
+our-container start my-container
+
+# Stop container gracefully
+our-container stop my-container
+
+# Remove container (deletes subvolume)
+our-container remove my-container
+
+# List all containers with state
+our-container list
+# Output: NAME           STATE    TYPE    SIZE
+#         my-container   running  btrfs   512M
+#         my-arch        offline  dir     256M
+```
+
+### Btrfs Snapshot Management
+
+```bash
+# Create snapshot of container
+our-container snapshot create my-container backup-2024-01-15
+
+# List all snapshots for container
+our-container snapshot list my-container
+# Output: SNAPSHOT_NAME    SIZE    DATE
+#         backup-2024-01-15 512M    2024-01-15T10:30:00
+
+# Restore container from snapshot
+our-container snapshot restore my-container backup-2024-01-15
+# Creates safety snapshot automatically before restore
+```
+
+### Storage Management
+
+```bash
+# Mount host directory into container
+our-container storage mount my-container /host/path /container/path
+
+# Remove mounted storage
+our-container storage umount my-container /container/path
+
+# List mounted storage
+cat /etc/systemd/nspawn/my-container.nspawn
+# Shows Bind= entries
+```
+
+### Base Image Management
+
+```bash
+# Pull pre-built base images
+our-container image pull arch      # Arch Linux
+our-container image pull debian   # Debian
+our-container image pull ubuntu   # Ubuntu
+
+# List available base images
+our-container image list
+# Output: DISTRO    SIZE     CREATED
+#         arch     256M     2024-01-15T10:30:00
+#         debian   512M     2024-01-14T09:15:00
+
+# Remove cached base image
+our-container image remove arch
+```
+
+## Networking Configuration
+
+### Isolated Network Mode
+
+```bash
+# Create container with isolated network (veth pair)
+our-container create my-web-server --isolated
+
+# Enter container with isolated network
+our-container enter my-container --isolated
+
+# Network features:
+# - Private network namespace
+# - Separate IP address
+# - No access to host network
+# - Port forwarding not available
+```
+
+### Network Requirements
+
+```bash
+# Ensure systemd-networkd is running
+systemctl enable --now systemd-networkd
+
+# Check network connectivity
+resolvectl status
+
+# Container network works when host network is healthy
+our-container create test-container --isolated
+```
+
+## Storage and Disk Usage
+
+### Disk Usage Monitoring
+
+```bash
+# Show per-container disk usage
+our-container disk-usage
+# Output: CONTAINER    TYPE    SIZE    STATE
+#         my-container btrfs   512M    running
+#         my-arch     dir     256M    offline
+
+# Btrfs filesystem details
+btrfs filesystem df /var/lib/machines
+
+# Container size information
+btrfs qgroup show -e --raw /var/lib/machines/my-container
+```
+
+### Snapshot Cleanup
+
+```bash
+# Clean up old snapshots (older than 30 days)
+our-container cleanup
+
+# Clean up with custom threshold
+our-container cleanup --threshold 80
+# Remove snapshots if disk usage > 80%
+
+# Safety features:
+# - Never removes 'pre-*' snapshots
+# - Keeps 3 recent snapshots even if old
+# - Only removes Btrfs subvolumes
+```
+
+## Security Features
+
+### Container Isolation
+
+```bash
+# Containers run as systemd services
+systemctl status systemd-machined
+
+# Network isolation via veth pairs
+# Each container gets private network namespace
+
+# Filesystem isolation
+# Containers are Btrfs subvolumes or directories
+# No cross-container access by default
+
+# User namespace separation
+# Containers run with different UID/GID mappings
+```
+
+### Resource Limits
+
+```bash
+# Monitor resource usage
+our-container monitor
+
+# Check container memory usage
+cat /proc/$(machinectl show my-container | grep PID | cut -d= -f2)/status
+
+# CPU monitoring
+top -p $(machinectl show my-container | grep PID | cut -d= -f2)
+```
+
+### Security Best Practices
+
+```bash
+# 1. Use isolated networking for untrusted containers
+our-container create untrusted-app --isolated
+
+# 2. Regular cleanup removes old snapshots
+our-container cleanup --threshold 80
+
+# 3. Monitor container health
+our-container diagnose
+
+# 4. Verify container integrity
+our-container enter my-container -- test -f /bin/bash
+```
+
+## GUI Integration
+
+### Wayland Support
+
+```bash
+# Start container with Wayland passthrough
+our-container enter my-container --wayland
+# Binds: /run/user/1000/wayland-0
+# Sets: WAYLAND_DISPLAY=wayland-0
+# Sets: XDG_RUNTIME_DIR=/run/user/1000
+```
+
+### GPU Acceleration
+
+```bash
+# Start container with GPU access
+our-container enter my-container --gpu
+# Binds: /dev/dri
+# Sets: DeviceAllow=char-drm rw
+
+# For gaming containers
+our-container create gaming-container --isolated --gpu
+```
+
+### Audio Support
+
+```bash
+# Start container with audio
+our-container enter my-container --audio
+# Binds: PipeWire or PulseAudio socket
+# Sets: PIPEWIRE_REMOTE or PULSE_SERVER
+
+# Full GUI + Audio + GPU
+our-container enter my-container --gui
+# Equivalent to --wayland --gpu --audio
+```
+
+## Backup and Recovery
+
+### Container Backup
+
+```bash
+# Manual backup using Btrfs snapshots
+our-container snapshot create my-container backup-$(date +%Y%m%d)
+
+# Export container state
+tar -czf my-container-backup.tar.gz \
+  /var/lib/machines/my-container/ \
+  /var/lib/machines/.snapshots/my-container/
+
+# Import container on another system
+tar -xzf my-container-backup.tar.gz -C /
+```
+
+### Disaster Recovery
+
+```bash
+# Check container health
+our-container diagnose
+
+# Restore from snapshot
+our-container snapshot restore my-container backup-2024-01-15
+
+# Cleanup after restore
+our-container cleanup --threshold 80
+
+# Verify restore
+our-container enter my-container -- echo "Container working"
+```
+
+## Integration with System
+
+### Systemd Services
+
+```bash
+# Containers register as systemd machines
+machinectl list
+
+# Container logs
+journalctl -u systemd-machined
+
+# Container status
+machinectl status my-container
+```
+
+### Btrfs Integration
+
+```bash
+# Container storage on Btrfs
+ls /var/lib/machines/
+# Shows container names as subvolumes
+
+# Btrfs properties
+btrfs property get -ts /var/lib/machines/my-container
+
+# Subvolume operations
+btrfs subvolume list /var/lib/machines/
+```
+
+### Automated Management
+
+```bash
+# Start containers on boot
+# Containers managed by systemd-machined
+
+# Container health monitoring
+our-container diagnose --interval 3600
+
+# Regular cleanup via cron
+0 2 * * * our-container cleanup --threshold 80
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Container won't start
+our-container diagnose
+
+# Container filesystem corrupted
+our-container snapshot restore my-container backup-2024-01-15
+
+# Network issues
+systemctl restart systemd-networkd
+
+# Disk space full
+our-container cleanup --threshold 90
+df -h /var/lib/machines
+```
+
+### Debug Mode
+
+```bash
+# Enter container with full debug access
+our-container enter my-container -- \
+  env DEBUG=1 bash -x
+
+# Check container filesystem
+our-container enter my-container -- \
+  find / -name "*.log" -ls
+
+# Monitor container processes
+our-container enter my-container -- ps aux
+```
+
+:::caution
+
+Container root access provides significant privileges. Always verify container images from trusted sources and regularly update base images to prevent security vulnerabilities.
+
+:::

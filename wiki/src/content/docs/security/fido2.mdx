@@ -1,0 +1,741 @@
+---
+title: FIDO2/WebAuthn
+description: FIDO2/WebAuthn authentication management with our-fido2 in ouroborOS
+slug: security/fido2
+---
+
+# FIDO2/WebAuthn Management (our-fido2)
+
+`our-fido2` is a comprehensive FIDO2/WebAuthn authentication tool supporting multiple authenticator types including USB, BLE GATT, and Hybrid QR (CTAP2). It provides secure passwordless authentication for ouroborOS systems and web applications.
+
+## Overview
+
+The FIDO2 manager provides:
+
+- **Multi-protocol support** for USB, BLE, and QR authentication
+- **Cross-platform compatibility** with FIDO2 standards
+- **Secure credential management** with backup and recovery
+- **Web application integration** for seamless authentication
+- **System integration** with login managers and services
+
+:::note
+
+our-fido2 requires BlueZ with `--experimental` flag enabled for BLE functionality and the Advertising Monitor API. USB and QR authentication work with standard FIDO2 devices.
+
+:::
+
+## Installation
+
+The FIDO2 manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-fido2 --version
+our-fido2 --help
+```
+
+## Basic Usage
+
+### Device Management
+
+```bash
+# List connected FIDO2 devices
+our-fido2 list
+
+# Show device details
+our-fido2 info "My YubiKey"
+
+# Check device capabilities
+our-fido2 capabilities "My YubiKey"
+
+# Test device connection
+our-fido2 test "My YubiKey"
+```
+
+### Credential Management
+
+```bash
+# Create new credential
+our-fido2 credential create "My Account" --device "My YubiKey"
+
+# List credentials
+our-fido2 credential list
+
+# Remove credential
+our-fido2 credential remove "My Account"
+
+# Backup credentials
+our-fido2 credential backup > credentials-backup.json
+```
+
+## Authentication Methods
+
+### WebAuthn Authentication
+
+```bash
+# Authenticate with website
+our-fido2 auth "example.com" --username "user@example.com"
+
+# Register new account
+our-fido2 register "example.com" --username "user@example.com"
+
+# Check authentication status
+our-fido2 auth-status "example.com" --username "user@example.com"
+```
+
+### System Authentication
+
+```bash
+# Add FIDO2 to system authentication
+our-fido2 system-auth add
+
+# Remove FIDO2 from system authentication
+our-fido2 system-auth remove
+
+# Test system authentication
+our-fido2 system-auth test
+```
+
+## Advanced Features
+
+### BLE (Bluetooth Low Energy) Support
+
+```bash
+# Check BLE readiness
+our-fido2 qr-ready
+
+# Start BLE authentication
+our-fido2 ble-auth "example.com" --username "user@example.com"
+
+# Monitor BLE connections
+our-fido2 ble-monitor
+
+# Configure BLE settings
+our-fido2 ble-config --timeout 30
+```
+
+### QR Code Authentication
+
+```bash
+# Generate QR code for authentication
+our-fido2 qr-auth "example.com" --username "user@example.com"
+
+# Scan QR code
+our-fido2 qr-scan
+
+# Configure QR settings
+our-fido2 qr-config --timeout 60 --size 256
+```
+
+### USB Authentication
+
+```bash
+# USB authentication
+our-fido2 usb-auth "example.com" --username "user@example.com"
+
+# Touch-based authentication
+our-fido2 touch-auth "example.com" --username "user@example.com"
+
+# PIN-based authentication
+our-fido2 pin-auth "example.com" --username "user@example.com" --pin "123456"
+```
+
+## Device Configuration
+
+### PIN Management
+
+```bash
+# Set PIN
+our-fido2 pin set --new-pin "123456"
+
+# Change PIN
+our-fido2 pin change --old-pin "123456" --new-pin "654321"
+
+# Remove PIN
+our-fido2 pin remove --pin "654321"
+
+# Reset PIN
+our-fido2 pin reset
+```
+
+### Biometric Settings
+
+```bash
+# Enable biometric authentication
+our-fido2 biometric enable
+
+# Disable biometric authentication
+our-fido2 biometric disable
+
+# Configure biometric timeout
+our-fido2 biometric timeout 30
+
+# Check biometric status
+our-fido2 biometric status
+```
+
+### Security Settings
+
+```bash
+# Enable enterprise attestation
+our-fido2 security enterprise-attestation enable
+
+# Configure UV (User Verification)
+our-fido2 security uv require
+
+# Configure UP (User Presence)
+our-fido2 security up require
+
+# Configure device attestation
+our-fido2 security attestation enable
+```
+
+## Application Integration
+
+### Web Applications
+
+```bash
+# Configure web app integration
+our-fido2 web-config "example.com" --enable
+
+# Test web app integration
+our-fido2 web-test "example.com"
+
+# Remove web app integration
+our-fido2 web-config "example.com" --disable
+```
+
+### Desktop Applications
+
+```bash
+# Configure desktop app integration
+our-fido2 desktop-config "MyApp" --enable
+
+# Test desktop app integration
+our-fido2 desktop-test "MyApp"
+
+# Remove desktop app integration
+our-fido2 desktop-config "MyApp" --disable
+```
+
+## System Integration
+
+### Login Manager
+
+```bash
+# Configure login manager integration
+our-fido2 login-manager configure
+
+# Test login manager integration
+our-fido2 login-manager test
+
+# Remove login manager integration
+our-fido2 login-manager remove
+```
+
+### SSH Authentication
+
+```bash
+# Add FIDO2 key to SSH
+our-fido2 ssh add-key
+
+# Remove FIDO2 key from SSH
+our-fido2 ssh remove-key
+
+# Test SSH authentication
+our-fido2 ssh test
+```
+
+## Monitoring and Diagnostics
+
+### Device Monitoring
+
+```bash
+# Monitor device status
+our-fido2 monitor --continuous
+
+# Show device statistics
+our-fido2 stats
+
+# Monitor authentication events
+our-fido2 auth-events
+```
+
+### Performance Testing
+
+```bash
+# Test authentication speed
+our-fido2 perf-test --iterations 100
+
+# Compare authenticator performance
+our-fido2 compare "YubiKey5" "SecurityKey"
+
+# Generate performance report
+our-fido2 perf-report --output perf-report.txt
+```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+our-fido2 --debug list
+
+# Show detailed device info
+our-fido2 --verbose info "My YubiKey"
+
+# Monitor authentication flow
+our-fido2 --monitor auth "example.com"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix device connection issues
+our-fido2 fix-device
+
+# Reset device configuration
+our-fido2 reset-device
+
+# Clear device cache
+our-fido2 clear-cache
+
+# Reinitialize device
+our-fido2 reinit
+```
+
+### Authentication Issues
+
+```bash
+# Fix authentication problems
+our-fido2 fix-auth
+
+# Reset authentication state
+our-fido2 reset-auth
+
+# Clear authentication cache
+our-fido2 clear-auth-cache
+
+# Rebuild authentication database
+our-fido2 rebuild-auth-db
+```
+
+### Device Configuration Issues
+
+```bash
+# Fix configuration issues
+our-fido2 fix-config
+
+# Reset device configuration
+our-fido2 reset-config
+
+# Restore default settings
+our-fido2 restore-defaults
+
+# Validate device configuration
+our-fido2 validate-config
+```
+
+## Security Features
+
+### Backup and Recovery
+
+```bash
+# Create device backup
+our-fido2 backup create --file device-backup.json
+
+# Restore device from backup
+our-fido2 backup restore --file device-backup.json
+
+# Test backup integrity
+our-fido2 backup test --file device-backup.json
+
+# Encrypt backup file
+our-fido2 backup encrypt --file device-backup.json --password secret
+```
+
+### Security Audit
+
+```bash
+# Run security audit
+our-fido2 audit
+
+# Generate security report
+our-fido2 audit-report --output security-report.txt
+
+# Check compliance
+our-fido2 compliance check
+
+# Generate compliance report
+our-fido2 compliance report --output compliance-report.txt
+```
+
+### Access Control
+
+```bash
+# Configure access control
+our-fido2 access-control configure
+
+# Set access policies
+our-fido2 access-control set-policy --policy strict
+
+# Check access control status
+our-fido2 access-control status
+
+# Test access control
+our-fido2 access-control test
+```
+
+## PAM Integration
+
+our-fido2 integrates FIDO2 tokens into the Pluggable Authentication Modules (PAM) stack for system authentication, enabling passwordless sudo, TTY login, and SSH authentication.
+
+### System-Wide Authentication
+
+```bash
+# Register FIDO2 token for system authentication (sudo/login)
+sudo our-fido2 pam register --system
+
+# Enable FIDO2 for sudo authentication
+sudo our-fido2 pam enable sudo
+
+# Enable FIDO2 for all services (sudo, login, SSH)
+sudo our-fido2 pam enable all
+
+# Check PAM configuration status
+sudo our-fido2 pam status
+```
+
+### User-Specific Authentication
+
+```bash
+# Register FIDO2 token for current user (session unlock)
+our-fido2 pam register
+
+# Enable FIDO2 for SSH authentication only
+sudo our-fido2 pam enable ssh
+
+# Remove FIDO2 authentication from specific service
+sudo our-fido2 pam disable sudo
+```
+
+### PAM Workflow
+
+```bash
+# 1. Register token (touch when it blinks)
+sudo our-fido2 pam register --system
+
+# 2. Enable authentication service
+sudo our-fido2 pam enable sudo
+
+# 3. Test sudo authentication
+sudo -k  # Clear cached credentials
+sudo whoami  # Touch token when prompted
+```
+
+## SSH FIDO2 Keys
+
+Generate and manage FIDO2 SSH keys where the private key material stays securely on the hardware token.
+
+### Key Generation
+
+```bash
+# Generate standard FIDO2 SSH key
+our-fido2 ssh generate
+
+# Generate resident key (stored on token)
+our-fido2 ssh generate --resident
+
+# Generate key with custom path and application
+our-fido2 ssh generate --file ~/.ssh/custom_key --application "ssh:my-server"
+
+# List existing FIDO2 SSH keys
+our-fido2 ssh list
+```
+
+### Resident Key Management
+
+```bash
+# Load resident keys from token
+our-fido2 ssh load-resident
+
+# Use resident keys across different machines
+# (Keys are stored on token, can be loaded anywhere)
+our-fido2 ssh load-resident
+
+# Test SSH with FIDO2 key
+ssh -i ~/.ssh/id_ed25519_sk user@remote-host
+```
+
+## LUKS2 Disk Encryption
+
+Unlock encrypted LUKS2 partitions using FIDO2 tokens instead of or in addition to passphrases.
+
+### Enroll FIDO2 for Disk Unlock
+
+```bash
+# Enroll FIDO2 token in LUKS2 partition
+sudo our-fido2 luks enroll /dev/sda2
+
+# List enrolled key slots
+sudo our-fido2 luks list /dev/sda2
+
+# Remove FIDO2 enrollment (keeps passphrase slot)
+sudo our-fido2 luks unenroll /dev/sda2
+```
+
+### LUKS2 Authentication Workflow
+
+```bash
+# 1. Enroll token during installation
+sudo our-fido2 luks enroll /dev/vda2
+
+# 2. At boot, touch the token when prompted
+# Token must be present during each boot
+
+# 3. Fallback passphrase still works
+# Can be used if token is lost or unavailable
+```
+
+## Advanced BLE Operations
+
+Detailed Bluetooth Low Energy management for FIDO2 tokens.
+
+### BLE Pairing Process
+
+```bash
+# Scan for BLE FIDO2 devices
+our-fido2 ble scan
+
+# Pair specific BLE device by MAC address
+our-fido2 ble pair AA:BB:CC:DD:EE:FF
+
+# List currently paired BLE devices
+our-fido2 ble list
+
+# Connect to paired BLE device
+# (Use bluetoothctl: connect AA:BB:CC:DD:EE:FF)
+```
+
+### BLE Token Management
+
+```bash
+# Check BLE stack readiness for QR authentication
+our-fido2 qr-ready
+
+# Verify BLE adapter is powered on
+our-bluetooth status
+
+# Trust BLE device for auto-reconnect
+bluetoothctl trust AA:BB:CC:DD:EE:FF
+```
+
+## Comprehensive Security Features
+
+### Credential Management
+
+```bash
+# List discoverable credentials (passkeys) on device
+our-fido2 cred list /dev/hidraw0
+
+# Delete specific credential (interactive)
+our-fido2 cred delete /dev/hidraw0
+
+# Factory reset (DESTROYS ALL CREDENTIALS)
+our-fido2 reset /dev/hidraw0
+```
+
+### PIN Management
+
+```bash
+# Set or change PIN
+our-fido2 pin set /dev/hidraw0
+
+# Verify PIN is accepted
+our-fido2 pin verify /dev/hidraw0
+
+# Check PIN retry counter
+our-fido2 pin info /dev/hidraw0
+```
+
+## Troubleshooting and Diagnostics
+
+### Device Connection Issues
+
+```bash
+# List all connected FIDO2 devices
+our-fido2 list
+
+# Get detailed device information
+our-fido2 info /dev/hidraw0
+
+# Check udev rules are loaded
+ls -la /etc/udev/rules.d/71-fido2-ble.rules
+ls -la /usr/lib/udev/rules.d/70-u2f.rules
+
+# Reload udev rules
+sudo udevadm trigger --subsystem-match=hidraw
+```
+
+### Authentication Problems
+
+```bash
+# Reset PAM configuration
+sudo our-fido2 pam disable sudo
+sudo our-fido2 pam enable sudo
+
+# Re-register PAM token
+sudo our-fido2 pam register --system
+
+# Check BLE stack for QR issues
+our-fido2 qr-ready
+```
+
+## Transport Types and Requirements
+
+### USB HID Transport
+
+```bash
+# Standard USB FIDO2 tokens
+# YubiKey, SoloKey, Nitrokey, Google Titan, etc.
+# Require libfido2 package and udev rules
+
+# Check USB token connectivity
+our-fido2 list
+our-fido2 info /dev/hidraw0
+```
+
+### BLE GATT Transport
+
+```bash
+# Bluetooth Low Energy FIDO2 tokens
+# YubiKey 5Ci, SoloKey BLE, etc.
+# Require BlueZ and experimental mode
+
+# BLE setup workflow:
+# 1. Enable Bluetooth
+our-bluetooth on
+
+# 2. Scan for devices
+our-fido2 ble scan
+
+# 3. Pair device
+our-fido2 ble pair AA:BB:CC:DD:EE:FF
+
+# 4. Connect via bluetoothctl
+bluetoothctl connect AA:BB:CC:DD:EE:FF
+
+# 5. Verify with our-fido2 list
+```
+
+### Hybrid QR Transport
+
+```bash
+# Use phone as FIDO2 authenticator via QR code
+# Requires BlueZ experimental mode and Chrome/Firefox
+
+# 1. Check system readiness
+our-fido2 qr-ready
+
+# 2. WebAuthn workflow:
+#    - Open website supporting WebAuthn/passkeys
+#    - Select "Passkey" or "Security Key" option
+#    - Scan QR code with phone camera
+#    - Authenticate on phone (biometric/PIN)
+#    - Confirm in browser
+
+# 3. BLE stack verification
+# our-fido2 qr-ready shows complete status
+```
+
+## System Requirements and Setup
+
+### Package Dependencies
+
+```bash
+# Core FIDO2 libraries
+sudo our-pac -S libfido2
+
+# PAM integration (optional)
+sudo our-pac -S pam-u2f
+
+# Bluetooth support (for BLE)
+sudo our-pac -S bluez bluez-utils
+
+# SSH key generation
+sudo our-pac -S openssh
+
+# System utilities
+sudo our-pac -S systemd udev
+```
+
+### Configuration Files
+
+```bash
+# BlueZ experimental mode
+# /etc/systemd/system/bluetooth.service.d/experimental.conf
+# [Service]
+# ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+
+# udev rules for FIDO2 devices
+# /etc/udev/rules.d/71-fido2-ble.rules
+# /usr/lib/udev/rules.d/70-u2f.rules (from libfido2)
+
+# PAM configuration
+# /etc/pam.d/sudo, /etc/pam.d/login, /etc/pam.d/sshd
+```
+
+## Complete Workflow Examples
+
+### Complete Desktop Setup
+
+```bash
+# 1. USB Token Setup
+our-fido2 list
+our-fido2 info /dev/hidraw0
+our-fido2 pin set /dev/hidraw0
+
+# 2. System Authentication (sudo)
+sudo our-fido2 pam register --system
+sudo our-fido2 pam enable sudo
+
+# 3. SSH Authentication
+our-fido2 ssh generate --resident
+our-fido2 ssh load-resident
+ssh-copy-id -i ~/.ssh/id_ed25519_sk.pub user@remote
+
+# 4. Test Authentication
+sudo -k; sudo whoami  # Touch token for sudo
+ssh user@remote-host  # Uses FIDO2 key
+```
+
+### Mobile Workstation Setup (BLE + QR)
+
+```bash
+# 1. BLE Token Setup
+our-bluetooth on
+our-fido2 ble scan
+our-fido2 ble pair AA:BB:CC:DD:EE:FF
+bluetoothctl connect AA:BB:CC:DD:EE:FF
+
+# 2. QR Authentication Readiness
+our-fido2 qr-ready
+
+# 3. Browser Passkey Support
+# Use Chrome/Firefox with any WebAuthn site
+# Scan QR codes on phone for passwordless login
+
+# 4. Optional: LUKS2 Unlock
+sudo our-fido2 luks enroll /dev/sda2
+```
+
+:::danger
+
+⚠️ **Security Warning**: Always backup your FIDO2 credentials regularly. Losing access to your FIDO2 device without backup credentials may permanently lock you out of your accounts.
+
+- For resident keys, write down recovery codes when available
+- For PAM authentication, keep backup authentication methods configured
+- For LUKS2, always keep the passphrase as a fallback
+- Store device backups in secure, offline locations
+
+:::

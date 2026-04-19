@@ -1,0 +1,640 @@
+---
+title: Desktop Themes
+description: Customization and theming guide for ouroborOS desktop environments
+slug: desktop/themes
+---
+
+# Desktop Themes and Customization
+
+orooborOS provides comprehensive theming capabilities across all supported desktop environments. Whether you prefer a minimal aesthetic or a highly customized workspace, the system supports easy theme management and consistent styling.
+
+## Overview
+
+The theming system in ouroborOS is designed to be:
+
+- **Consistent**: All desktop environments follow similar color palette conventions
+- **Customizable**: Easy to modify colors, icons, and layouts
+- **Persistent**: Theme changes are preserved across reboots and updates
+- **Cross-desktop**: Works across Hyprland, Niri, GNOME, and KDE
+
+:::note
+
+Theme management is integrated with the `our-pac` package manager. When you update system packages, your theme customizations are preserved automatically.
+
+:::
+
+## Color Palette
+
+### Default Color Scheme
+
+orooborOS uses an emerald/teal color palette that provides a fresh, modern appearance:
+
+```yaml
+# Default color scheme
+colors:
+  primary: "#10b981"    # Emerald (dark mode accent)
+  secondary: "#059669" # Dark Emerald (light mode accent)  
+  background: "#0f172a" # Very Dark (header background)
+  surface: "#1e293b"    # Card backgrounds
+  text: "#f1f5f9"       # Primary text
+  text-secondary: "#94a3b8" # Secondary text
+```
+
+### Theme Customization
+
+You can customize colors by modifying theme files in your home directory:
+
+```bash
+# Theme configuration directory
+~/.config/ouroborOS/themes/
+
+# Create custom theme
+mkdir -p ~/.config/ouroborOS/themes/my-theme
+```
+
+## Desktop-Specific Theming
+
+### Hyprland Themes
+
+Hyprland configuration is located at `~/.config/hypr/hyprland.conf`:
+
+```ini
+# Hyprland theme configuration
+$accent = #10b981
+$background = #0f172a
+$surface = #1e293b
+
+windowrule = float, ^(firefox)$
+windowrule = tile, ^(kitty)$
+
+general {
+    border_size = 2
+    col.active_border = $accent
+    col.inactive_border = #334155
+}
+```
+
+### Niri Themes
+
+Niri configuration is in `~/.config/niri/config.kdl`:
+
+```kdl
+// Niri theme configuration
+$accent: #10b981;
+$background: #0f172a;
+$surface: #1e293b;
+
+windowRules {
+    match app_id "firefox" {
+        floating true
+    }
+}
+```
+
+### GNOME Themes
+
+GNOME themes are managed through extensions:
+
+```bash
+# Install GNOME tweaks
+our-pac install gnome-tweaks
+
+# Theme installation
+gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
+```
+
+### KDE Themes
+
+KDE customization through System Settings:
+
+```bash
+# KDE theme management
+systemsettings5
+```
+
+## Theme Packages
+
+Pre-built theme packages are available through our repositories:
+
+```bash
+# Install additional themes
+our-pac install ouroborOS-themes-collection
+our-pac install ouroborOS-icons
+our-pac install ouroborOS-cursors
+```
+
+## Dynamic Theme Switching
+
+orooborOS supports automatic theme switching based on time of day:
+
+```yaml
+# ~/.config/ouroborOS/theme-switcher.yaml
+theme:
+  day:
+    colors:
+      primary: "#059669"  # Light emerald
+      background: "#ffffff"
+  night:
+    colors:
+      primary: "#10b981"  # Dark emerald  
+      background: "#0f172a"
+```
+
+## Desktop Environment-Specific Theming
+
+### Hyprland Configuration
+
+Hyprland configurations are stored in `~/.config/hypr/hyprland.conf`. Here's a complete example with theme integration:
+
+```ini
+# ~/.config/hypr/hyprland.conf
+$accent = #10b981
+$background = #0f172a
+$surface = #1e293b
+$text = #f1f5f9
+$text-secondary = #94a3b8
+
+# Window rules and animations
+windowrule = float, ^(firefox)$
+windowrule = float, ^(mpv)$
+windowrule = float, ^(pavucontrol)$
+windowrule = opacity 0.95, ^(.*)$
+
+# Monitor configuration
+monitor = HDMI-A-1, 1920x1080@144, 0x0, auto
+
+# Workspace setup
+workspace = 1, monitor:HDMI-A-1
+workspace = 2, monitor:HDMI-A-1
+
+# Input configuration
+input {
+    kb_layout = us
+    kb_variant = 
+    kb_model = 
+    kb_options = 
+    kb_rules = 
+
+    follow_mouse = 1
+    mouse_refocus = false
+    touchpad {
+        natural_scroll = true
+        clickfinger_tac = 2
+    }
+}
+
+# General configuration
+general {
+    gaps_in = 5
+    gaps_out = 10
+    border_size = 2
+    col.active_border = $accent
+    col.inactive_border = #334155
+    layout = dwindle
+}
+
+# Decoration configuration
+decoration {
+    rounding = 10
+    blur {
+        enabled = true
+        size = 8
+        passes = 3
+        new_optimizations = true
+    }
+    drop_shadow = true
+    shadow_range = 4
+    shadow_render_power = 6
+}
+
+# Animations configuration
+animations {
+    enabled = true
+    bezier = myBezier, 0.05, 0.9, 0.1, 1.05
+    animation = windows, 1, 7, myBezier
+    animation = windowsOut, 1, 7, default, popin
+    animation = border, 1, 10, default
+    animation = borderangle, 1, 8, default
+    animation = fade, 1, 7, default
+    animation = workspaces, 1, 6, default
+}
+
+# Exec (autostart)
+exec = waybar
+exec = hyprpaper --image ~/wallpapers/forest.jpg
+exec = hyprpolkitagent
+exec = dunst
+
+# Launcher
+$mainMod = SUPER
+
+bind = $mainMod, Return, exec, foot
+bind = $mainMod, C, killactive,
+bind = $mainMod, M, exit,
+bind = $mainMod, E, exec, thunar
+bind = $mainMod, V, togglefloating,
+bind = $mainMod, R, exec, fuzel
+bind = $mainMod, P, pseudo,
+bind = $mainMod, J, togglesplit,
+bind = $mainMod, left, movefocus, l
+bind = $mainMod, right, movefocus, r
+bind = $mainMod, up, movefocus, u
+bind = $mainMod, down, movefocus, d
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+bind = $mainMod, SHIFT, 1, movetoworkspace, 1
+bind = $mainMod, SHIFT, 2, movetoworkspace, 2
+bind = $mainMod, SHIFT, 3, movetoworkspace, 3
+bind = $mainMod, SHIFT, 4, movetoworkspace, 4
+bind = $mainMod, SHIFT, 5, movetoworkspace, 5
+bind = $mainMod, SHIFT, 6, movetoworkspace, 6
+bind = $mainMod, SHIFT, 7, movetoworkspace, 7
+bind = $mainMod, SHIFT, 8, movetoworkspace, 8
+bind = $mainMod, SHIFT, 9, movetoworkspace, 9
+bind = $mainMod, SHIFT, 0, movetoworkspace, 10
+
+# Media keys
+bind = ,XF86AudioRaiseVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ +5%
+bind = ,XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -5%
+bind = ,XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle
+bind = ,XF86AudioPlay, exec, playerctl play-pause
+bind = ,XF86AudioNext, exec, playerctl next
+bind = ,XF86AudioPrev, exec, playerctl previous
+```
+
+### Hyprland Theme Tools
+
+orooborOS includes several Hyprland-specific theming utilities:
+
+```bash
+# Install additional Hyprland theming packages
+our-pac install hyprcursor hyprlang hyprutils hyprwayland-scanner
+
+# Hyprpaper for wallpaper management
+hyprpaper --config ~/.config/hypr/hyprpaper.conf
+
+# Hyprpolkitagent for authentication
+hyprpolkitagent
+
+# Hyprlock for screen locking
+hyprlock --config ~/.config/hypr/hyprlock.conf
+```
+
+### Niri Configuration
+
+Niri configurations are stored in `~/.config/niri/config.kdl`. Here's a complete example:
+
+```kdl
+// ~/.config/niri/config.kdl
+$accent: #10b981;
+$background: #0f172a;
+$surface: #1e293b;
+$text: #f1f5f9;
+$text-secondary: #94a3b8;
+
+// Display configuration
+outputs = {
+    "HDMI-A-1" = {
+        mode = "1920x1080@144Hz";
+        scale = 1.0;
+        position = "0,0";
+    };
+};
+
+// Workspace configuration
+workspaces = {
+    "1" = output = "HDMI-A-1";
+    "2" = output = "HDMI-A-1";
+    "3" = output = "HDMI-A-1";
+    "4" = output = "HDMI-A-1";
+    "5" = output = "HDMI-A-1";
+    "6" = output = "HDMI-A-1";
+    "7" = output = "HDMI-A-1";
+    "8" = output = "HDMI-A-1";
+    "9" = output = "HDMI-A-1";
+    "10" = output = "HDMI-A-1";
+};
+
+// Layout configuration
+layout = {
+    focus-ring = {
+        active-color = $accent;
+        inactive-color = #334155;
+        width = 2px;
+    };
+    gap-size = 10px;
+};
+
+// Keyboard configuration
+keyboard = {
+    xkb = {
+        layout = "us";
+    };
+    repeat-delay = 250ms;
+    repeat-rate = 60;
+};
+
+// Input configuration
+input = {
+    touchpad = {
+        tap-to-click = true;
+        natural-scroll = true;
+        two-finger-tap = middle-button;
+        tap-drag = true;
+        drag = true;
+        tap-drag-lock = false;
+    };
+};
+
+// Mouse configuration
+mouse = {
+    follow-focus = "never";
+    accel-profile = "flat";
+    accel-speed = 0;
+};
+
+// Window rules
+window-rules = {
+    match app-id "firefox" {
+        spawn-on-workspace = "2";
+    };
+    match app-id "foot" {
+        spawn-on-workspace = "1";
+    };
+    match title ".*" {
+        focus-ring = active;
+    };
+};
+
+// Spawn applications on startup
+spawn-on-startup = "waybar";
+spawn-on-startup = "dunst";
+spawn-on-startup = "fuzzel";
+
+// Keyboard bindings
+$mainMod = "Super";
+
+bind = $mainMod Return { spawn = "foot"; }
+bind = $mainMod C { close-window = []; }
+bind = $mainMod E { spawn = "thunar"; }
+bind = $mainMod V { toggle-fullscreen = []; }
+bind = $mainMod R { spawn = "fuzzel"; }
+bind = $mainMod left { focus-monitor-left = []; }
+bind = $mainMod right { focus-monitor-right = []; }
+bind = $mainMod up { focus-monitor-up = []; }
+bind = $mainMod down { focus-monitor-down = []; }
+bind = $mainMod 1 { focus-workspace = "1"; }
+bind = $mainMod 2 { focus-workspace = "2"; }
+bind = $mainMod 3 { focus-workspace = "3"; }
+bind = $mainMod 4 { focus-workspace = "4"; }
+bind = $mainMod 5 { focus-workspace = "5"; }
+bind = $mainMod 6 { focus-workspace = "6"; }
+bind = $mainMod 7 { focus-workspace = "7"; }
+bind = $mainMod 8 { focus-workspace = "8"; }
+bind = $mainMod 9 { focus-workspace = "9"; }
+bind = $mainMod 0 { focus-workspace = "10"; }
+bind = $mainMod Shift 1 { move-to-workspace = "1"; }
+bind = $mainMod Shift 2 { move-to-workspace = "2"; }
+bind = $mainMod Shift 3 { move-to-workspace = "3"; }
+bind = $mainMod Shift 4 { move-to-workspace = "4"; }
+bind = $mainMod Shift 5 { move-to-workspace = "5"; }
+bind = $mainMod Shift 6 { move-to-workspace = "6"; }
+bind = $mainMod Shift 7 { move-to-workspace = "7"; }
+bind = $mainMod Shift 8 { move-to-workspace = "8"; }
+bind = $mainMod Shift 9 { move-to-workspace = "9"; }
+bind = $mainMod Shift 0 { move-to-workspace = "10"; }
+
+// Media keys
+bind = "XF86AudioRaiseVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ +5%"; }
+bind = "XF86AudioLowerVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ -5%"; }
+bind = "XF86AudioMute" { spawn = "pactl set-sink-mute @DEFAULT_SINK@ toggle"; }
+bind = "XF86AudioPlay" { spawn = "playerctl play-pause"; }
+bind = "XF86AudioNext" { spawn = "playerctl next"; }
+bind = "XF86AudioPrev" { spawn = "playerctl previous"; }
+```
+
+### Niri Theme Components
+
+Niri supports theming through its configuration system:
+
+```bash
+# Install Niri theme packages
+our-pac install niri mako fuzzel waybar
+
+# Configure notification daemon (mako)
+cat > ~/.config/mako/config << EOF
+{
+    "font": "JetBrains Mono, 12",
+    "background": "#1e293b",
+    "background-alt": "#334155",
+    "text": "#f1f5f9",
+    "text-alt": "#94a3b8",
+    "border": "#10b981",
+    "border-radius": 10,
+    "progress": 0,
+    "padding": 15,
+    "margin": 15,
+    "icons": 1,
+    "max-icon-size": 64,
+    "default-timeout": 5000,
+    "ignore-timeout": 1,
+    "format": "<b>%s</b>\\n%b",
+    "anchor": "top-center",
+    "output": "HDMI-A-1"
+}
+EOF
+
+# Configure app launcher (fuzzel)
+cat > ~/.config/fuzzel/config << EOF
+{
+    "main": {
+        "font": "JetBrains Mono, 14",
+        "width": 50,
+        "lines": 10,
+        "prompt": "❯ ",
+        "colors": {
+            "background": "#0f172a",
+            "text": "#f1f5f9",
+            "match": "#10b981",
+            "selection": "#1e293b",
+            "selection-text": "#f1f5f9",
+            "selection-match": "#059669"
+        }
+    }
+}
+EOF
+```
+
+### GNOME Theme Customization
+
+GNOME themes are managed through extensions and system settings:
+
+```bash
+# Install GNOME tools
+our-pac install gnome-tweaks gnome-extensions
+
+# Install user themes extension
+gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
+
+# Install GNOME Shell integration
+gnome-extensions install dash-to-dock@micxgx.gmail.com
+
+# Configure themes via GNOME Tweaks
+gnome-tweaks
+
+# Install additional themes
+our-pac install adw-gtk3-theme capitaine-cursors
+
+# Configure system themes
+gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+gsettings set org.gnome.desktop.interface icon-theme "Yaru"
+gsettings set org.gnome.desktop.interface cursor-theme " capitaine-cursors"
+gsettings set org.gnome.desktop.wm.preferences theme "Adwaita-dark"
+```
+
+### KDE Plasma Theme Customization
+
+KDE Plasma theming is managed through System Settings:
+
+```bash
+# Install KDE system settings
+systemsettings5
+
+# Configure global theme
+# Plasma Look and Feel → Global Theme → Select theme
+
+# Configure desktop widget
+# Workspace → Add Widgets → Configure
+
+# Configure window decoration
+# Window Decorations → Configure
+
+# Install additional themes
+our-pac install plasma5-themes-breath plasma5-themes-breeze-enhanced
+
+# Configure Plasma Desktop
+plasma-apply-wallpaperimage --file /path/to/wallpaper.jpg
+plasma-apply-colorscheme --path /path/to/colorscheme.colors
+```
+
+### COSMIC Theme Configuration
+
+COSMIC desktop provides built-in theming:
+
+```bash
+# Install COSMIC theme components
+our-pac install cosmic-theme cosmic-settings
+
+# Configure COSMIC theme
+cosmic-settings
+
+# Change wallpaper
+cosmic-bg --image /path/to/wallpaper.jpg
+
+# Configure colors and appearance
+cosmic-settings appearance
+```
+
+## Theme Package Management
+
+### Pre-built Theme Collections
+
+```bash
+# Install theme collections from official repositories
+our-pac install ouroborOS-theme-collection
+our-pac install ouroborOS-icons
+our-pac install ouroborOS-cursors
+
+# Install AUR themes (if available)
+our-aur install hyprland-themes-git
+our-aur install niri-themes
+```
+
+### Custom Theme Development
+
+```bash
+# Theme development directory structure
+~/.config/ouroborOS/themes/my-theme/
+├── hyprland/
+│   └── hyprland.conf
+├── niri/
+│   └── config.kdl
+├── gnome/
+│   ├── extensions/
+│   └── gsettings/
+├── kde/
+│   ├── plasma-theme/
+│   └── color-schemes/
+└── shared/
+    ├── colors.json
+    └── fonts.conf
+
+# Create theme package for distribution
+cd ~/.config/ouroborOS/themes/my-theme
+tar -czf my-theme.tar.gz .
+```
+
+## Theme Backup and Migration
+
+### Backup Current Theme Configuration
+
+```bash
+# Create theme backup
+theme-backup() {
+    local backup_dir="~/.themes-backup/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_dir"
+    
+    # Backup desktop-specific configs
+    cp -r ~/.config/hypr/ "$backup_dir/hypr" 2>/dev/null || true
+    cp -r ~/.config/niri/ "$backup_dir/niri" 2>/dev/null || true
+    cp -r ~/.config/gtk-*.0/ "$backup_dir/gtk" 2>/dev/null || true
+    cp -r ~/.config/plasma* "$backup_dir/plasma" 2>/dev/null || true
+    cp -r ~/.local/share/gnome* "$backup_dir/gnome-shell" 2>/dev/null || true
+    
+    echo "Theme backup saved to: $backup_dir"
+}
+
+# Backup current theme
+theme-backup
+```
+
+### Migrate Theme Between Systems
+
+```bash
+# Export theme configuration
+theme-export() {
+    local output_dir="theme-$(date +%Y%m%d)"
+    mkdir -p "$output_dir"
+    
+    # Collect theme files
+    cp ~/.config/hypr/hyprland.conf "$output_dir/" 2>/dev/null || true
+    cp ~/.config/niri/config.kdl "$output_dir/" 2>/dev/null || true
+    cp ~/.config/gtk-3.0/settings.ini "$output_dir/" 2>/dev/null || true
+    cp ~/.config/gtk-4.0/settings.ini "$output_dir/" 2>/dev/null || true
+    cp -r ~/.themes/* "$output_dir/themes/" 2>/dev/null || true
+    cp -r ~/.icons/* "$output_dir/icons/" 2>/dev/null || true
+    
+    # Create archive
+    tar -czf "$output_dir.tar.gz" "$output_dir"
+    rm -rf "$output_dir"
+    
+    echo "Theme exported to: $output_dir.tar.gz"
+}
+
+# Export theme
+theme-export
+```
+
+:::caution
+
+Always backup your theme configurations before major system updates to prevent customization loss.
+
+:::

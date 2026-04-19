@@ -1,0 +1,598 @@
+---
+title: Desktop Profiles
+description: Learn about ouroborOS desktop profiles and how to configure your desktop environment with our curated profiles.
+slug: desktop/profiles
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Desktop Profiles
+
+ouroborOS provides carefully curated desktop profiles that combine specific window managers, display managers, and applications to create optimal desktop experiences. Each profile is designed for different use cases, from minimal workstations to full-featured desktop environments.
+
+## What are Desktop Profiles?
+
+Desktop profiles in ouroborOS are pre-configured combinations of desktop environments, window managers, display managers, and essential applications. Instead of manually installing and configuring dozens of packages, you can select a profile that matches your workflow and get a fully configured system.
+
+```bash
+# Traditional desktop setup - manual
+sudo pacman -S hyprland waybar hyprpaper
+sudo pacman -S neovim alacritty firefox
+# Manual configuration for each component
+
+# ouroborOS profile - automated
+# Select profile during installation
+# All packages and configurations handled automatically
+```
+
+## Available Profiles
+
+### **1. Minimal Profile**
+Ideal for servers, containers, or users who prefer a clean, minimal environment.
+
+```yaml
+# Minimal profile configuration
+desktop:
+  profile: minimal
+  packages:
+    - base
+    - base-devel
+    - sudo
+    - networkmanager
+    - iwd
+  services:
+    - NetworkManager
+    - iwd
+    - systemd-resolved
+  autostart: []
+```
+
+**Features:**
+- No graphical interface
+- Command-line only
+- Minimal resource usage
+- Perfect for servers and containers
+- Fast boot times
+
+**Use Cases:**
+- Web servers
+- Database servers
+- Development containers
+- Headless systems
+- IoT devices
+
+### **2. Hyprland Profile**
+Modern tiling window manager with Wayland support, perfect for power users and developers.
+
+```yaml
+# Hyprland profile configuration
+desktop:
+  profile: hyprland
+  packages:
+    - hyprland
+    - hyprpaper
+    - hyprcursor
+    - hypridle
+    - hyprland-session
+    - waybar
+    - kitty
+    - rofi
+    - brightnessctl
+    - playerctl
+    - pavucontrol
+    - network-manager-applet
+    - blueberry
+  services:
+    - NetworkManager
+    - iwd
+    - systemd-resolved
+    - bluetooth
+  autostart:
+    - waybar
+    - hyprpaper
+    - nm-applet
+    - blueberry-tray
+```
+
+**Features:**
+- Modern tiling window manager
+- Wayland native
+- Highly customizable
+- Excellent performance
+- Rich extension ecosystem
+
+**Use Cases:**
+- Development work
+- Power users
+- System administration
+- Gaming
+- Creative work
+
+### **3. Niri Profile**
+Modern tiling Wayland compositor with focus on simplicity and performance.
+
+```yaml
+# Niri profile configuration
+desktop:
+  profile: niri
+  packages:
+    - niri
+    - niri-session
+    - waybar
+    - foot
+    - fuzzel
+    - brightnessctl
+    - playerctl
+    - pavucontrol
+    - network-manager-applet
+  services:
+    - NetworkManager
+    - iwd
+    - systemd-resolved
+  autostart:
+    - waybar
+    - nm-applet
+```
+
+**Features:**
+- Modern Wayland compositor
+- Simple configuration
+- Excellent performance
+- Good keyboard navigation
+- Clean interface
+
+**Use Cases:**
+- Minimalist power users
+- Terminal-focused work
+- Development
+- Performance-critical applications
+- Clean workspace
+
+### **4. GNOME Profile**
+Full-featured desktop environment with modern user interface and extensive applications.
+
+```yaml
+# GNOME profile configuration
+desktop:
+  profile: gnome
+  packages:
+    - gnome
+    - gnome-tweaks
+    - gnome-extensions
+    - nautilus
+    - gnome-terminal
+    - gnome-control-center
+    - gnome-software
+    - firefox
+    - libreoffice-fresh
+    - gimp
+    - inkscape
+  services:
+    - gdm
+    - NetworkManager
+    - iwd
+    - bluetooth
+  autostart:
+    - gnome-session
+```
+
+**Features:**
+- Modern user interface
+- Extensive application ecosystem
+- Excellent accessibility
+- Good hardware support
+- Regular updates
+
+**Use Cases:**
+- General desktop use
+- Office work
+- Creative work
+- Accessibility needs
+- Beginner-friendly setup
+
+### **5. KDE Plasma Profile**
+Feature-rich desktop environment with high customizability and modern applications.
+
+```yaml
+# KDE Plasma profile configuration
+desktop:
+  profile: kde
+  packages:
+    - plasma-meta
+    - konsole
+    - dolphin
+    - systemsettings
+    - plasma-nano
+    - breeze-gtk
+    - firefox
+    - libreoffice-fresh
+    - kate
+    - okular
+  services:
+    - sddm
+    - NetworkManager
+    - bluetooth
+  autostart:
+    - startplasma-x11
+```
+
+**Features:**
+- Highly customizable
+- Excellent performance
+- Rich application ecosystem
+- Good integration with Linux
+- Modern interface
+
+**Use Cases:**
+- Power users
+- Development work
+- Creative work
+- Gaming
+- General desktop use
+
+## Profile Selection
+
+### **During Installation**
+```bash
+# During TUI installer
+# Select desktop profile from menu:
+# 1. Minimal - No GUI
+# 2. Hyprland - Modern tiling WM
+# 3. Niri - Simple tiling WM
+# 4. GNOME - Full desktop
+# 5. KDE - Feature-rich desktop
+```
+
+### **Post-Installation**
+```bash
+# Change desktop profile after installation
+# Reinstall with new profile
+ouroboros-profile change hyprland
+
+# Check current profile
+ouroboros-profile current
+
+# List available profiles
+ouroboros-profile list
+```
+
+### **Profile Configuration**
+```bash
+# Edit profile configuration
+sudo nano /etc/ouroborOS/desktop/profile.yaml
+
+# Validate profile configuration
+ouroboros-profile validate
+
+# Apply profile changes
+ouroboros-profile apply
+```
+
+## Customization Options
+
+### **Package Customization**
+```yaml
+# Custom package list
+desktop:
+  profile: hyprland
+  packages:
+    - # Core packages
+      - hyprland
+      - waybar
+      - kitty
+    - # Additional packages
+      - neovim
+      - docker
+      - firefox
+    - # Remove default packages
+      exclude:
+        - rofi
+        - brightnessctl
+```
+
+### **Service Configuration**
+```yaml
+# Custom service configuration
+desktop:
+  profile: hyprland
+  services:
+    - NetworkManager
+    - iwd
+    - bluetooth
+    - # Custom services
+      - docker
+      - docker-compose
+  services_disabled:
+    - avahi-daemon
+    - cups
+```
+
+### **Autostart Configuration**
+```yaml
+# Custom autostart applications
+desktop:
+  profile: hyprland
+  autostart:
+    - # System applications
+      - nm-applet
+      - blueberry-tray
+    - # User applications
+      - waybar
+      - hyprpaper
+      - [autostart-command, --with-arguments]
+```
+
+## Profile Management
+
+### **Profile Commands**
+```bash
+# List available profiles
+ouroboros-profile list
+
+# Show profile details
+ouroboros-profile show hyprland
+
+# Install new profile
+ouroboros-profile install custom-profile
+
+# Remove profile
+ouroboros-profile remove custom-profile
+
+# Export profile
+ouroboros-profile export hyprland /path/to/export.yaml
+```
+
+### **Profile Validation**
+```bash
+# Validate profile syntax
+ouroboros-profile validate hyprland
+
+# Check profile dependencies
+ouroboros-profile check-deps hyprland
+
+# Test profile installation
+ouroboros-profile test hyprland
+```
+
+### **Profile Backup**
+```bash
+# Backup current profile
+ouroboros-profile backup current /path/to/backup.yaml
+
+# Restore profile from backup
+ouroboros-profile restore /path/to/backup.yaml
+
+# List profile backups
+ouroboros-profile list-backups
+```
+
+## Advanced Configuration
+
+### **Environment Variables**
+```yaml
+# Profile environment variables
+desktop:
+  profile: hyprland
+  environment:
+    # Desktop environment
+    XDG_CURRENT_DESKTOP: "Hyprland"
+    XDG_SESSION_TYPE: "wayland"
+    # Applications
+    EDITOR: "nvim"
+    BROWSER: "firefox"
+    # Development
+    PATH: "$PATH:/usr/local/bin"
+```
+
+### **Theme Configuration**
+```yaml
+# Profile theming
+desktop:
+  profile: hyprland
+  theme:
+    # General
+    theme: "dark"
+    accent: "#10b981"  # emerald
+    # Applications
+    gtk_theme: "Adwaita-dark"
+    icon_theme: "Adwaita"
+    cursor_theme: "Adwaita"
+```
+
+### **Keyboard Layout**
+```yaml
+# Keyboard configuration
+desktop:
+  profile: hyprland
+  keyboard:
+    layout: "us"
+    variant: ""
+    options: "caps:escape"
+    # Multiple layouts
+    layouts:
+      - layout: "us"
+        variant: ""
+      - layout: "br"
+        variant: "abnt2"
+```
+
+## Integration with System
+
+### **Display Manager Integration**
+```yaml
+# Display manager configuration
+desktop:
+  profile: gnome
+  dm:
+    manager: "gdm"
+    auto_login: false
+    auto_login_user: ""
+    greeter_options: "--select-seat=seat0"
+```
+
+### **Service Management**
+```bash
+# Enable profile services
+systemctl enable --now NetworkManager
+systemctl enable --now bluetooth
+systemctl enable --now gdm
+
+# Disable unused services
+systemctl disable --now avahi-daemon
+systemctl disable --now cups
+```
+
+### **Network Integration**
+```yaml
+# Network configuration for desktop
+desktop:
+  profile: hyprland
+  network:
+    enable_networkd: true
+    enable_iwd: true
+    enable_resolved: true
+    wifi:
+      autoconnect: true
+    bluetooth:
+      enable: true
+```
+
+## Migration Between Profiles
+
+### **Profile Migration**
+```bash
+# Change from GNOME to Hyprland
+ouroboros-profile change hyprland
+
+# Migration options:
+# - Keep user data
+# - Migrate configurations
+# - Backup old profile
+# - Test in staging
+```
+
+### **Data Preservation**
+```bash
+# Preserve user data during migration
+ouroboros-profile migrate \
+  --from gnome \
+  --to hyprland \
+  --preserve-home \
+  --preserve-configs
+
+# Migration log
+ouroboros-profile migrate --log /var/log/profile-migration.log
+```
+
+### **Rollback Migration**
+```bash
+# Rollback profile change
+ouroboros-profile rollback --previous
+
+# Emergency rollback
+our-rollback now
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Profile installation fails
+ouroboros-profile diagnose
+
+# Service conflicts
+ouroboros-profile check-services
+
+# Package conflicts
+ouroboros-profile check-packages
+
+# Configuration errors
+ouroboros-profile check-configs
+```
+
+### **Recovery**
+```bash
+# Reset to default profile
+ouroboros-profile reset
+
+# Remove profile and reinstall
+ouroboros-profile remove hyprland
+ouroboros-profile install hyprland
+
+# Emergency rollback
+our-rollback now
+```
+
+### **Debug Mode**
+```bash
+# Enable debug logging
+ouroboros-profile --debug install hyprland
+
+# Show detailed information
+ouroboros-profile --verbose show hyprland
+
+# Test installation
+ouroboros-profile --dry-run install hyprland
+```
+
+## Best Practices
+
+### **Profile Selection**
+```bash
+# Choose profile based on use case
+# - Servers: Minimal
+# - Development: Hyprland or Niri
+# - General use: GNOME
+# - Power users: KDE Plasma
+# - Gaming: Hyprland (better performance)
+```
+
+### **Regular Updates**
+```bash
+# Keep profiles updated
+ouroboros-profile update
+
+# Check for profile updates
+ouroboros-profile check-updates
+
+# Update specific profile
+ouroboros-profile update hyprland
+```
+
+### **Testing New Profiles**
+```bash
+# Test profile in staging
+ouroboros-profile stage hyprland
+
+# Test with custom packages
+ouroboros-profile test custom-profile
+
+# Validate before applying
+ouroboros-profile validate hyprland
+```
+
+The desktop profiles in ouroborOS provide an excellent balance between simplicity and flexibility, allowing users to get a fully configured system that matches their workflow while maintaining the ability to customize and extend as needed.
+
+<Tabs>
+<TabItem label="Basic Profile Selection">
+```bash
+# During installation
+# Select profile from menu: 1-5
+# Post-installation
+ouroboros-profile current          # Check current profile
+ouroboros-profile list              # List available profiles
+ouroboros-profile change hyprland  # Change profile
+```
+</TabItem>
+<TabItem label="Advanced Profile Management">
+```bash
+# Custom profile creation
+ouroboros-profile install custom-profile
+ouroboros-profile validate custom-profile
+ouroboros-profile export custom-profile /path/to/export.yaml
+
+# Profile customization
+sudo nano /etc/ouroborOS/desktop/custom-profile.yaml
+ouroboros-profile apply custom-profile
+```
+</TabItem>
+</Tabs>

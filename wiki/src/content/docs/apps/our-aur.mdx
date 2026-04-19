@@ -1,0 +1,607 @@
+---
+title: AUR Helper
+description: Containerized AUR package management with our-aur in ouroborOS
+slug: apps/our-aur
+---
+
+# AUR Helper (our-aur)
+
+`our-aur` is a containerized AUR (Arch User Repository) package manager that safely handles AUR packages using systemd-nspawn containers and systemd-sysext. This approach provides isolation, security, and seamless integration with the ouroborOS package management system.
+
+## Overview
+
+The `our-aur` tool provides:
+
+- **Containerized AUR management** using systemd-nspawn
+- **Seamless pacman integration** with consistent interface
+- **Automatic snapshot protection** before AUR operations
+- **Secure package signing** with sbctl
+- **Clean rollback capabilities** for failed installations
+
+:::tip
+
+All AUR operations run in isolated containers, preventing system contamination and providing a clean rollback mechanism if packages fail to build or install.
+
+:::
+
+## Installation
+
+The AUR helper is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-aur --version
+our-aur --help
+```
+
+## Basic Usage
+
+### Package Search
+
+```bash
+# Search for packages in AUR
+our-aur search neovim
+
+# Search with description
+our-aur search --desc "video editor"
+
+# Search maintained packages only
+our-aur search --maintained telegram-desktop
+```
+
+### Package Installation
+
+```bash
+# Install a single package
+our-aur install neovim
+
+# Install multiple packages
+our-aur install neovim lazygit zellij
+
+# Install with dependencies
+our-aur install --deps visual-studio-code-bin
+```
+
+### Package Removal
+
+```bash
+# Remove a package (keep dependencies)
+our-aur remove neovim
+
+# Remove package and dependencies
+our-aur remove --nosave neovim
+
+# Remove package and all dependencies
+our-aur remove --recursive neovim
+```
+
+## Advanced Operations
+
+### Package Information
+
+```bash
+# Show package details
+our-aur info neovim
+
+# Show package files
+our-aur files neovim
+
+# Show package dependencies
+our-aur deps neovim
+
+# Show package build status
+our-aur status neovim
+```
+
+### Package Updates
+
+```bash
+# Update all AUR packages
+our-aur update
+
+# Update specific package
+our-aur update neovim
+
+# Check for updates without installing
+our-aur checkupdates
+```
+
+### Package Building
+
+```bash
+# Build package without installing
+our-aur build neovim
+
+# Build with custom makepkg flags
+our-aur build -- -j$(nproc) neovim
+
+# Clean build cache
+our-aur clean-build
+```
+
+## Container Configuration
+
+### Container Setup
+
+AUR operations run in systemd-nspawn containers with systemd-sysext integration:
+
+```bash
+# View container configuration
+cat /etc/systemd/system/aur-builder.service
+
+# View systemd-sysext configuration
+cat /etc/systemd/system/aur-sysext.service
+```
+
+### Network Configuration
+
+```bash
+# Configure container networking
+cat > ~/.config/ouroborOS/aur.conf << 'EOF'
+[network]
+enable_networkd = true
+enable_iwd = true
+enable_resolved = true
+EOF
+```
+
+## Security Features
+
+### Package Verification
+
+```bash
+# Verify package signatures
+our-aur verify neovim
+
+# Check package integrity
+our-aur checksum neovim
+
+# List untrusted packages
+our-aur untrusted
+```
+
+### Build Isolation
+
+```bash
+# Build in isolated container
+our-aur --isolated build neovim
+
+# Build with seccomp filtering
+our-aur --seccomp build neovim
+
+# Build with resource limits
+our-aur --memory 2G build neovim
+```
+
+## Package Management Workflow
+
+### Safe Installation Process
+
+```bash
+# 1. Create snapshot before installation
+our-snapshot create pre-aur-install
+
+# 2. Install package
+our-aur install neovim
+
+# 3. Verify installation
+neovim --version
+
+# 4. If issues arise, rollback
+our-rollback now
+```
+
+### Update Workflow
+
+```bash
+# 1. Check for updates
+our-aur checkupdates
+
+# 2. Create snapshot
+our-snapshot create pre-aur-update
+
+# 3. Update packages
+our-aur update
+
+# 4. Test updated packages
+neovim --version
+lazygit --version
+
+# 5. If issues, rollback
+our-rollback now
+```
+
+## Package Categories
+
+### Development Tools
+
+```bash
+# Install development tools
+our-aur install neovim lazygit zellij helix bat eza fd ripgrep
+
+# IDE and editors
+our-aur install visual-studio-code-bin jetbrains-toolbox
+```
+
+### System Tools
+
+```bash
+# System utilities
+our-aur install htop btop bashtop neofetch cmatrix
+
+# Network tools
+our-aur install nmap wireshark-qt tshark tcpdump
+```
+
+### Multimedia
+
+```bash
+# Video editors
+our-aur install kdenlive obs-studio blender
+
+# Image editors
+our-aur install gimp inkscape krita
+```
+
+### Gaming
+
+```bash
+# Gaming tools
+our-aur install steam lutris protonup-qt heroic-games-launcher
+
+# Wine and compatibility
+our-aur install wine-staging protontricks
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix failed dependencies
+our-aur --sync-deps install neovim
+
+# Clean package cache
+our-aur clean-cache
+
+# Rebuild failed package
+our-aur --rebuild neovim
+
+# Check build logs
+our-aur --log neovim
+```
+
+### Build Errors
+
+```bash
+# Show build logs
+journalctl -u aur-builder.service
+
+# Debug build process
+our-aur --debug build neovim
+
+# Check system requirements
+our-aur --check-env neovim
+```
+
+## AUR Build Process
+
+### Container Architecture
+
+`our-aur` uses a sophisticated container architecture for safe AUR package building:
+
+```bash
+# Build process flow
+our-aur -S neovim
+
+# 1. Creates ephemeral container
+ls /var/tmp/our-aur/containers/
+# Output: build-12345 (temporary nspawn container)
+
+# 2. Downloads paru-bin
+ls /var/lib/our-aur/paru-bin.pkg.tar.zst
+# paru-bin auto-downloaded from GitHub releases
+
+# 3. Builds as non-root user (aurbuild UID 1000)
+systemd-nspawn -D /var/tmp/our-aur/containers/build-12345 \
+  --user=aurbuild --setenv=HOME=/home/aurbuild
+
+# 4. Installs as systemd-sysext extension
+ls /var/lib/extensions/our-aur-neovim/
+# Extension appears at /usr/ via overlay
+```
+
+### Build Environment
+
+```bash
+# Container configuration
+cat /var/tmp/our-aur/containers/build-12345/etc/sudoers.d/aurbuild
+# Output: aurbuild ALL=(ALL) NOPASSWD: /usr/bin/pacman
+
+# User setup in container
+cat /var/tmp/our-aur/containers/build-12345/etc/passwd
+# Output: aurbuild:x:1000:1000::/home/aurbuild:/bin/bash
+
+# Network isolation
+# Container inherits host networking but runs as isolated user
+```
+
+### Package Tracking System
+
+```bash
+# Tracking database location
+ls /var/lib/our-aur/packages/
+# Output: neovim.json lazygit.json zellij.json
+
+# View package tracking
+cat /var/lib/our-aur/packages/neovim.json
+# Output:
+{
+  "name": "neovim",
+  "version": "0.9.4",
+  "aur_url": "https://aur.archlinux.org/packages/neovim",
+  "installed_at": "2024-01-15T14:30:00",
+  "pkg_names": ["neovim", "neovim-packer"],
+  "sysext_path": "/var/lib/extensions/our-aur-neovim"
+}
+
+# List tracked packages with metadata
+our-aur -Q
+# Output: neovim 0.9.4 2024-01-15T14:30:00
+#         lazygit 0.15.0 2024-01-14T09:15:00
+```
+
+## Extension Management
+
+### Systemd-sysext Integration
+
+```bash
+# View active extensions
+systemd-sysext list
+# Output:
+# Extension our-aur-neovim
+#   Merge directory: /var/lib/extensions/our-aur-neovim
+#   Extension release: SYSEXT_LEVEL=1
+
+# Extension overlay structure
+ls /var/lib/extensions/our-aur-neovim/usr/bin/
+# Output: nvim (from AUR package)
+
+# Extension metadata
+cat /var/lib/extensions/our-aur-neovim/usr/lib/extension-release.d/extension-release.our-aur-neovim
+# Output: ID=arch
+#         SYSEXT_LEVEL=1
+```
+
+### Extension Cleanup
+
+```bash
+# Remove specific extension
+sudo our-aur -R neovim
+
+# Force cleanup of orphaned containers
+sudo our-aur --clean
+
+# Manual cleanup (if needed)
+rm -rf /var/tmp/our-aur/containers/build-*
+rm -rf /var/tmp/our-aur/staging-*
+```
+
+## Advanced Configuration
+
+### Custom Build Flags
+
+```bash
+# Build with custom makepkg flags
+our-aur -S -- -j$(nproc) neovim
+# Uses parallel compilation with all CPU cores
+
+# Build without cleaning build directory
+# our-aur handles automatic cleanup, no --noclean needed
+
+# Build with custom paru.conf
+# /home/aurbuild/.config/paru/paru.conf used automatically
+```
+
+### Network Configuration
+
+```bash
+# Container inherits host network
+# Configure host networking normally:
+systemctl enable --now systemd-networkd
+systemctl enable --now iwd
+systemctl enable --now systemd-resolved
+
+# AUR downloads work through host network
+our-aur -Ss neovim  # Requires internet connection
+```
+
+## Security Features
+
+### Container Isolation
+
+```bash
+# Container runs as non-root user (aurbuild UID 1000)
+# No root privileges inside container
+
+# Container is ephemeral - destroyed after build
+# No persistent state between builds
+
+# Builds run in private systemd-nspawn namespace
+# No access to host /dev, /proc, /sys except via explicit mounts
+```
+
+### Package Verification
+
+```bash
+# paru automatically verifies package signatures
+# PGP keys handled by pacman keyring
+
+# Build process is transparent
+# Watch all build output in real-time:
+our-aur -S neovim  # Shows entire build process
+```
+
+### Backup and Migration
+
+```bash
+# Export tracked packages
+mkdir -p ~/backup/our-aur
+cp -r /var/lib/our-aur/packages ~/backup/our-aur/
+
+# Export installed extensions
+for ext in /var/lib/extensions/our-aur-*; do
+    [[ -d "$ext" ]] && cp -r "$ext" ~/backup/our-aur/extensions/
+done
+
+# On fresh system, restore tracking
+cp -r ~/backup/our-aur/packages /var/lib/our-aur/
+
+# Extensions work automatically via systemd-sysext
+```
+
+## Development Environment Setup
+
+### Basic Dev Tools
+
+```bash
+# Install essential development tools
+our-aur -S neovim lazygit zellij helix bat eza fd ripgrep htop
+
+# Install build tools
+our-aur -S base-devel-git  # Additional development utilities
+
+# Install IDE
+our-aur -S visual-studio-code-bin jetbrains-toolbox
+```
+
+### Language-specific Tools
+
+```bash
+# Rust ecosystem
+our-aur -S rustup rust-analyzer cargo
+
+# Go development
+our-aur -S go-tools gopls delve
+
+# Python development
+our-aur -S python-black python-isort python-mypy python-pylint
+
+# Node.js development
+our-aur -S node npm yarn deno
+```
+
+### Containerized Development
+
+```bash
+# Use our-container for isolated development
+our-container --isolated neovim  # Launch neovim in isolated container
+
+# GUI development with GPU acceleration
+our-container --isolated --gui neovim  # With Wayland GPU support
+
+# Network-isolated development
+our-container --isolated --network=none neovim
+```
+
+## Performance Optimization
+
+### Build Performance
+
+```bash
+# Parallel compilation (automatic with -j$(nproc))
+export MAKEFLAGS="-j$(nproc)"
+our-aur -S neovim  # Uses all available CPU cores
+
+# Build with ccache (if available)
+pacman -S ccache
+# our-aur uses ccache automatically if installed
+
+# Clean package cache manually
+rm -rf /var/tmp/our-aur/containers/*/var/cache/pacman/pkg/
+```
+
+### Memory Optimization
+
+```bash
+# Monitor container memory usage
+systemd-cgtop
+
+# Limit memory for resource-intensive builds
+our-aur --memory 4G -S heavy-pkg  # 4GB memory limit
+
+# Clean up after large builds
+our-aur --clean
+```
+
+## Troubleshooting Guide
+
+### Common Build Failures
+
+```bash
+# Fix dependency issues
+our-aur -S --sync-deps neovim  # Install dependencies first
+
+# Check build environment
+our-aur -S --check-env neovim  # Verify system requirements
+
+# View container logs
+journalctl -u systemd-nspawn -u aurbuild
+
+# Debug build step-by-step
+# 1. Check container creation
+ls /var/tmp/our-aur/containers/
+# 2. Check paru download
+ls /var/lib/our-aur/paru-bin.pkg.tar.zst
+# 3. Check build logs in container
+systemd-nspawn -D /var/tmp/our-aur/containers/build-12345 -- bash
+```
+
+### Network Issues
+
+```bash
+# Test AUR connectivity
+curl -I https://aur.archlinux.org/rpc/v5/search/neovim
+
+# Test package download
+curl -I https://github.com/Morganamilo/paru/releases/latest/download/paru-x86_64.pkg.tar.zst
+
+# Reset network stack
+systemctl restart systemd-networkd iwd systemd-resolved
+```
+
+### Extension Issues
+
+```bash
+# Check systemd-sysext status
+systemctl status systemd-sysext
+
+# Force extension refresh
+systemd-sysext merge
+
+# Check extension loading errors
+journalctl -u systemd-sysext
+
+# Remove corrupted extension
+our-aur -R neovim
+rm -rf /var/lib/extensions/our-aur-neovim
+our-aur -S neovim  # Reinstall
+```
+
+### System Compatibility
+
+```bash
+# Check architecture compatibility
+uname -m  # Should be x86_64
+
+# Check base system compatibility
+pacman -Q base-devel
+
+# Verify systemd-sysext availability
+systemctl status systemd-sysext
+```
+
+:::danger
+
+Always verify AUR package sources before installation. Only install packages from trusted maintainers and regularly check for security updates.
+
+:::

@@ -1,0 +1,701 @@
+---
+title: UI Components & Ricing
+description: Learn how to customize and rice your ouroborOS desktop with UI components, themes, and configuration optimization.
+slug: desktop/ricing
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# UI Components & Ricing
+
+Ricing your ouroborOS desktop involves customizing the user interface to create a personalized, efficient workspace that matches your workflow and aesthetic preferences. This guide covers UI components, theme customization, and configuration optimization to help you create the perfect desktop experience.
+
+## What is Ricing?
+
+Ricing refers to the process of extensively customizing a desktop environment to achieve a specific visual and functional style. In ouroborOS, this involves configuring window managers, applications, themes, and utilities to create a cohesive, personalized desktop environment.
+
+```bash
+# Default desktop - basic setup
+# Limited customization options
+# Basic themes and layouts
+
+# Riced desktop - fully customized
+# Personal themes and colors
+# Custom applications and layouts
+# Optimized workflows
+# Perfect visual harmony
+```
+
+## UI Components Overview
+
+### **Window Manager Components**
+```yaml
+# Window manager hierarchy
+Window Manager → Terminal → Launcher → Panel → Notifications
+              ↓           ↓          ↓       ↓          ↓
+          Hyprland/Niri → Foot/Fuzzel → Waybar → Dunst → Rofi
+```
+
+### **Essential UI Elements**
+1. **Window Manager**: Hyprland or Niri with custom configurations
+2. **Terminal**: Foot or Kitty with custom colors and fonts
+3. **Launcher**: Fuzzel or Rofi with custom themes
+4. **Panel**: Waybar or custom status bar
+5. **Notifications**: Dunst or custom notification system
+6. **Wallpaper**: Hyprpaper or custom wallpaper solution
+
+### **Configuration Structure**
+```bash
+# ~/.config/
+├── hyprland/       # Hyprland configurations
+├── niri/          # Niri configurations
+├── foot/          # Terminal configurations
+├── fuzzel/        # Launcher configurations
+├── waybar/        # Panel configurations
+├── dunst/         # Notification configurations
+├── hyprpaper/     # Wallpaper configurations
+└── themes/        # Shared theme configurations
+```
+
+## Theme Configuration
+
+### **Color Scheme Foundation**
+Create a consistent color scheme across all applications:
+
+```bash
+# ~/.config/themes/colors.sh
+# -------------------------------
+# Dark theme colors
+# -------------------------------
+export COLOR_BG="#1a1a1a"
+export COLOR_FG="#e0e0e0"
+export COLOR_ACCENT="#10b981"          # emerald-500
+export COLOR_ACCENT_LIGHT="#34d399"    # emerald-400
+export COLOR_BORDER="#8892b0"         # gray-500
+export COLOR_ERROR="#ef4444"          # red-500
+export COLOR_WARN="#f59e0b"           # amber-500
+export COLOR_INFO="#3b82f6"           # blue-500
+
+# Light theme colors
+# export COLOR_BG="#ffffff"
+# export COLOR_FG="#1a1a1a"
+# export COLOR_ACCENT="#059669"        # emerald-600
+```
+
+### **GTK Theme Configuration**
+```bash
+# ~/.config/gtk-3.0/settings.ini
+[gtk]
+theme-name="Adwaita-dark"
+icon-theme-name="Adwaita"
+cursor-theme-name="Adwaita"
+font-name="JetBrains Mono 11"
+toolbar-style=GTK_TOOLBAR_ICONS
+button-images=0
+menu-images=0
+text-scaling-factor=1.0
+
+[gtk gtk-application]
+prefer-dark-theme=true
+```
+
+```bash
+# ~/.config/gtk-4.0/settings.ini
+[gtk]
+theme-name="Adwaita-dark"
+icon-theme-name="Adwaita"
+cursor-theme-name="Adwaya"
+font-name="JetBrains Mono 11"
+```
+
+### **Icon Theme Customization**
+```bash
+# Install custom icon themes
+git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git
+cd WhiteSur-icon-theme
+./install.sh --theme WhiteSur
+
+# Set custom icon theme
+gsettings set org.gnome.desktop.interface icon-theme "WhiteSur-dark"
+
+# Create custom icon theme directory
+mkdir -p ~/.local/share/icons/custom-theme
+# Add custom icons to ~/.local/share/icons/custom-theme/
+```
+
+## Window Manager Customization
+
+### **Hyprland Advanced Configuration**
+```ini
+# ~/.config/hypr/hyprland.conf
+# -------------------------------
+# Advanced window management
+# -------------------------------
+windowrule = float, ^(.*)$
+windowrule = pin, ^(waybar|dunst|nm-applet|blueman)$
+windowrule = center, ^(fuzzel|rofi)$
+windowrule = size 80% 60%, ^(fuzzel|rofi)$
+windowrule = opacity 0.8, ^(kitty)$
+windowrule = animation slide, ^(kitty)$
+
+# Custom window decorations
+windowrule = bordercolor rgb(16 185 129), ^(kitty)$
+windowrule = bordercolor rgb(59 130 246), ^(firefox)$
+windowrule = bordercolor rgb(239 68 68), ^(vlc)$
+```
+
+### **Niri Advanced Configuration**
+```kdl
+// ~/.config/niri/config.kdl
+// -------------------------------
+// Advanced window rules
+// -------------------------------
+window-rule floating title ^= "Calculator"
+window-rule floating title ^= "Settings"
+window-rule floating title ^= "About"
+window-rule floating title ^= "Preferences"
+window-rule floating title ^= "Bitwarden"
+window-rule floating title ^= "Blueman"
+window-rule floating title ^= "Network"
+
+window-rule fullscreen title ^= "Firefox"
+window-rule fullscreen title ^= "Chromium"
+window-rule fullscreen title ^= "YouTube"
+window-rule fullscreen title ^= "VLC"
+
+// Custom animations
+window-rule animate type=slide title ^= "kitty"
+window-rule animate type=fade title ^= "fuzzel"
+```
+
+## Application Customization
+
+### **Terminal Configuration**
+```bash
+# ~/.config/foot/foot.ini
+[colors]
+background=1a1a1a
+foreground=e0e0e0
+regular0=2d2d2d
+regular1=ff5f56
+regular2=98be65
+regular3=ecbe7b
+regular4=51afef
+regular5=c678dd
+regular6=46d9ff
+regular7=dedede
+bright0=5a5a5a
+bright1=ff5f56
+bright2=98be65
+bright3=ecbe7b
+bright4=51afef
+bright5=c678dd
+bright6=46d9ff
+bright7=dedede
+
+[colors-focused]
+background=262626
+foreground=e0e0e0
+cursor=ffffff
+
+[colors-unfocused]
+background=1a1a1a
+foreground=888888
+
+[main]
+font=JetBrains Mono:size=12
+pad=10x10px
+initial-window-size=1200x800
+scrollback=10000
+
+[key-bindings]
+primary-paste=Control+Shift+v
+scrollback-up=Control+Shift+Up
+scrollback-down=Control+Shift+Down
+```
+
+### **Application Launcher Configuration**
+```bash
+# ~/.config/fuzzel/fuzzel.ini
+[main]
+font=JetBrains Mono:size=14
+password=*
+prompt-launcher=
+lines=10
+width=50%
+dpi-aware=yes
+exit-immediately=yes
+```
+
+```json
+// ~/.config/rofi/config.rasi
+* {
+    background: #1a1a1a;
+    foreground: #e0e0e0;
+    border-color: #10b981;
+    selected-normal-background: #10b981;
+    selected-normal-foreground: #ffffff;
+    urgent-normal-background: #ef4444;
+    urgent-normal-foreground: #ffffff;
+}
+
+window {
+    background-color: #1a1a1a;
+    border-radius: 10px;
+}
+
+mainbox {
+    background-color: #1a1a1a;
+    border-radius: 10px;
+    children: [ inputbar, listview ];
+}
+
+inputbar {
+    background-color: #262626;
+    border-radius: 5px;
+    text-color: #e0e0e0;
+}
+
+listview {
+    background-color: #1a1a1a;
+    lines: 8;
+    fixed-height: false;
+    layout: vertical;
+}
+
+element {
+    background-color: #1a1a1a;
+    text-color: #e0e0e0;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+element selected {
+    background-color: #10b981;
+    text-color: #ffffff;
+    border-radius: 5px;
+}
+```
+
+### **Panel Configuration**
+```json
+// ~/.config/waybar/config.json
+{
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "modules-left": ["sway/workspaces", "sway/mode", "sway/window"],
+    "modules-center": ["clock"],
+    "modules-right": ["tray", "pulseaudio", "battery", "network", "cpu", "memory", "temperature"],
+    
+    "sway/workspaces": {
+        "format": "{name}",
+        "format-icons": {
+            "1": "1", "2": "2", "3": "3", "4": "4", "5": "5",
+            "focused": "", "urgent": ""
+        }
+    },
+    
+    "clock": {
+        "format": "{:%H:%M} {:%d/%m/%Y}",
+        "tooltip-format": "<big>{:%Y-%m-%d}</big><br><tt>{:%H:%M:%S}</tt>",
+        "interval": 1
+    },
+    
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "🔇",
+        "format-icons": ["🔈", "🔊", "🔊"],
+        "scroll-step": 5
+    },
+    
+    "battery": {
+        "format": "{icon} {capacity}%",
+        "format-icons": ["🔋", "🔋", "🔋", "🔋"],
+        "states": {
+            "warning": 30,
+            "critical": 15
+        }
+    }
+}
+```
+
+### **Notification Configuration**
+```bash
+# ~/.config/dunst/dunstrc
+[global]
+    monitor = 0
+    follow = mouse
+    width = 300
+    height = 300
+    origin = top-right
+    offset = 10x50
+    transparency = 10
+    separator_height = 2
+    padding = 15
+    horizontal_padding = 15
+    font = JetBrains Mono 11
+    frame_width = 2
+    frame_color = "#10b981"
+    separator_color = "#8892b0"
+    sort = true
+    indicate_hidden = true
+    show_age_threshold = 60
+    word_wrap = false
+    ellipsize = middle
+    ignore_newline = false
+    stack_duplicates = true
+    hide_duplicate_count = false
+    show_indicators = true
+    idle_threshold = 120
+    text_icon_padding = 0
+    alignment = left
+    sticky_history = true
+    history_length = 20
+    show_duplicates = true
+    dmenu = /usr/bin/fuzzel
+    browser = /usr/bin/firefox
+    always_run_script = true
+    title = Dunst
+    class = Dunst
+    startup_notification = false
+    verbosity = messager
+    corner_radius = 10
+
+[urgency_low]
+    background = "#1a1a1a"
+    foreground = "#e0e0e0"
+    timeout = 10
+
+[urgency_normal]
+    background = "#1a1a1a"
+    foreground = "#e0e0e0"
+    timeout = 10
+
+[urgency_critical]
+    background = "#ef4444"
+    foreground = "#ffffff"
+    timeout = 0
+    icon = "dialog-warning"
+    icon_position = left
+    icon_size = 32
+```
+
+## Wallpaper and Visual Effects
+
+### **Hyprpaper Configuration**
+```bash
+# ~/.config/hyprpaper.conf
+preload = /path/to/wallpaper.jpg
+preload = /path/to/wallpaper2.jpg
+
+wallpaper = HDMI-A-1,/path/to/wallpaper.jpg
+wallpaper = DP-1,/path/to/wallpaper2.jpg
+
+ipc = true
+```
+
+### **Dynamic Wallpaper Script**
+```bash
+#!/bin/bash
+# ~/.config/scripts/dynamic-wallpaper.sh
+# Dynamic wallpaper changing based on time of day
+
+WALLPAPER_DIR="$HOME/wallpapers"
+
+get_wallpaper() {
+    hour=$(date +%H)
+    
+    if [ $hour -ge 6 ] && [ $hour -lt 12 ]; then
+        # Morning
+        echo "${WALLPAPER_DIR}/morning.jpg"
+    elif [ $hour -ge 12 ] && [ $hour -lt 18 ]; then
+        # Afternoon
+        echo "${WALLPAPER_DIR}/afternoon.jpg"
+    elif [ $hour -ge 18 ] && [ $hour -lt 22 ]; then
+        # Evening
+        echo "${WALLPAPER_DIR}/evening.jpg"
+    else
+        # Night
+        echo "${WALLPAPER_DIR}/night.jpg"
+    fi
+}
+
+change_wallpaper() {
+    wallpaper=$(get_wallpaper)
+    hyprpaper -r "${wallpaper}"
+    notify-send "Wallpaper changed to $(basename $wallpaper)"
+}
+
+# Change wallpaper every 5 minutes
+while true; do
+    change_wallpaper
+    sleep 300
+done
+```
+
+### **System Integration Script**
+```bash
+#!/bin/bash
+# ~/.config/scripts/theme-sync.sh
+# Sync theme across all applications
+
+# Set theme based on time of day
+hour=$(date +%H)
+
+if [ $hour -ge 6 ] && [ $hour -lt 18 ]; then
+    # Light theme
+    gsettings set org.gnome.desktop.interface gtk-theme "Adwaita"
+    gsettings set org.gnome.desktop.interface icon-theme "Adwaita"
+    gsettings set org.gnome.desktop.interface cursor-theme "Adwaita"
+    
+    # Update terminal
+    sed -i 's/background=.*$/background=ffffff/' ~/.config/foot/foot.ini
+    sed -i 's/foreground=.*$/foreground=1a1a1a/' ~/.config/foot/foot.ini
+    
+    echo "Light theme applied"
+else
+    # Dark theme
+    gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+    gsettings set org.gnome.desktop.interface icon-theme "Adwaya"
+    gsettings set org.gnome.desktop.interface cursor-theme "Adwaita"
+    
+    # Update terminal
+    sed -i 's/background=.*$/background=1a1a1a/' ~/.config/foot/foot.ini
+    sed -i 's/foreground=.*$/foreground=e0e0e0/' ~/.config/foot/foot.ini
+    
+    echo "Dark theme applied"
+fi
+
+# Restart applications to apply changes
+killall waybar
+killall dunst
+killall foot
+
+# Restart applications
+waybar &
+dunst &
+foot &
+```
+
+## Performance Optimization
+
+### **Window Manager Optimizations**
+```ini
+# ~/.config/hypr/hyprland.conf
+# Performance optimizations
+general {
+    resize_on_border = true
+    no_focus_fallback = true
+    gaps_in = 5
+    gaps_out = 10
+    
+    # Disable animations for performance
+    animations {
+        enabled = false
+    }
+}
+
+decoration {
+    rounding = 0
+    blur {
+        enabled = false
+    }
+    drop_shadow = false
+}
+```
+
+```kdl
+// ~/.config/niri/config.kdl
+// Performance optimizations
+prefer-no-csd = true
+applet-windows = ["waybar"]
+title-bar = false
+
+layout {
+    auto-layout {
+        columns: 1
+        rows: 1
+        smart-gaps = true
+        smart-splits = true
+    }
+}
+
+input {
+    keyboard {
+        xkb {
+            layout = "us"
+            variant = ""
+            options = "caps:escape"
+        }
+    }
+}
+```
+
+### **Application Performance**
+```bash
+# Optimize terminal
+echo "export TERM=xterm-256color" >> ~/.bashrc
+echo "export COLORTERM=truecolor" >> ~/.bashrc
+
+# Optimize file manager
+echo "export QT_SCALE_FACTOR=1.0" >> ~/.bashrc
+echo "export GDK_SCALE=1.0" >> ~/.bashrc
+
+# Optimize browser
+echo "export MOZ_ENABLE_WAYLAND=1" >> ~/.bashrc
+echo "export ELECTRON_OZONE_PLATFORM_HINT=auto" >> ~/.bashrc
+```
+
+## Configuration Management
+
+### **Configuration Backup**
+```bash
+#!/bin/bash
+# ~/.config/scripts/backup-config.sh
+# Backup all custom configurations
+
+BACKUP_DIR="$HOME/config-backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+
+cp -r ~/.config/hypr "$BACKUP_DIR/"
+cp -r ~/.config/niri "$BACKUP_DIR/"
+cp -r ~/.config/foot "$BACKUP_DIR/"
+cp -r ~/.config/fuzzel "$BACKUP_DIR/"
+cp -r ~/.config/waybar "$BACKUP_DIR/"
+cp -r ~/.config/dunst "$BACKUP_DIR/"
+cp -r ~/.config/themes "$BACKUP_DIR/"
+
+echo "Configuration backed up to $BACKUP_DIR"
+```
+
+### **Configuration Version Control**
+```bash
+#!/bin/bash
+# ~/.config/scripts/git-commit.sh
+# Commit configuration changes
+
+cd ~/.config
+
+git add .
+git commit -m "$(date '+%Y-%m-%d %H:%M'): Update configuration"
+
+git push origin main
+
+echo "Configuration changes committed and pushed"
+```
+
+### **Configuration Testing**
+```bash
+#!/bin/bash
+# ~/.config/scripts/test-config.sh
+# Test all configurations
+
+echo "Testing configurations..."
+
+# Test Hyprland configuration
+if hyprctl --config ~/.config/hypr/hyprland.conf &>/dev/null; then
+    echo "✓ Hyprland configuration valid"
+else
+    echo "✗ Hyprland configuration invalid"
+fi
+
+# Test Niri configuration
+if niri --config ~/.config/niri/config.kdl validate-config &>/dev/null; then
+    echo "✓ Niri configuration valid"
+else
+    echo "✗ Niri configuration invalid"
+fi
+
+# Test Foot configuration
+if foot --config ~/.config/foot/foot.ini --check &>/dev/null; then
+    echo "✓ Foot configuration valid"
+else
+    echo "✗ Foot configuration invalid"
+fi
+
+echo "Configuration testing complete"
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Window manager not starting
+hyprctl --version
+niri --version
+
+# Configuration syntax errors
+hyprctl --config ~/.config/hypr/hyprland.conf
+niri --config ~/.config/niri/config.kdl validate-config
+
+# Application conflicts
+killall -9 waybar
+killall -9 dunst
+killall -9 foot
+```
+
+### **Performance Issues**
+```bash
+# Check resource usage
+htop
+btop
+
+# Monitor GPU usage
+glxgears
+
+# Monitor memory usage
+free -h
+```
+
+### **Theme Issues**
+```bash
+# Reset theme to default
+gsettings reset org.gnome.desktop.interface gtk-theme
+gsettings reset org.gnome.desktop.interface icon-theme
+gsettings reset org.gnome.desktop.interface cursor-theme
+
+# Restart applications
+killall waybar
+killall dunst
+killall foot
+```
+
+Ricing your ouroborOS desktop is a creative process that combines technical knowledge with personal aesthetic preferences. By following these guidelines, you can create a desktop environment that is not only beautiful but also highly functional and tailored to your specific workflow needs.
+
+<Tabs>
+<TabItem label="Basic Setup">
+```bash
+# Basic ricing workflow
+# 1. Set color scheme
+gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+
+# 2. Configure window manager
+hyprctl reload
+
+# 3. Set wallpaper
+hyprpaper -j ~/.config/hyprpaper.conf
+
+# 4. Start applications
+waybar &
+dunst &
+foot &
+```
+</TabItem>
+<TabItem label="Advanced Configuration">
+```bash
+# Advanced ricing workflow
+# 1. Create custom theme
+mkdir -p ~/.local/share/themes/custom-theme
+
+# 2. Configure applications
+hyprctl --config ~/.config/hypr/hyprland.conf
+niri --config ~/.config/niri/config.kdl
+
+# 3. Set dynamic wallpaper
+~/.config/scripts/dynamic-wallpaper.sh
+
+# 4. Backup configurations
+~/.config/scripts/backup-config.sh
+```
+</TabItem>
+</Tabs>

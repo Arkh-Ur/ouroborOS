@@ -1,0 +1,577 @@
+---
+title: system.yaml Manifest
+description: Learn how to use the declarative system.yaml manifest to configure and manage your ouroborOS system.
+slug: system/manifest
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# system.yaml Manifest
+
+The `system.yaml` file is the heart of ouroborOS's declarative configuration system. This single file defines the complete state of your system, from user accounts to desktop environments and security settings. By using a declarative approach, you can reproduce, audit, and version control your entire system configuration.
+
+## What is system.yaml?
+
+The `system.yaml` manifest is a YAML file that declares the desired state of your system. Unlike traditional configuration that modifies files incrementally, the declarative approach ensures that your system always matches exactly what you define in the manifest.
+
+```yaml
+# Example system.yaml declaration
+system:
+  hostname: ouroboros
+  users:
+    - username: admin
+      groups: [wheel, audio, video]
+      shell: /bin/bash
+  desktop:
+    profile: hyprland
+    dm: gdm
+```
+
+## Manifest Structure
+
+### **Top-Level Schema**
+```yaml
+# /etc/ouroborOS/system.yaml
+user:                                 # User configuration
+  username: string                    # Required: System username
+  password: string                    # Required: Password (hashed automatically)
+  shell: string                      # Optional: Shell selection
+  groups: array                       # Optional: User groups
+  homed_storage: string               # Optional: Home directory storage type
+
+network:                              # Network configuration
+  hostname: string                    # Required: System hostname
+  enable_networkd: boolean            # Optional: systemd-networkd
+  enable_iwd: boolean                # Optional: WiFi management
+  enable_resolved: boolean           # Optional: DNS resolution
+  wifi:                              # Optional: WiFi configuration
+    ssid: string
+    passphrase: string
+
+security:                            # Security configuration
+  secure_boot: boolean                # Optional: Secure Boot setup
+  sbctl_include_ms_keys: boolean     # Optional: Microsoft keys
+
+disk:                                # Disk and storage configuration
+  device: string                     # Required: Target device
+  use_luks: boolean                   # Optional: Encryption
+  btrfs_label: string                 # Optional: Filesystem label
+  swap_type: string                  # Optional: Swap configuration
+
+locale:                              # Locale and timezone
+  locale: string                     # Required: System locale
+  keymap: string                     # Optional: Keyboard layout
+  timezone: string                   # Required: System timezone
+
+desktop:                             # Desktop environment
+  profile: string                    # Required: Desktop profile
+  dm: string                         # Optional: Display manager
+
+extra_packages: array                # Optional: Additional packages
+post_install_action: string          # Optional: Post-install action
+```
+
+## Manifest Location and Discovery
+
+### **Configuration Priority**
+The system uses configuration files in the following order (highest priority first):
+
+1. **Command line arguments**: `--config /path/to/config.yaml`
+2. **User configuration**: `~/.config/ouroborOS/config.yaml`
+3. **System configuration**: `/etc/ouroborOS/system.yaml`
+4. **Default configuration**: Built-in defaults
+
+### **Configuration Discovery Process**
+```bash
+# Configuration discovery algorithm
+discover_config() {
+    # 1. Command line override
+    if [ -n "$CONFIG_OVERRIDE" ]; then
+        if [ -f "$CONFIG_OVERRIDE" ]; then
+            echo "$CONFIG_OVERRIDE"
+            return 0
+        else
+            log_error "Config file not found: $CONFIG_OVERRIDE"
+            return 1
+        fi
+    fi
+    
+    # 2. User-specific configuration
+    local user_config="$HOME/.config/ouroborOS/config.yaml"
+    if [ -f "$user_config" ]; then
+        echo "$user_config"
+        return 0
+    fi
+    
+    # 3. System-wide configuration
+    local system_config="/etc/ouroborOS/system.yaml"
+    if [ -f "$system_config" ]; then
+        echo "$system_config"
+        return 0
+    fi
+    
+    # 4. No configuration found
+    log_error "No configuration file found"
+    return 1
+}
+```
+
+### **Configuration File Formats**
+```yaml
+# User configuration (~/.config/ouroborOS/config.yaml)
+# Overrides only specific sections
+user:
+  username: developer
+  shell: /usr/bin/fish
+
+desktop:
+  profile: niri
+```
+
+```yaml
+# System configuration (/etc/ouroborOS/system.yaml)
+# Complete system definition
+user:
+  username: admin
+  password: changeme
+  groups: [wheel, audio, video]
+
+network:
+  hostname: server-01
+
+disk:
+  device: /dev/vda
+  use_luks: true
+
+# Complete system definition...
+```
+
+## Manifest Validation
+
+### **Syntax Validation**
+```bash
+# Validate configuration syntax
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml
+
+# Validate with strict mode
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --strict
+
+# Validate without applying changes
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --dry-run
+```
+
+### **Schema Validation**
+```bash
+# Check against official schema
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --schema
+
+# Generate documentation
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --generate-docs
+
+# Check configuration requirements
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --check-requirements
+```
+
+### **Configuration Testing**
+```bash
+# Test network configuration
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --test-network
+
+# Test disk configuration
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --test-disk
+
+# Test package compatibility
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml --test-packages
+```
+
+## Advanced Manifest Features
+
+### **Inheritance and Overrides**
+```yaml
+# Base configuration (shared across systems)
+# /etc/ouroborOS/base.yaml
+user:
+  shell: /bin/bash
+  groups: [wheel, audio, video]
+
+network:
+  enable_networkd: true
+  enable_resolved: true
+
+desktop:
+  dm: auto
+```
+
+```yaml
+# Development override
+# ~/.config/ouroborOS/config.yaml
+extends: /etc/ouroborOS/base.yaml
+
+user:
+  username: developer
+  shell: /usr/bin/fish
+
+extra_packages:
+  - git
+  - docker
+  - neovim
+
+desktop:
+  profile: hyprland
+```
+
+### **Conditional Configuration**
+```yaml
+# Environment-specific configuration
+# Conditional based on hostname
+user:
+  hostname: "{{ inventory_hostname }}"
+  username: "{{ default('admin', user_name) }}"
+
+# Conditional package installation
+extra_packages: >
+  {{
+    inventory_hostname.startswith('web') and ['nginx', 'certbot']
+    or
+    inventory_hostname.startswith('db') and ['postgresql', 'redis']
+    or
+    ['htop', 'vim']
+  }}
+
+# Conditional security settings
+security:
+  secure_boot: "{{ inventory_hostname in production_servers }}"
+```
+
+### **Secrets Management**
+```yaml
+# Secure secrets handling
+user:
+  password: "{{ vault.system.user_password }}"
+
+network:
+  wifi:
+    ssid: "{{ vault.network.wifi.ssid }}"
+    passphrase: "{{ vault.network.wifi.passphrase }}"
+
+# Environment-specific secrets
+secrets:
+  production:
+    database_password: "{{ vault.prod.db.password }}"
+    api_key: "{{ vault.prod.api.key }}"
+  
+  development:
+    database_password: "dev_password"
+    api_key: "dev_api_key"
+```
+
+## Manifest Generation
+
+### **Auto-Generation**
+```bash
+# Generate configuration from current system state
+sudo ouroboros-manifest generate > /etc/ouroborOS/system.yaml
+
+# Generate with specific options
+sudo ouroboros-manifest generate \
+  --include-users \
+  --include-network \
+  --include-desktop \
+  --output /etc/ouroborOS/system.yaml
+
+# Generate from template
+sudo ouroboros-manifest generate \
+  --template /usr/share/ouroborOS/templates/server.yaml \
+  --output /etc/ouroborOS/system.yaml
+```
+
+### **Manifest Templates**
+```yaml
+# Template: /usr/share/ouroborOS/templates/desktop.yaml
+user:
+  username: "{{ username }}"
+  shell: /bin/bash
+  groups: [wheel, audio, video]
+
+network:
+  hostname: "{{ hostname }}-desktop"
+
+desktop:
+  profile: "{{ desktop_profile }}"
+  dm: auto
+
+extra_packages:
+  - "{{ packages|default(['htop', 'vim']) }}"
+
+# Template: /usr/share/ouroborOS/templates/server.yaml
+user:
+  username: admin
+  shell: /bin/bash
+  groups: [wheel]
+
+network:
+  hostname: "{{ hostname }}-server"
+  enable_networkd: true
+
+desktop:
+  profile: minimal
+
+extra_packages:
+  - nginx
+  - postgresql
+  - docker
+```
+
+## Version Control Integration
+
+### **Git Integration**
+```bash
+# Initialize version control
+cd /etc/ouroborOS
+git init
+git add system.yaml
+git commit -m "Initial system configuration"
+
+# Configure git
+git config user.name "System Admin"
+git config user.email "admin@ouroboros.la"
+
+# Track configuration changes
+git log --oneline -5
+git show HEAD:system.yaml
+```
+
+### **Branch Strategy**
+```bash
+# Create feature branch
+git checkout -b feature/add-docker
+
+# Modify configuration
+# Edit system.yaml...
+
+# Commit changes
+git add system.yaml
+git commit -m "Add Docker support"
+
+# Merge to main
+git checkout main
+git merge feature/add-docker
+
+# Tag configuration
+git tag v1.0.0-system-config
+```
+
+### **Automation Scripts**
+```bash
+#!/bin/bash
+# /usr/local/bin/commit-config.sh
+
+# Auto-commit configuration changes
+cd /etc/ouroborOS
+git add system.yaml
+if git diff --staged --quiet; then
+    echo "No changes to commit"
+else
+    git commit -m "$(date '+%Y-%m-%d %H:%M:%S'): Auto-update system configuration"
+    git push origin main
+fi
+```
+
+## Manifest Management Commands
+
+### **Apply Configuration**
+```bash
+# Apply configuration changes
+sudo ouroboros-apply --config /etc/ouroborOS/system.yaml
+
+# Apply with validation first
+sudo ouroboros-validator --config /etc/ouroborOS/system.yaml
+sudo ouroboros-apply --config /etc/ouroborOS/system.yaml
+
+# Apply with backup
+sudo ouroboros-apply --config /etc/ouroborOS/system.yaml --backup
+```
+
+### **Diff and Compare**
+```bash
+# Show configuration differences
+sudo ouroboros-diff /etc/ouroborOS/system.yaml
+
+# Compare with running system
+sudo ouroboros-diff --current /etc/ouroborOS/system.yaml
+
+# Show changes in last deployment
+sudo ouroboros-diff --since v1.0.0
+```
+
+### **Configuration Backup**
+```bash
+# Create configuration backup
+sudo ouroboros-backup --output /backup/system-$(date +%Y%m%d).yaml
+
+# Backup with encryption
+sudo ouroboros-backup --encrypt --output /backup/system-encrypted.yaml
+
+# Backup remote configuration
+sudo ouroboros-backup --remote admin@backup-server:/backup/
+```
+
+## Best Practices
+
+### **Organization**
+```yaml
+# Organize configuration logically
+# /etc/ouroborOS/system.yaml
+user:                                # User management
+  # ... user configuration
+
+network:                             # Network configuration
+  # ... network settings
+
+security:                           # Security settings
+  # ... security configuration
+
+desktop:                           # Desktop environment
+  # ... desktop configuration
+
+# Separate concerns into files
+# /etc/ouroborOS/users.yaml     # User configurations
+# /etc/ouroborOS/network.yaml   # Network configurations
+# /etc/ouroborOS/desktop.yaml   # Desktop configurations
+```
+
+### **Version Control Strategy**
+```bash
+# Use meaningful commit messages
+git commit -m "feat: Add Docker support for development environment"
+git commit -m "fix: Correct WiFi network SSID"
+git commit -m "docs: Update timezone configuration"
+
+# Tag important versions
+git tag v1.0.0-initial-deployment
+git tag v1.1.0-docker-integration
+git tag v2.0.0-production-ready
+```
+
+### **Documentation**
+```yaml
+# Add comments to complex configurations
+user:
+  username: admin                # Main administrator account
+  password: "{{ secure_password }}"  # Managed by vault
+  shell: /bin/bash              # Standard shell for compatibility
+  groups:
+    - wheel                     # sudo access
+    - audio                     # audio device access
+    - video                     # video device access
+    - input                     # input device access
+```
+
+### **Security Considerations**
+```yaml
+# Never store sensitive data in plain text
+# Use environment variables or vaults
+user:
+  password: "{{ VAULT:system.user_password }}"
+  
+network:
+  wifi:
+    ssid: "{{ VAULT:network.wifi.ssid }}"
+    passphrase: "{{ VAULT:network.wifi.passphrase }}"
+```
+
+The `system.yaml` manifest provides the foundation for reproducible, auditable system management in ouroborOS. By embracing declarative configuration, you can ensure your system always matches exactly what you define, making it easier to manage, version control, and reproduce across different environments.
+
+<Tabs>
+<TabItem label="Basic Manifest">
+```yaml
+# Simple system.yaml for basic server
+user:
+  username: admin
+  password: changeme
+  shell: /bin/bash
+  groups: [wheel]
+
+network:
+  hostname: server-01
+  enable_networkd: true
+
+disk:
+  device: /dev/vda
+  use_luks: false
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: UTC
+
+desktop:
+  profile: minimal
+
+extra_packages: [htop, vim]
+
+post_install_action: reboot
+```
+</TabItem>
+<TabItem label="Production Manifest">
+```yaml
+# Production-ready system.yaml
+user:
+  username: admin
+  password: "{{ VAULT:prod.admin_password }}"
+  shell: /bin/bash
+  groups: [wheel, audio, video, input]
+  homed_storage: luks
+
+network:
+  hostname: prod-web-01
+  enable_networkd: true
+  enable_resolved: true
+  networkd:
+    - match: name=eth0
+      network:
+        Address: 10.0.1.100/24
+        Gateway: 10.0.1.1
+        DNS: [10.0.1.1, 8.8.8.8]
+
+security:
+  secure_boot: true
+  sbctl_include_ms_keys: true
+  firewall:
+    enabled: true
+    default_policy: deny
+    rules:
+      - port: 22
+        protocol: tcp
+        action: allow
+      - port: 80
+        protocol: tcp
+        action: allow
+      - port: 443
+        protocol: tcp
+        action: allow
+
+disk:
+  device: /dev/nvme0n1
+  use_luks: true
+  luks:
+    key_type: tpm2
+    pcrs: "7+14"
+    fallback_passphrase: true
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/New_York
+
+desktop:
+  profile: minimal
+  dm: none
+
+extra_packages: [nginx, postgresql, docker, htop, curl]
+
+post_install_action: reboot
+```
+</TabItem>
+</Tabs>

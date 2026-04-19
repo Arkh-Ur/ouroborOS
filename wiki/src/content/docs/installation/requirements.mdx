@@ -1,0 +1,266 @@
+---
+title: Requirements
+description: System requirements and hardware compatibility for ouroborOS installation.
+slug: installation/requirements
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Installation Requirements
+
+Before installing ouroborOS, it's essential to ensure your system meets the hardware and software requirements. This guide covers everything you need to know for a successful installation.
+
+## Hardware Requirements
+
+### **Minimum Requirements**
+- **CPU**: 64-bit x86 processor (Intel 64-bit or AMD 64-bit)
+- **RAM**: 2GB minimum, 4GB recommended
+- **Storage**: 20GB minimum, 40GB+ recommended
+- **Boot**: UEFI boot support (required)
+- **Network**: Ethernet connection or WiFi adapter
+
+### **Recommended Configuration**
+- **CPU**: Modern 4+ core processor
+- **RAM**: 8GB or more
+- **Storage**: 100GB+ SSD (Btrfs performs best on SSDs)
+- **Network**: Gigabit Ethernet + WiFi
+- **Security**: TPM2 chip (for optional disk encryption)
+
+## Storage Requirements
+
+### **Btrfs Requirements**
+```bash
+# Check if your system supports Btrfs
+lsblk -f | grep btrfs
+# Or check kernel support
+zcat /proc/config.gz | grep CONFIG_BTRFS_FS
+```
+
+#### **Minimum Partition Layout**
+```
+/dev/vda1  512MB  EFI System Partition  FAT32
+/dev/vda2   20GB  Btrfs filesystem       ouroborOS
+```
+
+#### **Recommended Partition Layout**
+```
+/dev/vda1  512MB  EFI System Partition  FAT32
+/dev/vda2   50GB  Btrfs filesystem       ouroborOS (LUKS encrypted)
+/dev/vda3   4GB  Linux swap             zram (recommended)
+```
+
+### **Swap Configuration**
+```yaml
+# system.yaml swap options
+disk:
+  swap_type: zram  # Recommended for modern systems
+  # OR
+  # swap_type: partition  # If you have dedicated swap space
+  # swap_size: 4GB
+```
+
+## Software Requirements
+
+### **Installation Environment**
+- **Live ISO**: ouroborOS live ISO image
+- **Boot Method**: USB drive (4GB+ minimum)
+- **Network**: Internet connection (for package downloads)
+
+### **Pre-installation Tools**
+```bash
+# Verify your system meets requirements
+sudo fdisk -l              # Check disk partitioning
+lsblk -f                  # Check filesystem types
+efibootmgr -v              # Check UEFI boot entries
+lspci | grep -i vga        # Check GPU
+iwctl list                 # Check WiFi adapters
+```
+
+## Hardware Compatibility
+
+### **CPU Support**
+- **Intel**: Core i3/i5/i7/i9 (2nd generation and later)
+- **AMD**: Ryzen 1000/2000/3000/5000/7000 series
+- **Virtualization**: KVM, VirtualBox, VMware (with UEFI support)
+
+:::note
+**Virtual Machines**: QEMU with UEFI firmware works best. VMware/VirtualBox may require additional configuration.
+:::
+
+### **GPU Support**
+```bash
+# Detect your GPU
+lspci | grep -i vga
+# Expected output:
+# 00:02.0 VGA compatible controller: Intel Corporation HD Graphics 630
+# OR
+# 01:00.0 VGA compatible controller: NVIDIA Corporation GP107 [GeForce GTX 1050 Ti]
+```
+
+#### **Supported GPUs**
+- **Intel**: Integrated graphics (HD 4000 and later)
+- **NVIDIA**: GTX 10xx, 20xx, 30xx series
+- **AMD**: Radeon RX 400/500/6000 series
+- **Virtual**: QEMU virtio, VMware SVGA
+
+:::caution
+**NVIDIA Drivers**: If using NVIDIA GPUs, additional setup may be required for proper support.
+:::
+
+### **Network Support**
+```bash
+# Check network adapters
+ip a
+# Check WiFi support
+iwctl list devices
+```
+
+#### **Wired Network**
+- **Intel**: I210, I225, I350 series
+- **Broadcom**: BCM57XX series
+- **Realtek**: RTL8111/8168 series
+
+#### **Wireless Network**
+- **Intel**: AX200, AX210, Wireless-AC 9260
+- **Broadcom**: BCM4366, BCM4371
+- **Realtek**: RTL8822BE, RTL8852BE
+
+### **Storage Support**
+```bash
+# Check storage devices
+lsblk -d
+# Check SSD support
+cat /sys/block/sda/queue/rotational
+# 0 = SSD, 1 = HDD
+```
+
+#### **Supported Storage**
+- **NVMe SSDs**: Recommended for best performance
+- **SATA SSDs**: Excellent performance
+- **SATA HDDs**: Works but slower
+- **USB Storage**: Not recommended for installation
+
+## Security Requirements
+
+### **Secure Boot (Optional)**
+```bash
+# Check if Secure Boot is available
+mokutil --sb-state
+# Check if firmware is in Setup Mode
+dmesg | grep -i "secure boot"
+```
+
+### **TPM2 (Optional)**
+```bash
+# Check TPM2 availability
+tpm2_pcrread sha256:0
+# Check TPM2 device
+ls /dev/tpm*
+```
+
+## System Requirements Checklist
+
+### **Before Installation**
+- [ ] Back up important data
+- [ ] Verify UEFI boot support
+- [ ] Check sufficient disk space
+- [ ] Test network connectivity
+- [ ] Create installation media
+- [ ] Review hardware compatibility
+
+### **During Installation**
+- [ ] Boot from UEFI mode
+- [ ] Select appropriate installation method
+- [ ] Configure network connection
+- [ ] Set up user accounts
+- [ ] Configure security settings
+- [ ] Create system configuration
+
+### **Post-Installation**
+- [ ] Verify system functionality
+- [ ] Install additional software
+- [ ] Configure user preferences
+- [ ] Set up backup strategy
+- [ ] Test rollback functionality
+
+## Troubleshooting Requirements
+
+### **Common Issues**
+- **UEFI Boot**: Ensure Secure Boot is disabled during installation
+- **Network Issues**: Use wired connection if WiFi fails
+- **Disk Detection**: Check disk identification (UUID vs /dev/sdX)
+- **Partition Errors**: Ensure GPT partition scheme
+
+### **Recovery Requirements**
+```bash
+# Create rescue media
+sudo dd if=ouroborOS.iso of=/dev/sdX bs=4M status=progress
+# Test boot media
+qemu-system-x86_64 -cdrom ouroborOS.iso -boot d
+```
+
+:::tip
+**Pro Tip**: Always test your installation media before proceeding with the actual installation. This prevents issues related to corrupted ISO files.
+:::
+
+## Performance Considerations
+
+### **Storage Performance**
+```bash
+# Check storage performance
+sudo hdparm -tT /dev/sda
+# For SSDs
+sudo fio --name=randread --ioengine=libaio --iodepth=16 --rw=randread --bs=4k --direct=1 --size=1G --numjobs=1 --runtime=60 --group_reporting --time_based
+```
+
+### **Memory Performance**
+- **Swap**: zram is recommended for systems with 8GB+ RAM
+- **Cache**: Ensure adequate free RAM for system caching
+
+### **Network Performance**
+- **Download Speed**: Minimum 10Mbps for package downloads
+- **Latency**: Under 50ms for optimal package manager performance
+
+## Enterprise Requirements
+
+### **Hardware Certification**
+- **Servers**: Dell PowerEdge, HP ProLiant (UEFI capable)
+- **Workstations**: Dell Precision, HP Z-series
+- **Laptops**: ThinkPad, Latitude, EliteBook (UEFI capable)
+
+### **Network Requirements**
+- **Bandwidth**: 100Mbps+ for multiple system deployments
+- **Infrastructure**: DHCP server with PXE boot support
+- **Security**: Firewall rules for installation traffic
+
+### **Virtualization Support**
+- **Hypervisor**: VMware ESXi, Hyper-V, Proxmox
+- **Guest Tools**: VM Tools, virtio drivers
+- **Storage**: NFS, iSCSI, or direct attached storage
+
+By following these requirements, you'll ensure a smooth installation experience and optimal performance from your ouroborOS system. If you have any questions about specific hardware compatibility, check our [hardware compatibility list](installation/faq) or contact our community for assistance.
+
+<Tabs>
+<TabItem label="Minimum Requirements">
+```yaml
+# Minimum configuration
+hardware:
+  cpu: 64-bit x86
+  ram: "2GB"
+  storage: "20GB SSD"
+  boot: UEFI
+  network: Ethernet
+```
+</TabItem>
+<TabItem label="Recommended Requirements">
+```yaml
+# Recommended configuration
+hardware:
+  cpu: "4+ core modern"
+  ram: "8GB+"
+  storage: "100GB+ NVMe SSD"
+  boot: UEFI + Secure Boot
+  network: "Gigabit + WiFi"
+  security: "TPM2 optional"
+```
+</TabItem>
+</Tabs>

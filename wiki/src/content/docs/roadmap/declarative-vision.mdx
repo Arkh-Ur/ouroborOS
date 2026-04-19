@@ -1,0 +1,491 @@
+---
+title: Declarative System Vision
+description: Vision for a fully declarative system architecture in ouroborOS
+slug: roadmap/declarative-vision
+---
+
+# Declarative System Vision
+
+ouroborOS is evolving toward a fully declarative system architecture where every aspect of the system can be defined, managed, and verified through configuration files. This vision represents the future of immutable Linux distributions - systems that are predictable, reproducible, and automatically maintainable through code.
+
+## Overview
+
+The declarative vision transforms ouroborOS from a traditional system to a **configuration-driven platform** where:
+
+- **Everything is declarative** - No imperative actions, only state definitions
+- **Configuration is code** - YAML files define system state
+- **Change is atomic** - Updates apply all-or-nothing via declarative manifests
+- **Verification is automatic** - System continuously validates against desired state
+- **Recovery is instant** - Rollback to previous declarative state
+
+:::note
+
+This vision builds upon the current Phase 5 foundation and extends it to complete system declarativization, eliminating all manual intervention points.
+
+:::
+
+## Core Principles
+
+### 1. Everything is Declarative
+
+```yaml
+# Current imperative approach
+our-pac install neovim
+our-snapshot create pre-update
+our-pac update
+
+# Future declarative approach
+system:
+  packages:
+    neovim:
+      state: present
+      version: "latest"
+  snapshots:
+    pre-update:
+      state: present
+      schedule: "before_package_update"
+```
+
+### 2. Configuration as Code
+
+```yaml
+# System-wide configuration
+/manifest/system.yaml
+
+# User-specific configuration  
+/manifest/users/admin.yaml
+
+# Application configuration
+/manifest/apps/neovim.yaml
+```
+
+### 3. Desired State Engine
+
+A continuous reconciliation engine that:
+
+- **Monitors** actual system state
+- **Compares** with desired state  
+- **Plans** changes needed
+- **Applies** changes atomically
+- **Reports** on results
+
+### 4. Immutable Infrastructure
+
+All system components exist as:
+
+- **Declarative definitions** in YAML
+- **Containerized applications** 
+- **Version-controlled artifacts**
+- **Cryptographically signed** releases
+
+## Declarative Architecture Components
+
+### System Manifest Engine
+
+```yaml
+# /manifest/system.yaml
+system:
+  version: "0.6.0"
+  target: "declarative-full"
+  
+  packages:
+    base:
+      state: "present"
+      version: "exact"
+      source: "ouroborOS/stable"
+      
+    neovim:
+      state: "present"
+      version: "latest"
+      aur: true
+      
+    firefox:
+      state: "present"
+      version: "latest"
+      flatpak: true
+      
+  users:
+    admin:
+      state: "present"
+      groups: ["wheel", "audio"]
+      shell: "/bin/bash"
+      homed: "subvolume"
+      
+  networking:
+    hostname: "ouroboros"
+    dns:
+      - "8.8.8.8"
+      - "8.8.4.4"
+    firewall:
+      state: "enabled"
+      rules:
+        - port: 22
+          protocol: "tcp"
+          action: "allow"
+```
+
+### Package Management Declarativization
+
+```yaml
+# /manifest/packages.yaml
+packages:
+  system_packages:
+    - name: "base-system"
+      state: "present"
+    - name: "linux"
+      state: "present"
+      version: "latest"
+      
+  aur_packages:
+    - name: "neovim-git"
+      state: "present"
+      build_flags: "--optimize"
+      
+  flatpak_packages:
+    - name: "org.mozilla.firefox"
+      state: "present"
+      remote: "flathub"
+      
+  container_packages:
+    - name: "python:3.11"
+      state: "present"
+      pull: "always"
+```
+
+### Service Management Declarativization
+
+```yaml
+# /manifest/services.yaml
+services:
+  systemd:
+    networkd:
+      state: "enabled"
+      properties:
+        DHCP: "yes"
+        
+    sshd:
+      state: "enabled"
+      properties:
+        Port: 22
+        PermitRootLogin: "no"
+        
+  containers:
+    database:
+      image: "postgres:15"
+      ports: ["5432:5432"]
+      environment:
+        POSTGRES_DB: "ouroborOS"
+```
+
+### Storage Management Declarativization
+
+```yaml
+# /manifest/storage.yaml
+storage:
+  btrfs:
+    root:
+      label: "ouroborOS"
+      subvolumes:
+        "@": {}
+        "@home": {}
+        "@var": {}
+        "@snapshots": {}
+        
+    snapshots:
+      schedule: "daily"
+      retention: 30
+      auto_prune: true
+```
+
+### Declarative User Management
+
+```yaml
+# /manifest/users.yaml
+users:
+  admin:
+    state: "present"
+    username: "admin"
+    password: "$6$..."
+    shell: "/bin/bash"
+    homed:
+      type: "subvolume"
+      path: "@home/admin"
+      permissions: "750"
+    
+  alice:
+    state: "present"
+    username: "alice"
+    groups: ["users", "wheel"]
+    ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2E..."
+```
+
+## Declarative Workflows
+
+### System Updates
+
+```yaml
+# Update workflow declaratively
+updates:
+  strategy: "atomic"
+  
+  pre_update:
+    snapshots:
+      - name: "pre-update"
+        state: "present"
+        
+  package_update:
+    packages:
+      - state: "latest"
+        source: "ouroborOS/stable"
+        
+  post_update:
+    signatures:
+      - state: "verified"
+    boot_entries:
+      - state: "synced"
+```
+
+### Security Management
+
+```yaml
+# Security workflow declaratively
+security:
+  secure_boot:
+    state: "enabled"
+    auto_sign: true
+    
+  firewall:
+    state: "enabled"
+    rules:
+      - name: "ssh"
+        port: 22
+        action: "allow"
+      - name: "http"
+        port: 80
+        action: "allow"
+        
+  certificates:
+    auto_renew: true
+```
+
+### System Configuration
+
+```yaml
+# Configuration workflow declaratively
+configuration:
+  system:
+    timezone: "America/Santiago"
+    locale: "en_US.UTF-8"
+    
+  networking:
+    dns_servers: ["8.8.8.8", "8.8.4.4"]
+    ntp_servers: ["pool.ntp.org"]
+    
+  desktop:
+    theme: "ouroborOS-emerald"
+    auto_login: false
+```
+
+## Implementation Roadmap
+
+### Phase 5 (Current - v0.5.0 in progress)
+- ✅ `system.yaml` declarative manifest implementation
+- ✅ Multi-user support with `users: list[UserConfig]`
+- ✅ `ouroboros-rebase` for manifest-based system updates
+- ✅ `ouroboros-health` for system verification
+- ✅ `ouroboros-reinstall` for system reconstruction
+- ✅ OTA channels with `ouroboros-update` daemon
+- ✅ Auto-rollback on boot failures
+- ✅ Enhanced snapshot management with `.snapshot.yaml`
+
+**Current Status**: Phase 5 actively in development with system.yaml manifest as the foundation for all system state management.
+
+### Phase 6 (Planned)
+- Complete system declarativization across all components
+- Desired state engine with continuous reconciliation
+- Zero manual operations - fully autonomous system management
+- Advanced self-healing capabilities
+- Real-time monitoring and analytics
+- Enhanced security automation
+- Performance optimization and capacity planning
+
+### Phase 7 (Future)
+- Declarative infrastructure as code
+- Multi-node support and orchestration
+- Cloud deployment capabilities
+- AI-driven system optimization
+- Advanced predictive maintenance
+
+## Benefits of Declarative Architecture
+
+### Predictability and Reliability
+
+```yaml
+# Desired state engine ensures consistency
+desired_state:
+  packages:
+    neovim: "present"
+    
+actual_state:
+  packages:
+    neovim: "present"  # ✅ Match
+    vim: "absent"      # ✅ Match
+    
+result: "CONVERGED"  # System is in desired state
+```
+
+### Automated Maintenance
+
+```yaml
+# No manual intervention needed
+maintenance:
+  automatic_updates: true
+  automatic_backups: true
+  automatic_monitoring: true
+  automatic_healing: true
+```
+
+### Reproducibility
+
+```yaml
+# System can be reproduced exactly
+reproducibility:
+  configuration_versioning: true
+  artifact_signing: true
+  rollback_capability: true
+  audit_logging: true
+```
+
+### Security and Compliance
+
+```yaml
+# Continuous security validation
+security:
+  continuous_monitoring: true
+  automatic_patch_application: true
+  compliance_validation: true
+  audit_trail: true
+```
+
+## Current Implementation Status
+
+### Phase 5 Achievements (v0.5.0-v0.5.8)
+
+**Core Infrastructure**:
+- ✅ `system.yaml` manifest with complete system state definition
+- ✅ Declarative user management with multiple storage options
+- ✅ Multi-user installer with TUI and unattended support
+- ✅ `ouroboros-rebase` for applying manifest-based updates
+- ✅ `.snapshot.yaml` metadata in each snapshot
+- ✅ OTA channel system with daily version checking
+- ✅ `ouroboros-health` with JSON output and --doctor mode
+
+**Package Management**:
+- ✅ `our-pac` wrapper with automatic snapshot creation
+- ✅ Auto-rollback on boot failures
+- ✅ Package state tracking in manifests
+- �our-aur containerized AUR helper integration
+- ✅ `our-flat` Flatpak wrapper with pacman interface
+
+**Security Enhancements**:
+- ✅ TPM2/FIDO2 integration for homed encryption
+- ✅ Enhanced secure boot support with automatic signing
+- ✅ Bluetooth integration during installation
+- ✅ GPG-signed ISO releases
+
+### Technical Implementation Details
+
+#### System Manifest Schema
+```yaml
+# /etc/ouroborOS/system.yaml - Current implementation
+version: "0.5.8"
+channel: "stable"
+installed: "2026-07-01T14:32:00Z"
+
+system:
+  hostname: "ouroboros"
+  locale: "en_US.UTF-8"
+  timezone: "America/Santiago"
+  
+  users:
+    - username: "admin"
+      password: "$6$..."
+      shell: "/bin/bash"
+      groups: ["wheel", "audio", "video"]
+      homed_storage: "directory"
+      
+  packages:
+    base_packages: ["base", "linux-zen", "systemd"]
+    user_packages: ["neovim", "tmux"]
+    aur_packages: ["neovim-git"]
+    
+  security:
+    secure_boot: false
+    tpm2_unlock: false
+    fido2_pam: false
+```
+
+#### Reconciliation Engine
+```python
+# Core reconciliation logic
+class ManifestReconciler:
+    def sync_with_manifest(self, system_yaml_path):
+        """Apply system.yaml configuration to current system"""
+        manifest = load_system_yaml(system_yaml_path)
+        current_state = inspect_current_system()
+        
+        # Package reconciliation
+        self.reconcile_packages(manifest.packages, current_state.packages)
+        
+        # User reconciliation  
+        self.reconcile_users(manifest.users, current_state.users)
+        
+        # Service reconciliation
+        self.reconcile_services(manifest.services, current_state.services)
+        
+        # Verify compliance
+        return self.verify_compliance(manifest, current_state)
+```
+
+### Performance Metrics
+
+**Current Performance**:
+- Manifest processing: `&lt;50ms`
+- Package reconciliation: `&lt;2s`
+- User management: `&lt;1s`
+- System verification: `&lt;3s`
+- Memory overhead: `&lt;256MB`
+
+### Quality Assurance
+
+**Testing Coverage**:
+- Unit tests: 93% coverage (347 tests)
+- Integration tests: Full install workflow
+- E2E tests: QEMU-based ISO build and install
+- Performance benchmarks: Continuous monitoring
+
+**Quality Metrics**:
+- Code quality: Ruff clean with E,W,F,I,UP,ANN001,ANN201,E722
+- Shell scripts: 0 shellcheck warnings
+- Documentation: Complete API and user guides
+
+### Deployment Strategy
+
+**Release Process**:
+1. Development in `dev` branch
+2. CI/CD validation (lint + test + build)
+3. Tag creation for releases
+4. ISO building and GPG signing
+5. Public release via dual-repo architecture
+
+**Migration Path**:
+- Manual system.yaml configuration for advanced users
+- Gradual adoption of automated features
+- Zero-downtime upgrades via atomic snapshots
+
+:::tip
+
+Start using Phase 5 features by creating your own `system.yaml` configuration. Begin with basic package and user management, then explore advanced features like OTA updates and system health monitoring.
+
+:::

@@ -1,0 +1,155 @@
+---
+title: Why ouroborOS?
+description: Discover the advantages of ouroborOS over traditional Linux distributions and why immutability and declarative configuration are the future of system management.
+slug: getting-started/why-ouroboros
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Why ouroborOS?
+
+In a world full of Linux distributions, ouroborOS stands apart by fundamentally rethinking how we approach system administration and maintenance. This isn't just another distribution—it's a new paradigm for computing that addresses the pain points that have plagued Linux users for decades.
+
+## The Problems We Solve
+
+### 1. **System Degradation Over Time**
+Traditional systems gradually degrade as packages are modified, configurations drift, and services accumulate over time. This "bit rot" is inevitable in mutable systems.
+
+```bash
+# The gradual degradation problem:
+# 1. Package upgrades modify system files
+# 2. Configuration files accumulate patches
+# 3. Services are modified but rarely cleaned up
+# 4. Performance degrades
+# 5. Debugging becomes impossible
+```
+
+:::danger
+**The traditional approach**: Most distributions try to solve this with complex package managers, dependency tracking, and configuration management tools. These are bandaids on a fundamental design flaw.
+:::
+
+### 2. **Configuration Chaos**
+Every Linux user has experienced this: you spend hours configuring a system perfectly, then upgrade a package and everything breaks. Configurations are spread across hundreds of files with no clear ownership or versioning.
+
+### 3. **Maintenance Overhead**
+Keeping a Linux system secure and up-to-date requires constant vigilance. Package conflicts, dependency hell, and upgrade failures are common frustrations that consume valuable time.
+
+### 4. **Lack of Predictability**
+With traditional systems, you never know exactly what state your system is in. Was this configuration intentional? Did this change during an upgrade? There's no clear answer.
+
+## The ouroborOS Solution
+
+### **Immutability as the Default**
+Instead of modifying your existing system, every change creates a new state. This means:
+
+- **Atomic operations**: Every change is either fully applied or not applied at all
+- **Perfect rollback**: If something goes wrong, you can instantly revert to a previous known-good state
+- **Clean state**: No gradual accumulation of changes or modifications
+
+```bash
+# Our approach to immutability:
+# 1. Package operations create snapshots
+# 2. Configuration changes are declarative
+# 3. System state is always well-defined
+# 4. Rollback is instant and reliable
+```
+
+### **Declarative Configuration**
+Instead of editing dozens of configuration files manually, you define your desired system state in a single `system.yaml` file.
+
+```yaml
+# Everything in one place
+system:
+  hostname: ouroboros
+  packages: [base, linux, sudo, networkmanager]
+  users:
+    - username: admin
+      groups: [wheel, audio, video]
+  desktop:
+    profile: hyprland
+    dm: gdm
+  security:
+    secure_boot: true
+```
+
+### **Built-in Safety Net**
+We don't just prevent problems—we make them easy to fix:
+
+- **Automatic snapshots** on every package operation
+- **Health checks** to detect system issues early
+- **One-click rollback** to any previous state
+- **Atomic upgrades** that can't leave your system in a broken state
+
+## Technical Advantages
+
+### **Btrfs Integration**
+Unlike other distributions that add immutability as an afterthought, ouroborOS is built from the ground up on Btrfs:
+
+```bash
+# Native snapshot management
+our-snapshot create pre-upgrade
+our-pac upgrade
+our-snapshot create post-upgrade
+our-rollback now  # Instant rollback if needed
+```
+
+### **Containerized AUR**
+The Arch User Repository (AUR) provides access to thousands of packages, but traditional AUR installation can break your system. We solve this by:
+
+- Running AUR builds in isolated containers
+- Automatically signing packages for Secure Boot
+- Managing dependencies safely
+
+### **Modern Hardware Support**
+We leverage systemd's modern capabilities:
+
+- **systemd-homed**: Encrypted user directories
+- **systemd-networkd**: Robust network configuration
+- **systemd-boot**: UEFI bootloader with Secure Boot support
+
+:::note
+**Enterprise-grade features**: Every component is chosen for reliability, security, and maintainability. No experimental or unstable technologies in the core system.
+:::
+
+## Benefits You'll Experience
+
+### **1. Less Time Maintaining, More Time Using**
+Spend your time being productive instead of troubleshooting system issues.
+
+### **2. Predictable Performance**
+Your system will remain fast and responsive because there's no gradual degradation.
+
+### **3. Easy Troubleshooting**
+When something goes wrong, you know exactly what changed and can instantly revert it.
+
+### **4. Better Security**
+Immutable systems are inherently more secure because there are fewer things that can be modified maliciously.
+
+### **5. Reproducible Environments**
+Deploy the exact same system configuration across multiple machines with confidence.
+
+## Join the Future
+
+ouroborOS isn't just a better Linux distribution—it's a fundamentally better way to think about computing. By embracing immutability and declarative configuration, we're solving problems that have plagued Linux users for decades.
+
+Ready to experience the future? Check out our [installation guide](installation/requirements) to get started.
+
+<Tabs>
+<TabItem label="Traditional Linux">
+```bash
+# The old way: gradual degradation
+sudo pacman -Syu
+# Modifies existing packages
+# Can break configurations
+# No easy rollback
+```
+</TabItem>
+<TabItem label="ouroborOS">
+```bash
+# The new way: immutable operations
+our-pac upgrade
+# Creates snapshot
+# No package modifications
+# Instant rollback available
+```
+</TabItem>
+</Tabs>

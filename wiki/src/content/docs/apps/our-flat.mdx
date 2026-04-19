@@ -1,0 +1,594 @@
+---
+title: Flatpak Wrapper
+description: Flatpak package management with our-flat - pacman-style interface for ouroborOS
+slug: apps/our-flat
+---
+
+# Flatpak Wrapper (our-flat)
+
+`our-flat` is a comprehensive Flatpak package wrapper that provides a pacman-style interface for managing Flatpak applications. It integrates seamlessly with ouroborOS, offering familiar commands while leveraging the power and security of Flatpak containers.
+
+## Overview
+
+The `our-flat` tool provides:
+
+- **Pacman-style interface** for familiar Arch Linux users
+- **Complete Flatpak lifecycle management** with 8 primary operations
+- **Automatic remote management** with curated repositories
+- **System integration** with package snapshots and rollback
+- **Application sandboxing** with secure containers
+
+:::note
+
+Flatpak applications run in isolated containers, providing enhanced security and preventing system contamination. This makes it ideal for running third-party applications safely.
+
+:::
+
+## Installation
+
+The Flatpak wrapper is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-flat --version
+our-flat --help
+```
+
+## Basic Usage
+
+### Package Search
+
+```bash
+# Search applications in flatpak repositories
+our-flat search firefox
+
+# Search with descriptions
+our-flat search --desc "video editor"
+
+# Search specific applications
+our-flat search code spotify
+```
+
+### Package Installation
+
+```bash
+# Install a single application
+our-flat install firefox
+
+# Install multiple applications
+our-flat install code neovim telegram
+
+# Install with specific branch
+our-flat install --branch=stable libreoffice
+```
+
+### Package Removal
+
+```bash
+# Remove application (keep user data)
+our-flat remove firefox
+
+# Remove application and user data
+our-flat remove --data firefox
+
+# Remove application and all related packages
+our-flat remove --recursive firefox
+```
+
+## Remote Management
+
+### Configure Remotes
+
+```bash
+# List configured remotes
+our-flat remotes
+
+# Add Flathub repository
+our-flat remote-add flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# Add specific application repository
+our-flat remote-add gnome https://sdk.gnome.org/gnome.flatpakrepo
+
+# Remove remote
+our-flat remote-remove flathub
+```
+
+### Update Remotes
+
+```bash
+# Update all remotes
+our-flat update
+
+# Update specific remote
+our-flat update flathub
+
+# Check remote status
+our-flat status flathub
+```
+
+## Application Management
+
+### Application Information
+
+```bash
+# Show application details
+our-flat info firefox
+
+# Show application files
+our-flat files firefox
+
+# Show application permissions
+our-flat permissions firefox
+
+# Show application runtime
+our-flat runtime firefox
+```
+
+### Application Updates
+
+```bash
+# Update all applications
+our-flat update
+
+# Update specific application
+our-flat update firefox
+
+# Check for updates without installing
+our-flat check-updates
+
+# Update applications from specific remote
+our-flat update --remote=flathub
+```
+
+### Application Control
+
+```bash
+# List installed applications
+our-flat list
+
+# Show running applications
+our-flat ps
+
+# Stop application
+our-flat stop firefox
+
+# Restart application
+our-flat restart firefox
+```
+
+## Security and Permissions
+
+### Permission Management
+
+```bash
+# Grant application permissions
+our-flat grant firefox --filesystem=home
+
+# Revoke application permissions
+our-flat revoke firefox --filesystem=home
+
+# Reset application permissions
+our-flat reset-permissions firefox
+
+# Show permission details
+our-flat permissions firefox
+```
+
+### Sandboxing Configuration
+
+```bash
+# Create sandbox profile
+our-flat sandbox firefox --network=host --filesystem=home
+
+# Apply sandbox profile
+our-flat apply-sandbox firefox
+
+# Remove sandbox profile
+our-flat remove-sandbox firefox
+```
+
+## Application Categories
+
+### Development Tools
+
+```bash
+# Code editors and IDEs
+our-flat install code neovim sublime-text
+
+# Development utilities
+our-flat install gitkraken github-desktop postman
+
+# Version control
+our-flat install gitkraken sourcetree
+```
+
+### Productivity
+
+```bash
+# Office applications
+our-flat install libreoffice-onlyoffice
+
+# Note taking
+our-flat install obsidian standard-notes
+
+# Project management
+our-flat install asana trello notion
+```
+
+### Multimedia
+
+```bash
+# Video players
+our-flat install vlc mpv celluloid
+
+# Music players
+our-flat install spotify audacious
+
+# Image editors
+our-flat install gimp krita inkscape
+```
+
+### Communication
+
+```bash
+# Messaging apps
+our-flat install telegram discord signal
+
+# Video conferencing
+our-flat install zoom jitsi-meet
+
+# Email clients
+our-flat install thunderbird evolution
+```
+
+## Workflow Management
+
+### Safe Installation Process
+
+```bash
+# 1. Create snapshot before installation
+our-snapshot create pre-flatpak-install
+
+# 2. Install application
+our-flat install code
+
+# 3. Test application
+code --version
+
+# 4. If issues arise, rollback
+our-rollback now
+```
+
+### Update Workflow
+
+```bash
+# 1. Check for updates
+our-flat check-updates
+
+# 2. Create snapshot
+our-snapshot create pre-flatpak-update
+
+# 3. Update applications
+our-flat update
+
+# 4. Test updated applications
+code --version
+firefox --version
+
+# 5. If issues, rollback
+our-rollback now
+```
+
+## System Integration
+
+### Automatic Updates
+
+```bash
+# Enable automatic application updates
+systemctl --user enable flatpak-update.timer
+systemctl --user start flatpak-update.timer
+
+# Check update timer status
+systemctl --user status flatpak-update.timer
+```
+
+### Application Integration
+
+```bash
+# Create desktop shortcuts
+our-flat desktop firefox
+
+# Update menu entries
+our-flat update-menu
+
+# Configure MIME types
+our-flat configure-mime
+```
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Fix broken dependencies
+our-flat repair
+
+# Clean flatpak cache
+our-flat clean-cache
+
+# Reset flatpak database
+our-flat reset-database
+```
+
+### Permission Issues
+
+```bash
+# Reset application permissions
+our-flat reset-permissions firefox
+
+# Grant filesystem access
+our-flat grant firefox --filesystem=home:rw
+
+# Show permission issues
+our-flat check-permissions firefox
+```
+
+### Runtime Issues
+
+```bash
+# Check runtime health
+our-flat check-runtime firefox
+
+# Update runtimes
+our-flat update-runtimes
+
+# Repair runtime
+our-flat repair-runtime firefox
+```
+
+## Advanced Flatpak Management
+
+### Remote Configuration
+
+```bash
+# List configured remotes
+our-flat remote-list
+# Output: Name	URL	Enabled
+#         flathub	https://dl.flathub.org/repo/flathub.flatpakrepo	yes
+
+# Add Flathub repository (required before installing apps)
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Add custom repository
+sudo our-flat remote-add gnome https://sdk.gnome.org/gnome.flatpakrepo
+
+# Remove remote
+sudo our-flat remote-remove flathub
+
+# View remote details
+flatpak remote-info --system flathub org.gtk.Gtk3.Theme.Adwaita-dark
+```
+
+### System-Wide Installation Policy
+
+```bash
+# All installations are system-wide by design
+# User installations are not supported in ouroborOS
+
+# Check flatpak installation
+flatpak --version
+
+# Verify flatpak is working
+our-flat -Ss test
+
+# System-wide install location
+ls /var/lib/flatpak/app/
+ls /var/lib/flatpak/runtime/
+```
+
+### Application Lifecycle Management
+
+```bash
+# Check if an app is installed
+flatpak list --system | grep org.mozilla.firefox
+
+# Show detailed installation status
+flatpak info --system org.mozilla.firefox
+
+# Monitor installation progress
+flatpak install --system --noninteractive org.mozilla.firefox
+# Shows real-time installation progress
+```
+
+### Performance and Cache Management
+
+```bash
+# Clean flatpak cache
+flatpak cache --system --prune
+
+# Check cache size
+du -sh /var/lib/flatpak/cache/
+
+# Update appstream cache for better search results
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+# Automatically updates appstream cache
+```
+
+### Application Permissions and Security
+
+```bash
+# View application permissions
+flatpak info --system org.mozilla.firefox | grep "permissions"
+
+# View application sandbox details
+flatpak info --system org.mozilla.firefox | grep "sdk"
+
+# Check application isolation
+flatpak list --system --columns=application,runtime,origin
+
+# Monitor application resource usage
+systemd-cgtop | grep flatpak
+```
+
+### Remote Management Best Practices
+
+```bash
+# Add trusted remotes only
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+sudo our-flat remote-add gnome https://sdk.gnome.org/gnome.flatpakrepo
+
+# Verify remote URLs before adding
+curl -I https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Regular remote maintenance
+sudo our-flat remote-remove unused-remote
+sudo our-flat remote-list
+
+# Update appstream cache after adding remotes
+flatpak update --appstream --system
+```
+
+### Application Data Management
+
+```bash
+# Flatpak user data location
+ls /var/home/*//.var/app/
+# Application data persists in user directories
+
+# System-wide app data
+ls /var/lib/flatpak/app/org.mozilla.firefox/
+
+# Application configuration
+find /var/home -name "*.config" -path "*/.var/app/*"
+
+# Application cache
+find /var/home -name "cache" -path "*/.var/app/*"
+```
+
+### Network Security Configuration
+
+```bash
+# Application network permissions
+flatpak permission-show org.mozilla.firefox
+
+# Grant network access if needed
+# Flatpak apps have default network access, but can be restricted
+
+# Monitor network connections
+netstat -tuln | grep flatpak
+
+# Application proxy settings
+flatpak info --system org.mozilla.firefox | grep "proxy"
+```
+
+### Application Container Customization
+
+```bash
+# View application container details
+flatpak info --system org.mozilla.firefox
+
+# Check filesystem access
+flatpak permission-show org.mozilla.firefox | grep "filesystem"
+
+# Application runtime details
+flatpak info --system org.mozilla.Firefox | grep "runtime"
+
+# Application sandbox details
+flatpak info --system org.mozilla.firefox | grep "sdk"
+```
+
+### Repository Management
+
+```bash
+# List available remotes with metadata
+flatpak remote-list --system
+
+# Update repository metadata
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+# Automatically updates appstream
+
+# Check repository availability
+curl -s https://dl.flathub.org/repo/flathub.flatpakrepo > /dev/null && echo "Repository available" || echo "Repository unavailable"
+
+# Repository statistics
+flatpak remote-info --system flathub org.mozilla.Firefox | grep "download"
+```
+
+### Application Integration
+
+```bash
+# Create desktop entries
+flatpak info --system org.mozilla.firefox | grep "name"
+
+# Update desktop database
+update-desktop-database /usr/share/applications/
+
+# Configure MIME types
+flatpak permission-show org.mozilla.firefox | grep "mime"
+
+# Application themes and icons
+flatpak info --system org.mozilla.firefox | grep "theme"
+```
+
+### Troubleshooting and Debugging
+
+```bash
+# Check flatpak installation
+flatpak --version
+flatpak list --system
+
+# Verify remote configuration
+sudo our-flat remote-list
+
+# Test app installation
+sudo our-flat -Si org.mozilla.firefox
+
+# Check for broken dependencies
+flatpak repair --system
+
+# Debug application issues
+flatpak run --env=DEBUG=1 org.mozilla.firefox
+
+# View application logs
+journalctl -u flatpak.service
+```
+
+### Backup and Migration
+
+```bash
+# Export installed applications
+flatpak export --system /path/to/export org.mozilla.firefox org.libreoffice.LibreOffice
+
+# List exportable applications
+flatpak list --system
+
+# Import applications on another system
+flatpak import /path/to/export
+
+# Application data backup
+tar -czf app-backup.tar.gz /var/home/user/.var/app/
+
+# Application data migration
+cp -r /var/home/user/.var/app/org.mozilla.firefox /new/home/user/.var/app/
+```
+
+### Performance Optimization
+
+```bash
+# Enable appstream caching
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Clean up unused runtimes
+flatpak uninstall --system --unused
+
+# Monitor application performance
+systemd-cgtop | grep flatpak
+
+# Optimize application startup
+flatpak run --filesystem=host:ro org.mozilla.firefox
+```
+
+:::caution
+
+Always review application permissions before installation. Flatpak applications can access sensitive data and system resources if permissions are not properly configured.
+
+:::

@@ -1,0 +1,285 @@
+---
+title: System Architecture
+description: Understand the technical architecture of ouroborOS, including its immutable filesystem, declarative configuration, and modern tooling integration.
+slug: getting-started/architecture
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# System Architecture
+
+ouroborOS is built on a carefully crafted architecture that combines proven technologies with innovative approaches to solve the fundamental problems of system administration. This section breaks down the key components and how they work together.
+
+## Core Architectural Principles
+
+### **1. Immutable Root Filesystem**
+The root filesystem is never modified directly. Instead, all changes occur in separate subvolumes that can be rolled back.
+
+```bash
+# Btrfs subvolume structure
+/               # Read-only root
+@               # Read-write subvolume for mutable data
+@home           # Home directories
+@var           # /var (logs, packages, etc.)
+@snapshots     # System snapshots
+@etc           # System configuration
+```
+
+### **2. Declarative Configuration**
+System state is defined through configuration files rather than manual modifications. This makes systems reproducible and auditable.
+
+```yaml
+# system.yaml - Single source of truth
+system:
+  hostname: ouroboros
+  locale: en_US.UTF-8
+  packages: [base, linux, sudo]
+  users:
+    - username: admin
+      shell: /bin/bash
+```
+
+### **3. Event-Driven Operations**
+All operations trigger events that create snapshots, log changes, and ensure system integrity.
+
+:::tip
+**Architecture benefits**: This combination of immutability, declarative configuration, and event-driven operations creates a system that is both predictable and maintainable.
+:::
+
+## Key Components
+
+### **Btrfs Integration**
+
+Btrfs is the foundation of our immutable architecture. Unlike ZFS or other filesystems, Btrfs provides the perfect balance of features, performance, and integration with Linux.
+
+```bash
+# Automatic snapshot creation
+our-snapshot create pre-package-operation
+pacman -S package-name  # Creates snapshot automatically
+our-snapshot list        # View all available snapshots
+```
+
+#### **Subvolume Strategy**
+- **@**: Primary mutable subvolume
+- **@home**: User home directories (can be encrypted)
+- **@var**: System variables (logs, packages, caches)
+- **@snapshots**: Btrfs snapshots for rollbacks
+- **@etc**: System configuration (managed by declarative config)
+
+### **The ouroborOS Tool Suite**
+
+We've created a suite of tools that work together to provide a seamless experience:
+
+#### **Package Management**
+`our-pac` wraps pacman with atomic operations:
+
+```bash
+# Atomic package operations
+our-pac upgrade      # Creates snapshot, upgrades, signs packages
+our-pac remove pkg   # Creates snapshot, removes package
+our-pac clean       # Cleans orphaned packages safely
+```
+
+#### **Snapshot Management**
+`our-snapshot` provides comprehensive Btrfs operations:
+
+```bash
+# Snapshot management
+our-snapshot create manual-backup
+our-snapshot list --all
+our-snapshot prune --keep 30
+our-snapshot scrub    # Check filesystem integrity
+```
+
+#### **Rollback System**
+`our-rollback` provides instant state transitions:
+
+```bash
+# Rollback operations
+our-rollback now         # Boot to previous state once
+our-rollback promote    # Permanently promote to new state
+our-rollback status     # Check current rollback status
+```
+
+### **Security Architecture**
+
+Security is built into every layer of the system:
+
+#### **Secure Boot Integration**
+```bash
+# Automatic package signing
+our-pac upgrade      # Signs all packages after upgrade
+ouroboros-secureboot setup  # Initial Secure Boot setup
+```
+
+#### **Hardware Security**
+- TPM2 integration for disk encryption
+- FIDO2/WebAuthn for user authentication
+- systemd-homed for encrypted home directories
+
+```bash
+# TPM2 disk encryption
+cryptsetup luks2 --tpm2-device auto --tpm2-pcrs="7+14" /dev/vda2
+```
+
+## System Integration
+
+### **systemd Integration**
+We leverage systemd's capabilities for service management:
+
+```bash
+# systemd integration examples
+systemctl enable our-snapshot-prune.timer
+systemctl enable btrfs-scrub@-.timer
+systemctl enable ouroboros-firstboot.service
+```
+
+### **Network Stack**
+Network management uses systemd-networkd with iwd for WiFi:
+
+```bash
+# Network configuration
+/etc/systemd/network/eno1.network    # Wired network
+/etc/systemd/network/wlan0.network   # Wireless network
+/var/lib/iwd/networks/               # WiFi network profiles
+```
+
+### **Desktop Integration**
+Desktop environments are managed through profiles with proper service integration:
+
+```bash
+# Desktop profiles
+src/installer/desktop_profiles.py  # Profile definitions
+/etc/gdm/custom.conf              # Display manager config
+/etc/X11/xorg.conf.d/            # X11 configuration
+```
+
+## Data Flow Architecture
+
+### **Installation Flow**
+```
+1. TUI/GUI Installer → User Configuration
+2. Generate system.yaml → Declarative Config
+3. Btrfs Partition → Immutable Setup
+4. Package Installation → Snapshot Creation
+5. System Configuration → Service Enablement
+6. Final Snapshot → Boot Ready State
+```
+
+### **Package Upgrade Flow**
+```
+1. our-pac upgrade → Create snapshot
+2. pacman upgrade → Install packages
+3. sbctl sign-all → Sign for Secure Boot
+4. our-snapshot prune → Cleanup old snapshots
+5. Update boot entries → Boot new state
+```
+
+### **Configuration Update Flow**
+```
+1. Edit system.yaml → Declare desired state
+2. our-validator → Validate configuration
+3. Configuration apply → Apply changes
+4. Service restart → Restart affected services
+5. Snapshot creation → Save new state
+```
+
+## Performance Considerations
+
+### **Storage Efficiency**
+- Copy-on-write filesystem minimizes disk usage
+- Automatic snapshot pruning prevents bloat
+- Compression on snapshots saves space
+
+```bash
+# Storage optimization
+btrfs filesystem df /          # Show disk usage
+our-snapshot scrub             # Check for errors
+btrfs balance start -dconvert=dup /dev/vda
+```
+
+### **Memory Usage**
+- Lightweight service management
+- Efficient snapshot handling
+- Minimal overhead for security features
+
+### **Boot Performance**
+- systemd-boot for fast UEFI boot
+- Parallel service startup
+- Optimized initramfs
+
+## Fault Tolerance
+
+### **Automatic Recovery**
+- Rollback on boot failure
+- Snapshot validation
+- Health monitoring
+
+```bash
+# Health monitoring
+ouroboros-health check
+our-snapshot validate-all
+btrfs check --repair /dev/vda
+```
+
+### **Graceful Degradation**
+- Network service fallback
+- Display manager fallback
+- Package installation fallbacks
+
+## Future-Proof Design
+
+### **Modular Architecture**
+- Easy to extend with new features
+- Plugin-like tool integration
+- Clear separation of concerns
+
+### **API-First Design**
+- All tools provide structured output
+- Scriptable operations
+- Machine-readable configuration
+
+```json
+# Example: our-snapshot --json output
+{
+  "snapshots": [
+    {
+      "id": "2024-01-15T10:30:00",
+      "label": "post-upgrade",
+      "size": "2.5GB",
+      "parent": "2024-01-15T10:00:00"
+    }
+  ]
+}
+```
+
+### **Standards Compliance**
+- Follows Linux standards
+- Compatible with existing tooling
+- Uses established protocols
+
+This architecture provides the foundation for a system that is secure, maintainable, and predictable while remaining flexible enough to handle real-world use cases. The combination of immutability, declarative configuration, and modern tooling creates a system that simply works.
+
+<Tabs>
+<TabItem label="Traditional Architecture">
+```mermaid
+graph LR
+    A[User] --> B[pacman]
+    B --> C[/ - mutable root]
+    C --> D[/etc - config files]
+    C --> E[/var - data]
+    D --> F[Manual edits]
+    E --> G[Accumulated changes]
+```
+</TabItem>
+<TabItem label="ouroborOS Architecture">
+```mermaid
+graph LR
+    A[User] --> B[our-pac]
+    B --> C[/ - read-only root]
+    B --> D[@snapshots]
+    C --> E[@ - mutable data]
+    E --> F[system.yaml config]
+    E --> G[@var - managed data]
+```
+</TabItem>
+</Tabs>

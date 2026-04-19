@@ -1,0 +1,249 @@
+---
+title: Gestión de Bluetooth
+description: Gestión de dispositivos Bluetooth con our-bluetooth en ouroborOS
+slug: network/our-bluetooth
+---
+
+# Gestión de Bluetooth (our-bluetooth)
+
+`our-bluetooth` es una herramienta completa de gestión Bluetooth construida sobre bluetoothctl con soporte experimental de Baja Energía (LE). Proporciona comandos intuitivos para descubrimiento, emparejamiento y gestión de dispositivos en ouroborOS.
+
+## Resumen
+
+La herramienta `our-bluetooth` proporciona:
+
+- **Completa gestión del ciclo de vida de Bluetooth** con comandos esenciales
+- **Soporte de Baja Energía (LE)** con características experimentales
+- **Descubrimiento y emparejamiento de dispositivos** con autenticación automática
+- **Gestión de energía** para control del adaptador
+- **Integración FIDO2/WebAuthn** vía API AdvertisingMonitor BLE
+
+:::note
+
+our-bluetooth usa bluetoothctl como backend con extensiones experimentales para funcionalidad de Baja Energía. El modo experimental es requerido para características LE y Advertising Monitor API usada por FIDO2/WebAuthn.
+
+:::
+
+## Instalación
+
+El gestor Bluetooth viene preinstalado con ouroborOS. Verifica la instalación:
+
+```bash
+our-bluetooth --version
+our-bluetooth --help
+```
+
+## Uso
+
+### Comandos
+
+#### `list` - Escanear y listar dispositivos
+
+```bash
+# Listar dispositivos cercanos y emparejados (✓ = conectado)
+our-bluetooth list
+
+# Muestra dispositivos disponibles con estado de conexión
+```
+
+#### `pair <MAC>` - Emparejar con un dispositivo
+
+```bash
+# Emparejar con un dispositivo (PIN interactivo si es necesario)
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# Puede solicitar confirmación de PIN en ambos dispositivo y terminal
+```
+
+#### `connect <MAC>` - Conectar al dispositivo emparejado
+
+```bash
+# Conectar a un dispositivo emparejado
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+
+# El dispositivo debe estar emparejado y en rango
+```
+
+#### `disconnect <MAC>` - Desconectar del dispositivo
+
+```bash
+# Desconectar de un dispositivo
+our-bluetooth disconnect AA:BB:CC:DD:EE:FF
+```
+
+#### `forget <MAC>` - Eliminar emparejamiento
+
+```bash
+# Eliminar emparejamiento del dispositivo
+our-bluetooth forget AA:BB:CC:DD:EE:FF
+
+# Elimina permanentemente la información de emparejamiento
+```
+
+#### `status` - Mostrar estado del adaptador
+
+```bash
+# Mostrar estado del adaptador y dispositivos conectados
+our-bluetooth status
+
+# Muestra información del adaptador y dispositivos conectados
+```
+
+#### `on` / `off` - Control de energía
+
+```bash
+# Encender el adaptador Bluetooth
+our-bluetooth on
+
+# Apagar el adaptador Bluetooth
+our-bluetooth off
+```
+
+#### `le status` - Mostrar capacidades BLE
+
+```bash
+# Mostrar capacidades BLE (Baja Energía) del adaptador
+our-bluetooth le status
+
+# Muestra información del adaptador y estado del modo experimental
+```
+
+#### `le experimental on|off` - Modo experimental
+
+```bash
+# Habilitar modo experimental BlueZ (requerido para FIDO2 QR)
+our-bluetooth le experimental on
+
+# Deshabilitar modo experimental
+our-bluetooth le experimental off
+```
+
+#### `le advmon` - API Advertising Monitor
+
+```bash
+# Verificar disponibilidad de API AdvertisingMonitor (para FIDO2 QR)
+our-bluetooth le advmon
+
+# Verifica capacidad de código QR passkey en Chrome/Firefox
+```
+
+#### `help` - Mostrar ayuda
+
+```bash
+# Mostrar información de ayuda completa
+our-bluetooth help
+
+# Muestra instrucciones de uso y comandos disponibles
+```
+
+## Ejemplos
+
+### Flujo básico de dispositivo
+
+```bash
+# 1. Listar dispositivos disponibles
+our-bluetooth list
+
+# 2. Emparejar con un dispositivo (solicita PIN si es necesario)
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# 3. Conectar al dispositivo emparejado
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+
+# 4. Verificar estado de conexión
+our-bluetooth status
+
+# 5. Desconectar cuando termines
+our-bluetooth disconnect AA:BB:CC:DD:EE:FF
+```
+
+### Gestión de dispositivos
+
+```bash
+# Eliminar emparejamiento de un dispositivo
+our-bluetooth forget AA:BB:CC:DD:EE:FF
+
+# Apagar Bluetooth cuando no se use
+our-bluetooth off
+
+# Encender cuando esté listo para usar
+our-bluetooth on
+```
+
+### Configuración FIDO2/WebAuthn
+
+```bash
+# Habilitar modo experimental para passkeys QR FIDO2
+our-bluetooth le experimental on
+
+# Verificar si API AdvertisingMonitor está disponible
+our-bluetooth le advmon
+
+# Reiniciar servicio Bluetooth para aplicar cambios
+sudo systemctl restart bluetooth.service
+```
+
+### Gestión de dispositivos BLE
+
+```bash
+# Verificar capacidades BLE
+our-bluetooth le status
+
+# Emparejar con dispositivo BLE
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# Conectar a dispositivo BLE
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+```
+
+## FIDO2 / PASSKEYS / QR CODES
+
+Para autenticación FIDO2/WebAuthn y passkeys QR:
+
+- Usar `our-fido2` para gestión completa de FIDO2
+- Modo experimental BlueZ es requerido para transporte híbrido CTAP2
+- Habilitar con: `our-bluetooth le experimental on`
+- Verificar estado con: `our-fido2 qr-ready`
+
+## Requisitos
+
+- **bluez y bluez-utils** deben estar instalados
+- **bluetooth.service** debe estar corriendo
+- **Privilegios de root** son requeridos para la mayoría de operaciones
+- **libfido2** para soporte FIDO2 (herramienta our-fido2)
+
+## Integración con el Sistema
+
+### Gestión de servicios
+
+```bash
+# Habilitar e iniciar servicio Bluetooth
+sudo systemctl enable bluetooth.service
+sudo systemctl start bluetooth.service
+
+# Verificar estado del servicio
+sudo systemctl status bluetooth.service
+
+# Ver logs
+journalctl -u bluetooth.service -f
+```
+
+### Configuración de modo experimental
+
+Al habilitar modo experimental:
+
+```bash
+# Esto crea un drop-in systemd para bluetooth.service
+our-bluetooth le experimental on
+
+# Puede ser necesario reiniciar el servicio
+sudo systemctl restart bluetooth.service
+```
+
+## Notas
+
+- **Formato MAC**: Usar formato AA:BB:CC:DD:EE:FF
+- **Emparejamiento PIN**: Algunos dispositivos requieren confirmación de PIN en ambos dispositivo y terminal
+- **Modo experimental**: Requerido para flujo de passkey QR FIDO2 en Chrome/Firefox
+- **Reconexión automática**: Una vez emparejados, los dispositivos se reconectan automáticamente cuando están en rango
+- **Gestión de energía**: Usar `on`/`off` para controlar estado de energía del adaptador

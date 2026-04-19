@@ -1,0 +1,640 @@
+---
+title: Temas de Escritorio
+description: Guía de personalización y temas para entornos de escritorio de ouroborOS
+slug: desktop/themes
+---
+
+# Temas y Personalización del Escritorio
+
+ouroborOS proporciona capacidades completas de theming en todos los entornos de escritorio soportados. Ya sea que prefieras una estética minimalista o un espacio de trabajo altamente personalizado, el sistema admite una fácil gestión de temas y estilos consistentes.
+
+## Resumen
+
+El sistema de theming en ouroborOS está diseñado para ser:
+
+- **Consistente**: Todos los entornos de escritorio siguen convenciones similares de paleta de colores
+- **Personalizable**: Fácil de modificar colores, iconos y diseños
+- **Persistente**: Los cambios de tema se preservan a través de reinicios y actualizaciones
+- **Multi-entorno**: Funciona en Hyprland, Niri, GNOME y KDE
+
+:::note
+
+La gestión de temas está integrada con el gestor de paquetes `our-pac`. Cuando actualizas paquetes del sistema, tus personalizaciones de tema se preservan automáticamente.
+
+:::
+
+## Paleta de Colores
+
+### Esquema de Colores Predeterminado
+
+ouroborOS utiliza una paleta de colores esmeralda/teal que proporciona una apariencia fresca y moderna:
+
+```yaml
+# Esquema de colores predeterminado
+colors:
+  primary: "#10b981"    # Esmeralda (acento modo oscuro)
+  secondary: "#059669" # Esmeralda Oscuro (acento modo claro)  
+  background: "#0f172a" # Muy Oscuro (fondo de encabezado)
+  surface: "#1e293b"    # Fondo de tarjetas
+  text: "#f1f5f9"       # Texto primario
+  text-secondary: "#94a3b8" # Texto secundario
+```
+
+### Personalización de Temas
+
+Puedes personalizar colores modificando archivos de tema en tu directorio home:
+
+```bash
+# Directorio de configuración de temas
+~/.config/ouroborOS/themes/
+
+# Crear tema personalizado
+mkdir -p ~/.config/ouroborOS/themes/my-theme
+```
+
+## Themado Específico por Entorno de Escritorio
+
+### Hyprland
+
+La configuración de Hyprland se encuentra en `~/.config/hypr/hyprland.conf`:
+
+```ini
+# Configuración de tema Hyprland
+$accent = #10b981
+$background = #0f172a
+$surface = #1e293b
+
+windowrule = float, ^(firefox)$
+windowrule = tile, ^(kitty)$
+
+general {
+    border_size = 2
+    col.active_border = $accent
+    col.inactive_border = #334155
+}
+```
+
+### Niri
+
+La configuración de Niri está en `~/.config/niri/config.kdl`:
+
+```kdl
+// Configuración de tema Niri
+$accent: #10b981;
+$background: #0f172a;
+$surface: #1e293b;
+
+windowRules {
+    match app_id "firefox" {
+        floating true
+    }
+}
+```
+
+### GNOME
+
+Los temas de GNOME se gestionan a través de extensiones:
+
+```bash
+# Instalar GNOME tweaks
+our-pac install gnome-tweaks
+
+# Instalación de temas
+gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
+```
+
+### KDE
+
+Personalización de KDE a través de System Settings:
+
+```bash
+# Gestión de temas KDE
+systemsettings5
+```
+
+## Paquetes de Temas
+
+Están disponibles paquetes de temas pre-construidos a través de nuestros repositorios:
+
+```bash
+# Instalar temas adicionales
+our-pac install ouroborOS-themes-collection
+our-pac install ouroborOS-icons
+our-pac install ouroborOS-cursors
+```
+
+## Cambio Dinámico de Temas
+
+ouroborOS admite cambio automático de tema basado en la hora del día:
+
+```yaml
+# ~/.config/ouroborOS/theme-switcher.yaml
+theme:
+  day:
+    colors:
+      primary: "#059669"  # Esmeralda claro
+      background: "#ffffff"
+  night:
+    colors:
+      primary: "#10b981"  # Esmeralda oscuro  
+      background: "#0f172a"
+```
+
+## Personalización Específica por Entorno de Escritorio
+
+### Configuración Hyprland
+
+Las configuraciones de Hyprland se almacenan en `~/.config/hypr/hyprland.conf`. Aquí tienes un ejemplo completo con integración de tema:
+
+```ini
+# ~/.config/hypr/hyprland.conf
+$accent = #10b981
+$background = #0f172a
+$surface = #1e293b
+$text = #f1f5f9
+$text-secondary = #94a3b8
+
+# Reglas de ventana y animaciones
+windowrule = float, ^(firefox)$
+windowrule = float, ^(mpv)$
+windowrule = float, ^(pavucontrol)$
+windowrule = opacity 0.95, ^(.*)$
+
+# Configuración de monitor
+monitor = HDMI-A-1, 1920x1080@144, 0x0, auto
+
+# Configuración de workspace
+workspace = 1, monitor:HDMI-A-1
+workspace = 2, monitor:HDMI-A-1
+
+# Configuración de entrada
+input {
+    kb_layout = us
+    kb_variant = 
+    kb_model = 
+    kb_options = 
+    kb_rules = 
+
+    follow_mouse = 1
+    mouse_refocus = false
+    touchpad {
+        natural_scroll = true
+        clickfinger_tac = 2
+    }
+}
+
+# Configuración general
+general {
+    gaps_in = 5
+    gaps_out = 10
+    border_size = 2
+    col.active_border = $accent
+    col.inactive_border = #334155
+    layout = dwindle
+}
+
+# Configuración de decoración
+decoration {
+    rounding = 10
+    blur {
+        enabled = true
+        size = 8
+        passes = 3
+        new_optimizations = true
+    }
+    drop_shadow = true
+    shadow_range = 4
+    shadow_render_power = 6
+}
+
+# Configuración de animaciones
+animations {
+    enabled = true
+    bezier = myBezier, 0.05, 0.9, 0.1, 1.05
+    animation = windows, 1, 7, myBezier
+    animation = windowsOut, 1, 7, default, popin
+    animation = border, 1, 10, default
+    animation = borderangle, 1, 8, default
+    animation = fade, 1, 7, default
+    animation = workspaces, 1, 6, default
+}
+
+# Ejecutar (autostart)
+exec = waybar
+exec = hyprpaper --image ~/wallpapers/forest.jpg
+exec = hyprpolkitagent
+exec = dunst
+
+# Lanzador
+$mainMod = SUPER
+
+bind = $mainMod, Return, exec, foot
+bind = $mainMod, C, killactive,
+bind = $mainMod, M, exit,
+bind = $mainMod, E, exec, thunar
+bind = $mainMod, V, togglefloating,
+bind = $mainMod, R, exec, fuzel
+bind = $mainMod, P, pseudo,
+bind = $mainMod, J, togglesplit,
+bind = $mainMod, left, movefocus, l
+bind = $mainMod, right, movefocus, r
+bind = $mainMod, up, movefocus, u
+bind = $mainMod, down, movefocus, d
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+bind = $mainMod, SHIFT, 1, movetoworkspace, 1
+bind = $mainMod, SHIFT, 2, movetoworkspace, 2
+bind = $mainMod, SHIFT, 3, movetoworkspace, 3
+bind = $mainMod, SHIFT, 4, movetoworkspace, 4
+bind = $mainMod, SHIFT, 5, movetoworkspace, 5
+bind = $mainMod, SHIFT, 6, movetoworkspace, 6
+bind = $mainMod, SHIFT, 7, movetoworkspace, 7
+bind = $mainMod, SHIFT, 8, movetoworkspace, 8
+bind = $mainMod, SHIFT, 9, movetoworkspace, 9
+bind = $mainMod, SHIFT, 0, movetoworkspace, 10
+
+# Teclas multimedia
+bind = ,XF86AudioRaiseVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ +5%
+bind = ,XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -5%
+bind = ,XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle
+bind = ,XF86AudioPlay, exec, playerctl play-pause
+bind = ,XF86AudioNext, exec, playerctl next
+bind = ,XF86AudioPrev, exec, playerctl previous
+```
+
+### Herramientas de Tema Hyprland
+
+ouroborOS incluye varias utilidades específicas de theming para Hyprland:
+
+```bash
+# Instalar paquetes adicionales de theming Hyprland
+our-pac install hyprcursor hyprlang hyprutils hyprwayland-scanner
+
+# Hyprpaper para gestión de wallpapers
+hyprpaper --config ~/.config/hypr/hyprpaper.conf
+
+# Hyprpolkitagent para autenticación
+hyprpolkitagent
+
+# Hyprlock para bloqueo de pantalla
+hyprlock --config ~/.config/hypr/hyprlock.conf
+```
+
+### Configuración Niri
+
+Las configuraciones de Niri se almacenan en `~/.config/niri/config.kdl`. Aquí tienes un ejemplo completo:
+
+```kdl
+// ~/.config/niri/config.kdl
+$accent: #10b981;
+$background: #0f172a;
+$surface: #1e293b;
+$text: #f1f5f9;
+$text-secondary: #94a3b8;
+
+// Configuración de display
+outputs = {
+    "HDMI-A-1" = {
+        mode = "1920x1080@144Hz";
+        scale = 1.0;
+        position = "0,0";
+    };
+};
+
+// Configuración de workspace
+workspaces = {
+    "1" = output = "HDMI-A-1";
+    "2" = output = "HDMI-A-1";
+    "3" = output = "HDMI-A-1";
+    "4" = output = "HDMI-A-1";
+    "5" = output = "HDMI-A-1";
+    "6" = output = "HDMI-A-1";
+    "7" = output = "HDMI-A-1";
+    "8" = output = "HDMI-A-1";
+    "9" = output = "HDMI-A-1";
+    "10" = output = "HDMI-A-1";
+};
+
+// Configuración de layout
+layout = {
+    focus-ring = {
+        active-color = $accent;
+        inactive-color = #334155;
+        width = 2px;
+    };
+    gap-size = 10px;
+};
+
+// Configuración de teclado
+keyboard = {
+    xkb = {
+        layout = "us";
+    };
+    repeat-delay = 250ms;
+    repeat-rate = 60;
+};
+
+// Configuración de entrada
+input = {
+    touchpad = {
+        tap-to-click = true;
+        natural-scroll = true;
+        two-finger-tap = middle-button;
+        tap-drag = true;
+        drag = true;
+        tap-drag-lock = false;
+    };
+};
+
+// Configuración de mouse
+mouse = {
+    follow-focus = "never";
+    accel-profile = "flat";
+    accel-speed = 0;
+};
+
+// Reglas de ventana
+window-rules = {
+    match app-id "firefox" {
+        spawn-on-workspace = "2";
+    };
+    match app-id "foot" {
+        spawn-on-workspace = "1";
+    };
+    match title ".*" {
+        focus-ring = active;
+    };
+};
+
+// Lanzar aplicaciones al inicio
+spawn-on-startup = "waybar";
+spawn-on-startup = "dunst";
+spawn-on-startup = "fuzzel";
+
+// Atajos de teclado
+$mainMod = "Super";
+
+bind = $mainMod Return { spawn = "foot"; }
+bind = $mainMod C { close-window = []; }
+bind = $mainMod E { spawn = "thunar"; }
+bind = $mainMod V { toggle-fullscreen = []; }
+bind = $mainMod R { spawn = "fuzzel"; }
+bind = $mainMod left { focus-monitor-left = []; }
+bind = $mainMod right { focus-monitor-right = []; }
+bind = $mainMod up { focus-monitor-up = []; }
+bind = $mainMod down { focus-monitor-down = []; }
+bind = $mainMod 1 { focus-workspace = "1"; }
+bind = $mainMod 2 { focus-workspace = "2"; }
+bind = $mainMod 3 { focus-workspace = "3"; }
+bind = $mainMod 4 { focus-workspace = "4"; }
+bind = $mainMod 5 { focus-workspace = "5"; }
+bind = $mainMod 6 { focus-workspace = "6"; }
+bind = $mainMod 7 { focus-workspace = "7"; }
+bind = $mainMod 8 { focus-workspace = "8"; }
+bind = $mainMod 9 { focus-workspace = "9"; }
+bind = $mainMod 0 { focus-workspace = "10"; }
+bind = $mainMod Shift 1 { move-to-workspace = "1"; }
+bind = $mainMod Shift 2 { move-to-workspace = "2"; }
+bind = $mainMod Shift 3 { move-to-workspace = "3"; }
+bind = $mainMod Shift 4 { move-to-workspace = "4"; }
+bind = $mainMod Shift 5 { move-to-workspace = "5"; }
+bind = $mainMod Shift 6 { move-to-workspace = "6"; }
+bind = $mainMod Shift 7 { move-to-workspace = "7"; }
+bind = $mainMod Shift 8 { move-to-workspace = "8"; }
+bind = $mainMod Shift 9 { move-to-workspace = "9"; }
+bind = $mainMod Shift 0 { move-to-workspace = "10"; }
+
+// Teclas multimedia
+bind = "XF86AudioRaiseVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ +5%"; }
+bind = "XF86AudioLowerVolume" { spawn = "pactl set-sink-volume @DEFAULT_SINK@ -5%"; }
+bind = "XF86AudioMute" { spawn = "pactl set-sink-mute @DEFAULT_SINK@ toggle"; }
+bind = "XF86AudioPlay" { spawn = "playerctl play-pause"; }
+bind = "XF86AudioNext" { spawn = "playerctl next"; }
+bind = "XF86AudioPrev" { spawn = "playerctl previous"; }
+```
+
+### Componentes de Tema Niri
+
+Niri admite theming a través de su sistema de configuración:
+
+```bash
+# Instalar paquetes de tema Niri
+our-pac install niri mako fuzzel waybar
+
+# Configurar daemon de notificaciones (mako)
+cat > ~/.config/mako/config << EOF
+{
+    "font": "JetBrains Mono, 12",
+    "background": "#1e293b",
+    "background-alt": "#334155",
+    "text": "#f1f5f9",
+    "text-alt": "#94a3b8",
+    "border": "#10b981",
+    "border-radius": 10,
+    "progress": 0,
+    "padding": 15,
+    "margin": 15,
+    "icons": 1,
+    "max-icon-size": 64,
+    "default-timeout": 5000,
+    "ignore-timeout": 1,
+    "format": "<b>%s</b>\\n%b",
+    "anchor": "top-center",
+    "output": "HDMI-A-1"
+}
+EOF
+
+# Configurar launcher de aplicaciones (fuzzel)
+cat > ~/.config/fuzzel/config << EOF
+{
+    "main": {
+        "font": "JetBrains Mono, 14",
+        "width": 50,
+        "lines": 10,
+        "prompt": "❯ ",
+        "colors": {
+            "background": "#0f172a",
+            "text": "#f1f5f9",
+            "match": "#10b981",
+            "selection": "#1e293b",
+            "selection-text": "#f1f5f9",
+            "selection-match": "#059669"
+        }
+    }
+}
+EOF
+```
+
+### Personalización de Tema GNOME
+
+Los temas de GNOME se gestionan a través de extensiones y configuración del sistema:
+
+```bash
+# Instalar herramientas GNOME
+our-pac install gnome-tweaks gnome-extensions
+
+# Instalar extensión de temas de usuario
+gnome-extensions install user-themes@gnome-shell-extensions.gnome.org
+
+# Instalar integración GNOME Shell
+gnome-extensions install dash-to-dock@micxgx.gmail.com
+
+# Configurar temas mediante GNOME Tweaks
+gnome-tweaks
+
+# Instalar temas adicionales
+our-pac install adw-gtk3-theme capitaine-cursors
+
+# Configurar temas del sistema
+gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+gsettings set org.gnome.desktop.interface icon-theme "Yaru"
+gsettings set org.gnome.desktop.interface cursor-theme "capitaine-cursors"
+gsettings set org.gnome.desktop.wm.preferences theme "Adwaita-dark"
+```
+
+### Personalización de Tema KDE Plasma
+
+El theming de KDE Plasma se gestiona a través de System Settings:
+
+```bash
+# Instalar configuración del sistema KDE
+systemsettings5
+
+# Configurar tema global
+# Plasma Look and Feel → Global Theme → Seleccionar tema
+
+# Configurar widget de escritorio
+# Workspace → Add Widgets → Configure
+
+# Configurar decoración de ventana
+# Window Decorations → Configure
+
+# Instalar temas adicionales
+our-pac install plasma5-themes-breath plasma5-themes-breeze-enhanced
+
+# Configurar Escritorio Plasma
+plasma-apply-wallpaperimage --file /ruta/al/wallpaper.jpg
+plasma-apply-colorscheme --path /ruta/al/colorscheme.colors
+```
+
+### Configuración de Tema COSMIC
+
+El escritorio COSMIC proporciona theming integrado:
+
+```bash
+# Instalar componentes de tema COSMIC
+our-pac install cosmic-theme cosmic-settings
+
+# Configurar tema COSMIC
+cosmic-settings
+
+# Cambiar wallpaper
+cosmic-bg --image /ruta/al/wallpaper.jpg
+
+# Configurar colores y apariencia
+cosmic-settings appearance
+```
+
+## Gestión de Paquetes de Temas
+
+### Colecciones de Temas Pre-construidos
+
+```bash
+# Instalar colecciones de temas desde repositorios oficiales
+our-pac install ouroborOS-theme-collection
+our-pac install ouroborOS-icons
+our-pac install ouroborOS-cursors
+
+# Instalar temas AUR (si están disponibles)
+our-aur install hyprland-themes-git
+our-aur install niri-themes
+```
+
+### Desarrollo de Temas Personalizados
+
+```bash
+# Estructura de directorio de desarrollo de temas
+~/.config/ouroborOS/themes/my-theme/
+├── hyprland/
+│   └── hyprland.conf
+├── niri/
+│   └── config.kdl
+├── gnome/
+│   ├── extensions/
+│   └── gsettings/
+├── kde/
+│   ├── plasma-theme/
+│   └── color-schemes/
+└── shared/
+    ├── colors.json
+    └── fonts.conf
+
+# Crear paquete de tema para distribución
+cd ~/.config/ouroborOS/themes/my-theme
+tar -czf my-theme.tar.gz .
+```
+
+## Respaldo y Migración de Temas
+
+### Respaldo de Configuración de Tema Actual
+
+```bash
+# Crear respaldo de tema
+theme-backup() {
+    local backup_dir="~/.themes-backup/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_dir"
+    
+    # Respaldar configs específicos de escritorio
+    cp -r ~/.config/hypr/ "$backup_dir/hypr" 2>/dev/null || true
+    cp -r ~/.config/niri/ "$backup_dir/niri" 2>/dev/null || true
+    cp -r ~/.config/gtk-*.0/ "$backup_dir/gtk" 2>/dev/null || true
+    cp -r ~/.config/plasma* "$backup_dir/plasma" 2>/dev/null || true
+    cp -r ~/.local/share/gnome* "$backup_dir/gnome-shell" 2>/dev/null || true
+    
+    echo "Respaldo de tema guardado en: $backup_dir"
+}
+
+# Respaldar tema actual
+theme-backup
+```
+
+### Migrar Tema Entre Sistemas
+
+```bash
+# Exportar configuración de tema
+theme-export() {
+    local output_dir="theme-$(date +%Y%m%d)"
+    mkdir -p "$output_dir"
+    
+    # Recopilar archivos de tema
+    cp ~/.config/hypr/hyprland.conf "$output_dir/" 2>/dev/null || true
+    cp ~/.config/niri/config.kdl "$output_dir/" 2>/dev/null || true
+    cp ~/.config/gtk-3.0/settings.ini "$output_dir/" 2>/dev/null || true
+    cp ~/.config/gtk-4.0/settings.ini "$output_dir/" 2>/dev/null || true
+    cp -r ~/.themes/* "$output_dir/themes/" 2>/dev/null || true
+    cp -r ~/.icons/* "$output_dir/icons/" 2>/dev/null || true
+    
+    # Crear archivo
+    tar -czf "$output_dir.tar.gz" "$output_dir"
+    rm -rf "$output_dir"
+    
+    echo "Tema exportado a: $output_dir.tar.gz"
+}
+
+# Exportar tema
+theme-export
+```
+
+:::caution
+
+Siempre respalda tus configuraciones de tema antes de actualizaciones importantes del sistema para evitar pérdida de personalizaciones.
+
+:::

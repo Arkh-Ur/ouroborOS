@@ -1,0 +1,64 @@
+---
+title: Welcome to ouroborOS Docs
+description: Documentation for ouroborOS — a modern immutable Arch Linux distribution.
+template: splash
+hero:
+  tagline: Modern, immutable, systemd-native Arch Linux.
+  actions:
+    - text: Get Started
+      link: /getting-started/what-is-ouroboros
+      variant: primary
+      icon: right-arrow
+    - text: Installation Guide
+      link: /installation/requirements
+      icon: download
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Explore the Docs
+
+<CardGrid stagger>
+  <a class="card-link" href="/getting-started/what-is-ouroboros">
+    <Card title="Getting Started" icon="rocket">
+      Learn what ouroborOS is, why it's different, and how its architecture works.
+    </Card>
+  </a>
+  <a class="card-link" href="/installation/requirements">
+    <Card title="Installation" icon="download">
+      Step-by-step guides for interactive and unattended installation.
+    </Card>
+  </a>
+  <a class="card-link" href="/system/our-pac">
+    <Card title="System Management" icon="setting">
+      Master system.yaml, snapshots, rollbacks, and OTA updates.
+    </Card>
+  </a>
+  <a class="card-link" href="/desktop/profiles">
+    <Card title="Desktop & Wayland" icon="laptop">
+      Configure Hyprland, Niri, and other Wayland compositors.
+    </Card>
+  </a>
+  <a class="card-link" href="/security/secure-boot">
+    <Card title="Security" icon="approve-check-circle">
+      Secure Boot, FIDO2, LUKS encryption, and systemd-homed.
+    </Card>
+  </a>
+  <a class="card-link" href="/troubleshooting/faq">
+    <Card title="Troubleshooting" icon="warning">
+      Rescue your system, read logs, and find answers in the FAQ.
+    </Card>
+  </a>
+</CardGrid>
+
+<br/>
+
+:::note[Quick Start]
+Boot the ISO and the installer starts automatically. For unattended installs:
+
+```bash
+ouroborOS-installer --config /path/to/config.yaml
+```
+
+Download a ready-to-edit template from [install-config.yaml](https://github.com/Arkh-Ur/ouroborOS/blob/dev/templates/install-config.yaml).
+:::

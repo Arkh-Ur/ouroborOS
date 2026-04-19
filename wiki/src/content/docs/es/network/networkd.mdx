@@ -1,0 +1,397 @@
+---
+title: Configuración de systemd-networkd
+description: Configuración de red con systemd-networkd en ouroborOS
+slug: network/networkd
+---
+
+# Configuración de systemd-networkd
+
+systemd-networkd es el sistema de gestión de red predeterminado en ouroborOS, proporcionando configuración de red robusta y fiable usando archivos de configuración declarativos. Reemplaza a NetworkManager tradicional con un enfoque más integrado con systemd.
+
+## Resumen
+
+systemd-networkd proporciona:
+
+- **Configuración de red declarativa** a través de archivos .network y .netdev
+- **Detección automática de red** y gestión de conexiones
+- **Integración con systemd** para dependencias de servicios
+- **Gestión de DNS y NTP** a través de systemd-resolved y systemd-timesyncd
+- **Agrupación y teaming** para redundancia de red
+
+:::note
+
+ouroborOS usa systemd-networkd como gestor de red principal, con iwd para WiFi y systemd-resolved para resolución DNS. Esto proporciona una experiencia de red consistente y nativa de systemd.
+
+:::
+
+## Instalación y Configuración
+
+La pila de red viene preinstalada con ouroborOS. Verifica la configuración:
+
+```bash
+# Verificar estado de servicios de red
+systemctl status systemd-networkd
+systemctl status systemd-resolved
+systemctl status systemd-timesyncd
+
+# Mostrar interfaces de red
+ip link show
+```
+
+## Directorio de Configuración
+
+Los archivos de configuración de red se almacenan en `/etc/systemd/network/`:
+
+```bash
+# Listar configuraciones de red
+ls -la /etc/systemd/network/
+
+# Mostrar estructura del directorio de red
+tree /etc/systemd/network/
+```
+
+## Configuración de Red Básica
+
+### Archivos Predeterminados de ouroborOS
+
+ouroborOS viene con archivos de red preconfigurados. Aquí están las configuraciones reales:
+
+#### Red Cableada (`/etc/systemd/network/20-wired.network`)
+
+```ini
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+
+[DHCP]
+RouteMetric=10
+UseDNS=true
+```
+
+#### Red Inalámbrica (`/etc/systemd/network/25-wireless.network`)
+
+```ini
+[Match]
+Name=wl*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=20
+UseDNS=true
+```
+
+#### Resolución DNS (`/etc/systemd/resolved.conf`)
+
+```ini
+[Resolve]
+DNS=1.1.1.1 9.9.9.9
+FallbackDNS=8.8.8.8
+DNSOverTLS=opportunistic
+DNSSEC=allow-downgrade
+```
+
+### Configuración Personalizada
+
+Puedes agregar configuraciones de red personalizadas creando archivos `.network` adicionales:
+
+#### Configuración IP Estática
+
+```ini
+# /etc/systemd/network/10-static.network
+[Match]
+Name=enp0s3
+
+[Network]
+Address=192.168.1.100/24
+Gateway=192.168.1.1
+DNS=8.8.8.8 8.8.4.4
+```
+
+#### Múltiples Servidores DNS
+
+```ini
+# /etc/systemd/network/30-dns.network
+[Match]
+Name=enp0s3
+
+[Network]
+DNS=8.8.8.8
+DNS=8.8.4.4
+DNS=1.1.1.1
+DNS=9.9.9.9
+```
+
+## Opciones de Configuración Avanzada
+
+### Agrupación (Link Aggregation)
+
+```ini
+# /etc/systemd/network/40-bond.netdev
+[NetDev]
+Name=bond0
+Kind=bond
+MACAddress=00:11:22:33:44:55
+
+[Bond]
+Mode=802.3ad
+LACPRate=fast
+MIIMonitorSec=100
+UpDelaySec=2000
+DowndelaySec=2000
+```
+
+```ini
+# /etc/systemd/network/50-bond.network
+[Match]
+Name=bond0
+
+[Network]
+Address=192.168.1.100/24
+Gateway=192.168.1.1
+DNS=8.8.8.8
+```
+
+### Configuración VLAN
+
+```ini
+# /etc/systemd/network/60-vlan.netdev
+[NetDev]
+Name=vlan10
+Kind=vlan
+Interface=eth0
+Id=10
+
+[VLAN]
+VLANId=10
+```
+
+```ini
+# /etc/systemd/network/70-vlan.network
+[Match]
+Name=vlan10
+
+[Network]
+Address=192.168.10.100/24
+Gateway=192.168.10.1
+```
+
+### Configuración de Puente
+
+```ini
+# /etc/systemd/network/80-bridge.netdev
+[NetDev]
+Name=br0
+Kind=bridge
+MACAddress=00:11:22:33:44:55
+
+[Bridge]
+STP=no
+ForwardDelaySec=0
+```
+
+## Comandos de Gestión de Red
+
+### Gestión de Servicios
+
+```bash
+# Habilitar e iniciar servicios de red
+sudo systemctl enable systemd-networkd
+sudo systemctl start systemd-networkd
+
+# Habilitar e iniciar resolución DNS
+sudo systemctl enable systemd-resolved
+sudo systemctl start systemd-resolved
+
+# Habilitar e iniciar sincronización de tiempo
+sudo systemctl enable systemd-timesyncd
+sudo systemctl start systemd-timesyncd
+
+# Habilitar WiFi (si iwd está configurado)
+sudo systemctl enable iwd.service
+```
+
+### Estado de Red
+
+```bash
+# Mostrar conexiones de red
+networkctl
+
+# Mostrar estado detallado de red
+networkctl status
+
+# Mostrar direcciones de red
+networkctl address
+
+# Mostrar configuración DNS
+systemd-resolve --status
+
+# Mostrar estado inalámbrico (si iwd está habilitado)
+iwctl station wlan0 show
+```
+
+### Recarga de Configuración de Red
+
+```bash
+# Recargar configuraciones de red
+sudo systemctl reload systemd-networkd
+
+# Reiniciar servicio de red
+sudo systemctl restart systemd-networkd
+
+# Reiniciar resolución DNS
+sudo systemctl restart systemd-resolved
+
+# Mostrar logs de red
+journalctl -u systemd-networkd -f
+
+# Mostrar logs de DNS
+journalctl -u systemd-resolved -f
+```
+
+## Integración WiFi
+
+### Configuración iwd
+
+```ini
+# /etc/iwd/main.conf
+[General]
+EnableNetworkConfiguration=false
+
+[Network]
+EnableIPv6=true
+RoutePriorityOffset=300
+```
+
+### Integración networkd+iwd
+
+```ini
+# /etc/systemd/network/25-wireless.network
+[Match]
+Name=wl*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=20
+UseDNS=true
+```
+
+### Configuración PSK de WiFi
+
+Las contraseñas de red se almacenan en `/var/lib/iwd/`:
+
+```bash
+# Los archivos PSK tienen permisos 600
+ls -la /var/lib/iwd/
+
+# Formato para SSIDs regulares: SSID.psk
+# Formato para SSIDs especiales: =hex.psk
+```
+
+## Sincronización de Tiempo
+
+### Configuración systemd-timesyncd
+
+La configuración predeterminada incluye:
+
+```bash
+# Habilitar e iniciar sincronización de tiempo
+sudo systemctl enable systemd-timesyncd
+sudo systemctl start systemd-timesyncd
+
+# Verificar estado del tiempo
+timedatectl status
+
+# Habilitar NTP
+timedatectl set-ntp true
+```
+
+### Configuración NTP Personalizada
+
+```ini
+# /etc/systemd/timesyncd.conf
+[Time]
+NTP=pool.ntp.org
+FallbackNTP=time.google.com time.windows.com
+PollIntervalMinSec=32
+PollIntervalMaxSec=2048
+```
+
+## Seguridad de Red
+
+### Configuraciones de Seguridad Predeterminadas
+
+Las configuraciones predeterminadas de ouroborOS incluyen:
+
+```ini
+# /etc/systemd/network/20-wired.network
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+DNS=1.1.1.1
+DNS=9.9.9.9
+IgnoreCarrierLoss=3s
+
+[DHCP]
+RouteMetric=10
+UseDNS=true
+```
+
+### Integración de Firewall
+
+```bash
+# Instalar y habilitar firewall (opcional)
+sudo our-pac -S nftables
+sudo systemctl enable nftables
+sudo systemctl start nftables
+
+# Agregar reglas básicas
+sudo nft add table inet filter
+sudo nft add chain inet filter input { type filter hook input priority 0 \; }
+sudo nft add rule inet filter input ct state related,established accept
+sudo nft add rule inet filter input icmp type echo-request accept
+```
+
+## Ubicaciones de Archivos de Configuración
+
+```bash
+# Archivos de configuración de red
+/etc/systemd/network/
+├── 20-wired.network
+├── 25-wireless.network
+└── custom.network
+
+# Configuración DNS
+/etc/systemd/resolved.conf
+/etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+
+# Configuración WiFi
+/etc/iwd/main.conf
+/var/lib/iwd/ (archivos PSK)
+
+# Configuración de sincronización de tiempo
+/etc/systemd/timesyncd.conf
+```
+
+## Notas
+
+- **Prioridad de red**: Las conexiones cableadas tienen métrica 10, inalámbricas 20
+- **Resolución DNS**: Usa systemd-resolved con DoT (DNS over TLS)
+- **Gestión WiFi**: Manejada por iwd, integrada con networkd
+- **Sincronización de tiempo**: Usa systemd-timesyncd con pool NTP
+- **Dependencias de servicios**: Los servicios de red están correctamente ordenados y dependientes

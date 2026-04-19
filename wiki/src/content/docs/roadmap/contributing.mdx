@@ -1,0 +1,937 @@
+---
+title: Contributing Guidelines
+description: How to contribute to ouroborOS development
+slug: roadmap/contributing
+---
+
+# Contributing Guidelines
+
+Welcome to ouroborOS! We're thrilled you want to contribute to our project. This guide will help you understand our development process, coding standards, and contribution workflow.
+
+## Overview
+
+ouroborOS follows a **community-driven development model** with clear guidelines for quality, security, and collaboration. We value every contribution and strive to make the contribution process as smooth as possible.
+
+:::note
+
+Before contributing, please take time to understand our project structure, development workflow, and quality standards. This will help ensure your contributions meet our requirements and can be merged quickly.
+
+:::
+
+## Development Workflow
+
+### 1. Development Environment Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/Arkh-Ur/ouroborOS-dev.git
+cd ouroborOS
+
+# Setup development environment
+bash src/scripts/setup-dev-env.sh
+
+# Verify setup
+python -m pytest src/installer/tests/test_basic.py -v
+```
+
+### 2. Branch Strategy
+
+We use a **dev-first branching strategy**:
+
+```bash
+# Main branch workflow
+main (read-only, releases only)
+├── dev (active development branch)
+└── feature/* (feature branches)
+    └── bugfix/* (bugfix branches)
+```
+
+**Key Rules**:
+- **Never push directly to main** - pre-push hook prevents this
+- **All development happens in dev branch**
+- **Feature branches branch from dev**
+- **CI runs only on dev branch**
+- **Releases happen via tags from dev**
+
+### 3. Commit Standards
+
+We follow **Conventional Commits**:
+
+```bash
+# Feature commit
+git commit -m "feat(installer): add interactive mode to state machine"
+
+# Bugfix commit  
+git commit -m "fix(network): resolve DHCP configuration issue"
+
+# Documentation commit
+git commit -m "docs: update installation guide with new requirements"
+
+# Test commit
+git commit -m "test: add comprehensive unit tests for package validation"
+
+# Build commit
+git commit -m "build: update build scripts for new ISO format"
+
+# Installer commit
+git commit -m "installer: add secure boot verification step"
+
+# Test commit
+git commit -m "test: add E2E tests for QEMU boot sequence"
+
+# Chore commit
+git commit -m "chore: update dependencies and CI configuration"
+```
+
+## Contribution Types
+
+### Bug Reports
+
+**When**: You find a bug or issue  
+**Where**: [GitHub Issues](https://github.com/Arkh-Ur/ouroborOS-dev/issues)  
+**Template**:
+
+```yaml
+issue:
+  title: "Brief description of the bug"
+  
+  environment:
+    os: "ouroborOS v0.4.12"
+    kernel: "6.x.x"
+    hardware: "QEMU / Physical hardware"
+    
+  steps_to_reproduce:
+    - "Step 1: Action to reproduce"
+    - "Step 2: Expected behavior"
+    - "Step 3: Actual behavior"
+    
+  expected_behavior: "What should happen"
+  actual_behavior: "What actually happens"
+  
+  additional_context:
+    - "Any additional information"
+    - "Screenshots or logs if applicable"
+```
+
+### Feature Requests
+
+**When**: You want to suggest a new feature  
+**Where**: [GitHub Issues](https://github.com/Arkh-Ur/ouroborOS-dev/issues)  
+**Template**:
+
+```yaml
+feature_request:
+  title: "Brief feature description"
+  
+  problem:
+    "Problem this feature solves"
+    
+  proposed_solution:
+    "Detailed description of the solution"
+    
+  use_cases:
+    - "Use case 1"
+    - "Use case 2"
+    
+  alternatives_considered:
+    - "Alternative 1"
+    - "Alternative 2"
+    
+  implementation_notes:
+    "Any implementation considerations"
+```
+
+### Code Contributions
+
+**When**: You want to submit code changes  
+**Where**: [Pull Requests](https://github.com/Arkh-Ur/ouroborOS-dev/pulls)  
+**Process**:
+
+```bash
+# 1. Create feature branch
+git checkout -b feature/new-feature dev
+
+# 2. Make changes
+git commit -m "feat: implement new feature"
+
+# 3. Push branch
+git push origin feature/new-feature
+
+# 4. Create pull request
+# GitHub will automatically create the PR
+```
+
+## Coding Standards
+
+### Python Code
+
+**Linting and Style**:
+```bash
+# Run linter
+ruff check src/installer/
+
+# Format code
+ruff format src/installer/
+
+# Check import sorting
+ruff check src/installer/ --select I
+```
+
+**Requirements**:
+- **Type hints**: Use `typing` module for all function parameters and returns
+- **Docstrings**: Follow Google style for all public functions and classes
+- **Error handling**: Use specific exceptions, not generic `Exception`
+- **Logging**: Use structured logging with `logger.info()`, `logger.error()`, etc.
+
+**Example**:
+```python
+from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+def validate_packages(packages: List[str]) -> Optional[str]:
+    """
+    Validate package list for installation.
+    
+    Args:
+        packages: List of package names to validate
+        
+    Returns:
+        Error message if validation fails, None otherwise
+        
+    Raises:
+        ValueError: If package list is empty
+    """
+    if not packages:
+        logger.error("Empty package list provided")
+        raise ValueError("Package list cannot be empty")
+        
+    for package in packages:
+        if not isinstance(package, str):
+            logger.error(f"Invalid package type: {package}")
+            return f"Invalid package type: {package}"
+            
+    logger.info(f"Validated {len(packages)} packages")
+    return None
+```
+
+### Shell Script Standards
+
+**Requirements**:
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# All scripts must pass shellcheck with zero warnings
+shellcheck script.sh
+```
+
+**Example**:
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# Script to validate system configuration
+validate_system_config() {
+    local config_file="$1"
+    
+    if [[ ! -f "$config_file" ]]; then
+        echo "Error: Configuration file not found: $config_file"
+        return 1
+    fi
+    
+    # Validate YAML syntax
+    if ! python -c "import yaml; yaml.safe_load(open('$config_file'))" 2>/dev/null; then
+        echo "Error: Invalid YAML syntax in $config_file"
+        return 1
+    fi
+    
+    echo "Configuration validation passed"
+}
+
+# Main execution
+main() {
+    local config_path="/etc/systemd/system/system.yaml"
+    
+    validate_system_config "$config_path"
+}
+
+main "$@"
+```
+
+### Documentation Standards
+
+**Requirements**:
+- **Markdown format** with consistent heading structure
+- **Code examples** with syntax highlighting
+- **Admonitions** for warnings and tips
+- **Cross-references** between related pages
+
+**Example**:
+```markdown
+# Configuration Management
+
+## Overview
+
+The configuration system uses YAML files to define system state.
+
+:::caution
+
+Always backup your configuration before making changes.
+
+:::
+
+### Example Configuration
+
+```yaml
+system:
+  version: "0.4.12"
+  user:
+    username: "admin"
+    password: "$6$..."
+```
+
+## Testing Requirements
+
+### Unit Tests
+
+**Coverage Requirement**: 93% minimum coverage
+
+```bash
+# Run unit tests
+pytest src/installer/tests/ -v --cov=src/installer
+
+# Run specific test file
+pytest src/installer/tests/test_state_machine.py -v
+
+# Run with coverage report
+pytest src/installer/tests/ --cov-report=html
+```
+
+### Integration Tests
+
+```bash
+# Run integration tests
+pytest src/installer/tests/integration/ -v
+
+# Test specific scenario
+pytest src/installer/tests/integration/test_installation.py -v
+```
+
+### E2E Tests
+
+```bash
+# Run E2E tests
+pytest src/installer/tests/e2e/ -v
+
+# Test with QEMU
+bash src/scripts/test-qemu.sh
+```
+
+## Security Guidelines
+
+### Code Security
+
+**Requirements**:
+- **Input validation**: Validate all user inputs
+- **Output encoding**: Prevent injection attacks
+- **Error handling**: Don't expose sensitive information
+- **Dependencies**: Use secure, maintained packages
+
+**Example**:
+```python
+def safe_execute_command(command: str) -> str:
+    """
+    Safely execute a shell command.
+    
+    Args:
+        command: Command to execute
+        
+    Returns:
+        Command output
+        
+    Raises:
+        ValueError: If command contains dangerous characters
+    """
+    # Validate command for safety
+    if ";" in command or "|" in command or "&" in command:
+        raise ValueError("Command contains potentially dangerous characters")
+    
+    # Execute command
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        logger.error(f"Command failed: {result.stderr}")
+        raise subprocess.CalledProcessError(result.returncode, command)
+    
+    return result.stdout
+```
+
+### Configuration Security
+
+**Requirements**:
+- **Sensitive data**: Never commit passwords, API keys, or secrets
+- **Environment variables**: Use for sensitive configuration
+- **File permissions**: Secure sensitive files with appropriate permissions
+- **Encryption**: Use encryption for sensitive data at rest
+
+## Review Process
+
+### Pull Request Requirements
+
+**PR Template**:
+
+```yaml
+pull_request:
+  title: "Brief description of changes"
+  
+  type_of_change:
+    - "Bug fix"
+    - "Feature addition"
+    - "Documentation update"
+    - "Code improvement"
+    - "Breaking change"
+    
+  testing:
+    - "Unit tests added/updated"
+    - "Integration tests added/updated"
+    - "E2E tests added/updated"
+    - "Manual testing performed"
+    
+  description:
+    "Detailed description of changes made"
+    
+  changes_made:
+    - "File 1: Change description"
+    - "File 2: Change description"
+    
+  related_issues:
+    - "Closes #123"
+    - "Related to #456"
+    
+  breaking_changes:
+    "List any breaking changes or migration requirements"
+    
+  additional_notes:
+    "Any additional context or information"
+```
+
+**Review Checklist**:
+- [ ] Code follows style guidelines
+- [ ] Tests pass and have adequate coverage
+- [ ] Documentation is updated
+- [ ] Security considerations addressed
+- [ ] Performance impact assessed
+- [ ] No breaking changes (unless documented)
+- [ ] Changes are atomic and focused
+
+### Review Timeline
+
+- **Initial review**: 24-48 hours
+- **Revision request**: Within 72 hours
+- **Final merge**: After all approvals and CI passes
+
+## Community Guidelines
+
+### Communication Channels
+
+- **GitHub Issues**: Bug reports and feature requests
+- **GitHub Discussions**: General discussions and Q&A
+- **Discord**: Real-time chat (invite-only for development team)
+- **Email**: For sensitive security issues
+
+### Code of Conduct
+
+**Expected Behavior**:
+- Be respectful and professional
+- Focus on technical merit
+- Welcome new contributors
+- Provide constructive feedback
+- Help others learn and grow
+
+**Unacceptable Behavior**:
+- Personal attacks or harassment
+- Discriminatory language
+- Unwelcome contributions
+- Disruptive behavior
+- Safety violations
+
+### Getting Help
+
+**Documentation**:
+- [Developer Guide](../development/)
+- [API Documentation](../api/)
+- [Testing Guide](../testing/)
+
+**Community Support**:
+- GitHub Discussions
+- Discord community
+- Email support for critical issues
+
+## Release Process
+
+### Version Management
+
+**Version Strategy**: Semantic Versioning
+- **Major**: Incompatible changes (v0.1.0 → v0.2.0)
+- **Minor**: New features (v0.2.0 → v0.2.1)  
+- **Patch**: Bug fixes (v0.2.1 → v0.2.2)
+
+**Release Process**:
+```bash
+# 1. Update version in package.json and documentation
+# 2. Create release branch
+# 3. Test thoroughly
+# 4. Tag release
+# 5. Push to GitHub
+# 6. Release to public repository
+```
+
+### Release Checklist
+
+- [ ] All tests pass
+- [ ] Documentation updated
+- [ ] Changelog updated
+- [ ] Version bumped
+- [ ] Release notes prepared
+- [ ] Security audit completed
+- [ ] Performance benchmarks verified
+
+## Advanced Development Workflows
+
+### Pre-commit Development Environment Setup
+
+```bash
+# Complete development environment setup
+git clone https://github.com/Arkh-Ur/ouroborOS-dev.git
+cd ouroborOS
+
+# Install development dependencies
+bash src/scripts/setup-dev-env.sh
+
+# Verify environment
+verify_dev_environment() {
+    echo "Checking development environment..."
+    
+    # Check required tools
+    command -v python3 >/dev/null 2>&1 || { echo "Python3 required"; exit 1; }
+    command -v ruff >/dev/null 2>&1 || { echo "Ruff required"; exit 1; }
+    command -v shellcheck >/dev/null 2>&1 || { echo "Shellcheck required"; exit 1; }
+    
+    # Verify Python environment
+    python3 -c "import yaml" >/dev/null 2>&1 || { echo "PyYAML required"; exit 1; }
+    
+    # Check test environment
+    pytest --version >/dev/null 2>&1 || { echo "pytest required"; exit 1; }
+    
+    echo "Development environment verified ✓"
+}
+
+verify_dev_environment
+```
+
+### Advanced Branch Strategy
+
+#### Dual-Repo Architecture
+```bash
+# Repository structure and workflow
+echo "Repository Strategy:"
+echo "├── ouroborOS-dev/ (private)     # Development branch"
+echo "│   ├── dev/                    # Main development branch"
+echo "│   ├── feature/*               # Feature branches"
+echo "│   └── bugfix/*                # Bugfix branches"
+echo "└── ouroborOS/ (public)         # Release mirror"
+echo ""
+echo "Branch Protection Rules:"
+echo "• main is read-only - only CI can merge"
+echo "• dev branch runs CI on every push"
+echo "• Feature branches merge to dev via PR"
+echo "• Tags trigger release pipeline"
+```
+
+#### Feature Development Workflow
+```bash
+# Complete feature development workflow
+develop_new_feature() {
+    local feature_name="$1"
+    
+    # 1. Create feature branch from dev
+    git checkout -b feature/"$feature_name" dev
+    
+    # 2. Make changes with proper commit style
+    git add .
+    git commit -m "feat(installer): add $feature_name to state machine"
+    
+    # 3. Push branch
+    git push origin feature/"$feature_name"
+    
+    # 4. Create pull request
+    echo "Creating pull request for feature/$feature_name"
+    echo "PR should target dev branch with conventional commits"
+    
+    # 5. Run pre-commit checks
+    pre_commit_checks
+}
+
+# Pre-commit quality checks
+pre_commit_checks() {
+    echo "Running pre-commit checks..."
+    
+    # Python linting
+    ruff check src/installer/
+    ruff format src/installer/
+    
+    # Shell script checking
+    find src/scripts/ -name "*.sh" -exec shellcheck {} \;
+    
+    # YAML validation
+    find templates/ -name "*.yaml" -exec python3 -c "import yaml; yaml.safe_load(open('{}'))" {} \;
+    
+    # Test verification
+    pytest src/installer/tests/ -x --tb=short
+    
+    echo "Pre-commit checks passed ✓"
+}
+```
+
+### Build and Test Infrastructure
+
+#### Complete Build Pipeline
+```bash
+# ISO building workflow
+build_iso() {
+    echo "Building ouroborOS ISO..."
+    
+    # Clean build
+    sudo bash src/scripts/build-iso.sh --clean
+    
+    # Verify build artifacts
+    ls -la out/ouroborOS-*.iso
+    
+    # Generate checksum
+    sha256sum out/ouroborOS-*.iso > out/SHA256SUMS
+    
+    # Verify checksum
+    sha256sum -c out/SHA256SUMS
+    
+    echo "ISO build completed ✓"
+}
+
+# Testing infrastructure
+run_comprehensive_tests() {
+    echo "Running comprehensive test suite..."
+    
+    # Unit tests
+    echo "Running unit tests..."
+    pytest src/installer/tests/ -v --cov=src/installer --cov-report=html
+    
+    # Integration tests
+    echo "Running integration tests..."
+    pytest src/installer/tests/integration/ -v
+    
+    # E2E tests
+    echo "Running E2E tests..."
+    bash src/scripts/test-qemu.sh
+    
+    # Performance tests
+    echo "Running performance tests..."
+    pytest src/installer/tests/performance/ -v
+    
+    echo "All tests completed ✓"
+}
+```
+
+#### Quality Assurance Metrics
+
+```bash
+# Quality assessment
+assess_code_quality() {
+    echo "Code Quality Assessment:"
+    
+    # Python quality
+    echo "Python Code:"
+    ruff check src/installer/ --format=json | jq '.summary'
+    
+    # Shell quality
+    echo "Shell Scripts:"
+    shellcheck src/scripts/*.sh | wc -l | awk '{print $0 " warnings (should be 0)"}'
+    
+    # Test coverage
+    echo "Test Coverage:"
+    pytest src/installer/tests/ --cov=src/installer --cov-report=term-missing
+    
+    # Documentation coverage
+    echo "Documentation Coverage:"
+    find docs/ -name "*.md" | wc -l | awk '{print $0 " documentation files"}'
+}
+
+# Security scanning
+scan_security() {
+    echo "Security Scanning:"
+    
+    # Dependency vulnerability scanning
+    if command -v safety >/dev/null 2>&1; then
+        safety check
+    fi
+    
+    # Static application security testing
+    if command -v bandit >/dev/null 2>&1; then
+        bandit -r src/installer/
+    fi
+    
+    echo "Security scanning completed ✓"
+}
+```
+
+### Advanced Contribution Types
+
+#### Architecture Contributions
+```yaml
+# Architecture improvement workflow
+architecture_contribution:
+  title: "System Architecture Enhancement"
+  
+  process:
+    1. Document current architecture
+    2. Identify improvement areas
+    3. Design new architecture
+    4. Create implementation plan
+    5. Review with maintainers
+    6. Implement changes
+    7. Update documentation
+    
+  requirements:
+    - Architecture diagrams (Mermaid)
+    - Performance impact assessment
+    - Compatibility analysis
+    - Migration strategy
+    - Test coverage for new components
+```
+
+#### Performance Optimization
+```yaml
+# Performance contribution workflow
+performance_contribution:
+  title: "Performance Optimization"
+  
+  process:
+    1. Benchmark current performance
+    2. Identify bottlenecks
+    3. Design optimization strategy
+    4. Implement improvements
+    5. Measure performance gains
+    6. Document changes
+    
+  requirements:
+    - Before/after benchmarks
+    - Performance regression tests
+    - Memory usage analysis
+    - CPU optimization reports
+    - Impact assessment on user experience
+```
+
+#### Security Enhancements
+```yaml
+# Security contribution workflow
+security_contribution:
+  title: "Security Enhancement"
+  
+  process:
+    1. Security audit of current system
+    2. Identify vulnerabilities
+    3. Design security improvements
+    4. Implement security measures
+    5. Verify security gains
+    6. Document security changes
+    
+  requirements:
+    - Security testing results
+    - Vulnerability assessment
+    - Compliance verification
+    - Security documentation
+    - Incident response procedures
+```
+
+### Release Management
+
+#### Release Process
+```bash
+# Complete release workflow
+release_new_version() {
+    local version="$1"
+    
+    # 1. Update version numbers
+    update_version_files "$version"
+    
+    # 2. Run comprehensive tests
+    run_comprehensive_tests
+    
+    # 3. Build artifacts
+    build_iso
+    
+    # 4. Update documentation
+    update_documentation "$version"
+    
+    # 5. Create tag
+    git tag -a "v$version" -m "Release v$version"
+    
+    # 6. Push to development repo
+    git push origin dev
+    git push origin --tags
+    
+    echo "Release v$version prepared ✓"
+}
+
+# Version management
+update_version_files() {
+    local version="$1"
+    
+    # Update package.json if exists
+    if [ -f package.json ]; then
+        jq ".version = \"$version\"" package.json > package.json.tmp
+        mv package.json.tmp package.json
+    fi
+    
+    # Update documentation
+    sed -i "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v$version/g" docs/*.md
+    
+    # Update CLAUDE.md
+    sed -i "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v$version/g" CLAUDE.md
+    
+    git add .
+    git commit -m "build: update version to v$version"
+}
+```
+
+### Community Engagement
+
+#### Contribution Mentorship
+```yaml
+# Mentorship program
+mentorship_program:
+  levels:
+    beginner:
+      focus: "Documentation, typos, simple tests"
+      mentors: ["experienced-contributors"]
+      review_time: "24 hours"
+      
+    intermediate:
+      focus: "Feature implementations, bug fixes"
+      mentors: ["core-developers"]
+      review_time: "48 hours"
+      
+    advanced:
+      focus: "Architecture changes, major features"
+      mentors: ["maintainers"]
+      review_time: "72 hours"
+  
+  support:
+    office_hours: "Weekly office hours on Discord"
+    code_review_sessions: "Monthly review workshops"
+    documentation_help: "Available on GitHub Discussions"
+```
+
+#### Onboarding Materials
+```yaml
+# New contributor onboarding
+onboarding_process:
+  steps:
+    - "Read AGENTS.md and CLAUDE.md"
+    - "Setup development environment"
+    - "Run existing tests to understand baseline"
+    - "Make a simple change (typo fix)"
+    - "Submit first pull request"
+    - "Get feedback and iterate"
+    - "Graduate to more complex contributions"
+  
+  resources:
+    - "Developer Guide"
+    - "Testing Guide"
+    - "Code Style Guide"
+    - "Architecture Documentation"
+    - "Issue Templates"
+    - "Pull Request Template"
+```
+
+### Troubleshooting and Support
+
+#### Common Issues
+```bash
+# Development troubleshooting
+troubleshoot_common_issues() {
+    echo "Common Development Issues:"
+    
+    # Shellcheck failures
+    echo "Shellcheck Issues:"
+    echo "• All scripts must have #!/bin/bash"
+    echo "• Use 'set -euo pipefail' for error handling"
+    echo "• Quote variables: \"$variable\""
+    
+    # Python linting issues
+    echo "Python Linting Issues:"
+    echo "• Use type hints for all function parameters"
+    echo "• Follow Google style for docstrings"
+    echo "• Use specific exception types"
+    
+    # Test failures
+    echo "Test Failures:"
+    echo "• Ensure 93% minimum coverage"
+    echo "• Mock external dependencies"
+    echo "• Test error cases explicitly"
+}
+
+# Environment setup issues
+setup_troubleshooting() {
+    echo "Environment Setup Issues:"
+    
+    # Python dependencies
+    echo "Python Issues:"
+    echo "• Install PyYAML: pip install PyYAML"
+    echo "• Verify Python 3.8+ compatibility"
+    
+    # Build tools
+    echo "Build Issues:"
+    echo "• Install archiso: sudo pacman -S archiso"
+    echo "• Install QEMU with OVMF support"
+    
+    # Testing tools
+    echo "Testing Issues:"
+    echo "• Install pytest: pip install pytest"
+    echo "• Install coverage: pip install pytest-cov"
+}
+```
+
+#### Integration with External Tools
+
+```yaml
+# CI/CD integration
+external_tools:
+  github_actions:
+    workflows:
+      - "lint: Python and shell linting"
+      - "test: Comprehensive test suite"
+      - "build: ISO generation and testing"
+      - "security: Security scanning"
+      
+  code_quality:
+    tools:
+      - "ruff: Python linting and formatting"
+      - "shellcheck: Shell script validation"
+      - "bandit: Security scanning"
+      - "safety: Dependency vulnerability scanning"
+      
+  documentation:
+    tools:
+      - "mkdocs: Documentation generation"
+      - "markdownlint: Markdown linting"
+      - "linkchecker: Link validation"
+```
+
+:::
+
+Start small! Your first contribution could be as simple as fixing a typo in documentation, adding a comment, or improving a test. Every contribution helps make ouroborOS better.
+
+Remember: Quality over quantity. It's better to make one excellent, well-tested contribution than many rushed ones. The community values thoroughness, attention to detail, and respect for the established architecture and conventions.
+
+:::

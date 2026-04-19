@@ -1,0 +1,476 @@
+---
+title: our-pac — Package Manager
+description: Learn how to use our-pac, the atomic package manager wrapper for ouroborOS that provides safe package operations with automatic snapshots.
+slug: system/our-pac
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# our-pac — Package Manager
+
+`our-pac` is ouroborOS's enhanced package manager that wraps pacman with atomic operations, automatic snapshot creation, and Secure Boot integration. Unlike traditional package managers that modify your existing system, `our-pac` creates new states for every operation, ensuring system integrity and making rollbacks effortless.
+
+## What is our-pac?
+
+`our-pac` transforms package management from a potentially destructive operation into a safe, atomic process. Every package operation automatically creates a snapshot, signs packages for Secure Boot, and maintains boot entry synchronization.
+
+```bash
+# Traditional pacman - risky
+sudo pacman -Syu          # Modifies existing packages, can break configs
+sudo pacman -S nginx     # Modifies system files directly
+
+# our-pac - safe by default
+our-pac upgrade          # Creates snapshot, upgrades, signs packages
+our-pac install nginx    # Creates snapshot, installs, signs, syncs boot entries
+```
+
+## Core Features
+
+### **Atomic Operations**
+Every package operation is atomic and reversible:
+
+```bash
+# Package operations create snapshots automatically
+our-pac install docker
+# Creates: /.snapshots/2024-01-15T14:30:00_docker_install/
+
+our-pac upgrade
+# Creates: /.snapshots/2024-01-15T14:45:00_system_upgrade/
+```
+
+### **Automatic Snapshots**
+No manual snapshot management required:
+
+```bash
+# Snapshots are created automatically
+our-pac list  # Shows all available snapshots
+
+# Operations that create snapshots:
+# - our-pac upgrade
+# - our-pac install/remove
+# - our-pac sync
+# - our-pac clean
+```
+
+### **Secure Boot Integration**
+Automatic package signing for Secure Boot systems:
+
+```bash
+# Packages are automatically signed after installation
+our-pac upgrade nginx
+# Creates snapshot
+# Installs nginx
+# Signs nginx package with sbctl
+# Updates boot entries
+```
+
+## Basic Usage
+
+### **System Upgrade**
+```bash
+# Upgrade all packages
+our-pac upgrade
+
+# Specific package upgrade
+our-pac upgrade nginx
+
+# Dry run (preview changes)
+our-pac upgrade --dry-run
+
+# Show what will be upgraded
+our-pac upgrade --verbose
+```
+
+### **Package Installation**
+```bash
+# Install single package
+our-pac install neovim
+
+# Install multiple packages
+our-pac install git docker htop
+
+# Install with dependencies
+our-pac install --needed nodejs npm
+
+# Install without recommended dependencies
+our-pac install --nodeps nginx
+```
+
+### **Package Removal**
+```bash
+# Remove package and dependencies
+our-pac remove docker
+
+# Remove package without removing dependencies
+our-pac remove --nodeps docker
+
+# Remove package and configuration files
+our-pac remove --nosave docker
+
+# Force removal
+our-pac remove --force docker
+```
+
+### **Package Information**
+```bash
+# Search for packages
+our-pac search nginx
+
+# Show package information
+our-pac info nginx
+
+# List installed packages
+our-pac list
+
+# Show package files
+our-pac -Ql nginx
+
+# Show package dependencies
+our-pac -Qi nginx
+```
+
+## Advanced Operations
+
+### **Package Synchronization**
+```bash
+# Sync package databases
+our-pac sync
+
+# Sync specific repository
+our-pac sync core
+
+# Sync with cleanup
+our-pac sync --clean
+
+# Sync with verbose output
+our-pac sync --verbose
+```
+
+### **Package Cleanup**
+```bash
+# Clean package cache
+our-pac clean
+
+# Clean all cache (including packages from other repos)
+our-pac clean --all
+
+# Clean old snapshots
+our-pac clean --snapshots --keep 30
+
+# Clean orphaned packages
+our-pac clean --orphans
+```
+
+### **Package Validation**
+```bash
+# Check database consistency
+our-pac check
+
+# Check package signatures
+our-pac check --sig
+
+# Check file integrity
+our-pac check --files
+
+# Full system check
+our-pac check --full
+```
+
+## Integration with Snapshots
+
+### **Snapshot Creation**
+```bash
+# View snapshot creation timeline
+our-pac history
+
+# List snapshots related to package operations
+our-pac snapshots
+
+# Create manual snapshot before operation
+our-pac snapshot create pre-custom-op
+our-pac install custom-package
+```
+
+### **Rollback from Snapshots**
+```bash
+# Rollback to snapshot after package operation
+our-pac rollback 2024-01-15T14:30:00
+
+# List rollback candidates
+our-pac rollback --list
+
+# Preview rollback
+our-pac rollback --preview 2024-01-15T14:30:00
+```
+
+## Configuration Options
+
+### **Configuration File**
+```bash
+# Edit our-pac configuration
+sudo nano /etc/ouroborOS/our-pac.conf
+
+# Configuration options
+our-pac:
+  snapshot_prefix: "pacop"
+  keep_snapshots: 30
+  auto_sign: true
+  auto_sync_boot: true
+  cache_size: "10G"
+  parallel_downloads: 5
+```
+
+### **Environment Variables**
+```bash
+# Set temporary options
+OUR_PAC_SNAPSHOTS_KEEP=20 our-pac upgrade
+
+# Enable verbose output
+OUR_PAC_VERBOSE=1 our-pac install nginx
+
+# Disable automatic signing
+OUR_PAC_AUTO_SIGN=false our-pac upgrade
+```
+
+## Troubleshooting
+
+### **Common Issues**
+```bash
+# Fix database lock
+sudo rm /var/lib/pacman/db.lck
+
+# Fix broken packages
+our-pac fix
+
+# Fix dependencies
+our-pac --sync --refresh --sysupgrade
+
+# Clear cache and retry
+our-pac clean
+our-pac upgrade
+```
+
+### **Error Recovery**
+```bash
+# Check operation logs
+sudo journalctl -u our-pac.service
+
+# List recent operations
+our-pac history --limit 10
+
+# Check snapshot integrity
+our-snapshot validate-all
+```
+
+### **Performance Optimization**
+```bash
+# Parallel downloads
+our-pac --parallel 5 upgrade
+
+# Use faster mirrors
+our-pac --mirrorlist --upgrade
+
+# Cache optimization
+our-pac clean --cache-size 5G
+```
+
+## Migration Guide
+
+### **From Traditional Pacman**
+```bash
+# Migrating from pacman to our-pac
+# Step 1: Create initial snapshot
+our-pac snapshot create pre-migration
+
+# Step 2: Replace pacman commands
+# Instead of: sudo pacman -Syu
+# Use: our-pac upgrade
+
+# Step 3: Test rollback capability
+our-pac rollback --preview
+```
+
+### **From Other Package Managers**
+```bash
+# From apt/dpkg
+our-pac install equivalent-package
+
+# From yum/dnf
+our-pac install --needed package-name
+
+# From zypper
+our-pac install --package package-name
+```
+
+## Integration Examples
+
+### **Automation Scripts**
+```bash
+#!/bin/bash
+# Daily system update
+#!/bin/bash
+
+# Create backup snapshot
+our-pac snapshot create pre-daily-update
+
+# Update system
+our-pac upgrade
+
+# Clean up
+our-pac clean --orphans
+our-pac clean --snapshots --keep 7
+
+# Create final snapshot
+our-pac snapshot create post-daily-update
+
+# Check system health
+ouroboros-health check
+```
+
+### **CI/CD Pipeline Integration**
+```yaml
+# .gitlab-ci.yml
+stages:
+  - deploy
+  - validate
+
+deploy_system:
+  stage: deploy
+  script:
+    - our-pac snapshot create pre-deploy
+    - our-pac install "${PACKAGE_LIST}"
+    - our-pac sync --boot-entries
+    - our-snapshot prune --keep 10
+  artifacts:
+    paths:
+      - /.snapshots/
+
+validate_system:
+  stage: validate
+  script:
+    - our-pac check --full
+    - ouroboros-health check
+    - our-rollback status
+```
+
+### **Ansible Integration**
+```yaml
+# tasks/main.yml
+- name: Ensure system is updated
+  ansible.builtin.command: our-pac upgrade
+  become: yes
+  register: upgrade_result
+
+- name: Install required packages
+  ansible.builtin.command: >
+    our-pac install "{{ item }}"
+  become: yes
+  loop: "{{ required_packages }}"
+  when: upgrade_result.changed
+
+- name: Clean system
+  ansible.builtin.command: our-pac clean --orphans
+  become: yes
+```
+
+## Security Features
+
+### **Package Verification**
+```bash
+# Verify all packages
+our-pac verify
+
+# Verify specific package
+our-pac verify nginx
+
+# Check package signatures
+our-pac verify --signatures
+```
+
+### **Integrity Checks**
+```bash
+# Check file integrity
+our-pac check --files
+
+# Check database integrity
+our-pac check --database
+
+# Check all
+our-pac check --full
+```
+
+### **Audit Trail**
+```bash
+# View operation history
+our-pac history
+
+# Export operation logs
+our-pac history --export /var/log/our-pac-history.log
+
+# View security logs
+sudo journalctl -u our-pac.service --since "1 day ago"
+```
+
+## Best Practices
+
+### **Package Management**
+```bash
+# Always check what will be changed
+our-pac upgrade --dry-run
+
+# Create snapshots before major changes
+our-pac snapshot create pre-major-update
+our-pac upgrade
+
+# Test in staging first
+our-pac --staging install experimental-package
+```
+
+### **Resource Management**
+```bash
+# Monitor disk usage
+our-pac du
+
+# Clean cache regularly
+our-pac clean --cache-size 5G
+
+# Manage snapshot retention
+our-pac clean --snapshots --keep 30
+```
+
+### **Security**
+```bash
+# Regular signature verification
+our-pac verify --signatures
+
+# Monitor package changes
+our-pac check --files
+
+# Audit package operations
+our-pac history --security-audit
+```
+
+`our-pac` represents a fundamental shift in package management—from potentially destructive operations to safe, atomic processes that maintain system integrity throughout their lifecycle. By combining the power of pacman with immutability and declarative principles, it provides the foundation for reliable, reproducible system management.
+
+<Tabs>
+<TabItem label="Basic Operations">
+```bash
+# Daily workflow
+our-pac upgrade                    # Update all packages
+our-pac install neovim            # Install new package
+our-pac remove docker             # Remove package
+our-pac clean                     # Clean cache
+our-snapshot list                 # View created snapshots
+```
+</TabItem>
+<TabItem label="Advanced Operations">
+```bash
+# Enterprise workflow
+our-pac snapshot create pre-update
+our-pac --parallel 8 --sync --upgrade
+our-pac verify --signatures
+our-pac clean --orphans --cache-size 5G
+our-pac snapshot create post-update
+our-pac rollback --list  # Available rollbacks
+```
+</TabItem>
+</Tabs>

@@ -1,0 +1,642 @@
+---
+title: Configuration Reference
+description: Complete reference guide for ouroborOS configuration files, YAML schema, and advanced configuration options.
+slug: installation/config-reference
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Configuration Reference
+
+This guide provides a comprehensive reference for all configuration options available in ouroborOS. The system uses declarative YAML configuration files to define system state, making it reproducible, auditable, and easy to manage.
+
+## Configuration File Locations
+
+### **Primary Configuration**
+```yaml
+# /etc/ouroborOS/system.yaml - System-wide configuration
+# This file defines the desired state of your system
+
+# Configuration priority (highest to lowest):
+# 1. Command line arguments
+# 2. User-specific config (~/.config/ouroborOS/config.yaml)
+# 3. System-wide config (/etc/ouroborOS/system.yaml)
+# 4. Default configuration
+```
+
+### **Configuration Discovery**
+The system automatically discovers configuration files in the following order:
+
+```bash
+# Configuration discovery order
+find_unattended_config() {
+    # 1. Command line --config parameter
+    if [ -n "$CONFIG_FILE" ]; then
+        echo "$CONFIG_FILE"
+        return
+    fi
+    
+    # 2. USB media
+    if [ -f "/run/usb/ouroborOS/config.yaml" ]; then
+        echo "/run/usb/ouroborOS/config.yaml"
+        return
+    fi
+    
+    # 3. Network location
+    if [ -f "/mnt/nfs/ouroborOS/config.yaml" ]; then
+        echo "/mnt/nfs/ouroborOS/config.yaml"
+        return
+    fi
+    
+    # 4. Default location
+    if [ -f "/etc/ouroborOS/system.yaml" ]; then
+        echo "/etc/ouroborOS/system.yaml"
+        return
+    fi
+    
+    # 5. Interactive fallback
+    echo ""
+}
+```
+
+## Complete YAML Schema
+
+### **Root Configuration**
+```yaml
+# system.yaml
+user:
+  username: string                    # Required: System username
+  password: string                    # Required: Password (SHA-512 hashed automatically)
+  shell: string                      # Optional: /bin/bash | /bin/zsh | /usr/bin/fish
+  groups: array                       # Optional: User groups (default: [wheel, audio, video, input])
+  homed_storage: string               # Optional: subvolume | luks | directory | classic
+
+network:
+  hostname: string                    # Required: System hostname
+  enable_networkd: boolean            # Optional: Enable systemd-networkd (default: true)
+  enable_iwd: boolean                # Optional: Enable iwd for WiFi (default: true)
+  enable_resolved: boolean           # Optional: Enable systemd-resolved (default: true)
+  wifi:
+    ssid: string                      # Optional: WiFi network SSID
+    passphrase: string                # Optional: WiFi passphrase (transient, not persisted)
+  bluetooth:
+    enable: boolean                   # Optional: Enable bluetooth.service (default: false)
+
+security:
+  secure_boot: boolean                # Optional: Enable Secure Boot setup (default: false)
+  sbctl_include_ms_keys: boolean     # Optional: Include Microsoft keys (default: false)
+
+disk:
+  device: string                     # Required: Target device path
+  use_luks: boolean                   # Optional: Enable LUKS encryption (default: false)
+  btrfs_label: string                 # Optional: Btrfs filesystem label (default: ouroborOS)
+  swap_type: string                  # Optional: zram | partition | none (default: zram)
+  swap_size: string                   # Optional: Size when swap_type=partition
+
+locale:
+  locale: string                     # Required: System locale (e.g., en_US.UTF-8)
+  keymap: string                     # Optional: Keyboard layout (default: us)
+  timezone: string                   # Required: System timezone
+
+desktop:
+  profile: string                    # Required: minimal | hyprland | niri | gnome | kde
+  dm: string                         # Optional: auto | gdm | sddm | plm | none (default: auto)
+
+extra_packages: array                # Optional: Additional packages to install
+post_install_action: string          # Optional: reboot | poweroff | none (default: reboot)
+```
+
+## Detailed Configuration Options
+
+### **User Configuration**
+```yaml
+user:
+  username: "admin"                  # System username (Linux username rules apply)
+  password: "changeme"               # Plain text password (automatically hashed)
+  shell: "/bin/bash"                 # Default shell options:
+                                   #   /bin/bash    - Bash shell
+                                   #   /bin/zsh     - Zsh shell  
+                                   #   /usr/bin/fish - Fish shell
+  
+  groups: ["wheel", "audio", "video", "input"]  # User groups
+                                   # Standard groups:
+                                   #   wheel    - sudo access
+                                   #   audio    - audio device access
+                                   #   video    - video device access
+                                   #   input    - input device access
+                                   #   storage  - storage device access
+                                   #   network  - network device access
+  
+  homed_storage: "classic"           # Home directory storage options:
+                                   #   subvolume  - Btrfs subvolume (recommended)
+                                   #   luks       - LUKS encrypted directory
+                                   #   directory  - Regular directory
+                                   #   classic    - Traditional /home/$username
+```
+
+#### **Advanced User Configuration**
+```yaml
+user:
+  username: "developer"
+  # Password will be SHA-512 hashed automatically
+  password: "my_secure_password"
+  shell: "/usr/bin/fish"
+  groups: 
+    - "wheel"
+    - "audio"
+    - "video" 
+    - "input"
+    - "docker"
+    - "libvirt"
+    - "storage"
+    - "network"
+  homed_storage: "subvolume"  # Use Btrfs subvolume for home directory
+  ssh_keys:                  # Optional: SSH public keys
+    - "ssh-rsa AAAAB3NzaC1yc2E..."
+    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
+  # Systemd-homed configuration (if homed_storage: "luks")
+  homed:
+    storage: "luks"
+    size: "10G"              # Directory size
+    encryption: "aes256-xts" # Encryption method
+```
+
+### **Network Configuration**
+```yaml
+network:
+  hostname: "ouroboros"            # System hostname (RFC 952 compliant)
+  enable_networkd: true           # Enable systemd-networkd service
+  enable_iwd: true               # Enable iwd for WiFi management
+  enable_resolved: true          # Enable systemd-resolved DNS resolver
+  
+  wifi:                          # WiFi configuration (iwd format)
+    ssid: "MyNetwork"           # WiFi network SSID
+    passphrase: "my_wifi_pass"  # WiFi WPA2/WPA3 passphrase
+    # Optional WiFi-specific settings
+    hidden: false               # Connect to hidden network
+    autoconnect: true           # Automatically reconnect
+    priority: 1                 # Connection priority
+  
+  bluetooth:                    # Bluetooth configuration
+    enable: true                 # Enable bluetooth.service
+    # Experimental features for BLE
+    experimental: true          # Enable Bluetooth LE features
+    # Auto-connect devices
+    autoconnect:
+      - "MyHeadphones"
+      - "MyKeyboard"
+  
+  # systemd-networkd configuration
+  networkd:                      # Network configuration files
+    - match: "name=eno1"        # Match network interface
+      network:
+        Address: "192.168.1.100/24"
+        Gateway: "192.168.1.1"
+        DNS:
+          - "8.8.8.8"
+          - "8.8.4.4"
+        Domains: "example.com"
+    - match: "name=wlan0"
+      network:
+        DHCP: yes
+        IPv6AcceptRA: yes
+  
+  # systemd-resolved configuration
+  resolved:
+    DNSStubListener: yes
+    LLMNR: resolve
+    MulticastDNS: yes
+    DNS:
+      - "192.168.1.1"
+      - "8.8.8.8"
+```
+
+### **Security Configuration**
+```yaml
+security:
+  secure_boot: true               # Enable Secure Boot setup
+  sbctl_include_ms_keys: true    # Include Microsoft keys
+  
+  # Additional security options
+  firewall:                      # Optional: ufw configuration
+    enabled: true
+    default_policy: "deny"
+    rules:
+      - port: "22"
+        protocol: "tcp"
+        action: "allow"
+      - port: "80"
+        protocol: "tcp"
+        action: "allow"
+      - port: "443"
+        protocol: "tcp"
+        action: "allow"
+  
+  # Fail2ban configuration
+  fail2ban:
+    enabled: true
+    jails:
+      - ssh
+      - nginx
+      - apache
+```
+
+### **Disk Configuration**
+```yaml
+disk:
+  device: "/dev/vda"            # Target device (UUID recommended)
+  use_luks: true                # Enable LUKS encryption
+  btrfs_label: "ouroborOS"     # Btrfs filesystem label
+  
+  # Swap configuration
+  swap_type: "zram"            # Swap type options:
+                              #   zram      - Compressed RAM (recommended)
+                              #   partition - Dedicated swap partition
+                              #   none      - No swap
+  swap_size: "4G"              # Size for partition swap
+  
+  # Advanced Btrfs options
+  btrfs_features:              # Btrfs filesystem features
+    compression: "zlib"        # zlib | lzo | zstd
+    metadata_ratio: "256"
+    data_ratio: "256"
+  
+  # LUKS configuration
+  luks:
+    key_type: "tpm2"           # tpm2 | passphrase | keyfile
+    key_size: "256"            # AES-256
+    cipher: "aes-xts-plain64"
+    hash: "sha512"
+    # TPM2 PCR binding
+    pcrs: "7+14"               # TPM2 PCR banks to bind to
+    # Fallback to passphrase if TPM2 not available
+    fallback_passphrase: true
+```
+
+#### **Advanced Disk Configuration**
+```yaml
+disk:
+  device: "/dev/nvme0n1"
+  use_luks: true
+  luks:
+    # Multiple key options
+    keys:
+      - type: "tpm2"
+        pcrs: "7+14"
+      - type: "passphrase"
+        slot: 1
+      - type: "keyfile"
+        path: "/etc/luks/keyfile"
+    
+    # Encryption options
+    encryption:
+      cipher: "aes-xts-plain64"
+      key_size: 512
+      hash: "sha512"
+      iterations: 100000
+    
+    # Wiping options
+    wipe: true                  # Wipe existing data
+    verify_passphrase: true     # Verify passphrase twice
+```
+
+### **Locale Configuration**
+```yaml
+locale:
+  locale: "en_US.UTF-8"        # System locale (POSIX format)
+  keymap: "us"                 # Console keymap
+  timezone: "America/Santiago" # System timezone (IANA format)
+  
+  # Additional locale settings
+  lc_all: "en_US.UTF-8"        # Override all locale settings
+  lang: "en_US.UTF-8"          # Default language environment
+  language: "en"               # Language code
+  territory: "US"              # Territory code
+```
+
+### **Desktop Configuration**
+```yaml
+desktop:
+  profile: "hyprland"          # Desktop profile options:
+                             #   minimal   - No desktop environment
+                             #   hyprland  - Tiling Wayland compositor
+                             #   niri      - Modern tiling compositor  
+                             #   gnome     - GNOME desktop
+                             #   kde       - KDE Plasma desktop
+  
+  dm: "auto"                  # Display manager options:
+                             #   auto      - Auto-detect best option
+                             #   gdm       - GNOME Display Manager
+                             #   sddm      - KDE Simple Desktop Manager
+                             #   plm       - Plymouth Login Manager
+                             #   none      - No display manager
+  
+  # Desktop-specific settings
+  settings:
+    # Theme and appearance
+    theme: "dark"             # dark | light
+    cursor: "default"         # cursor theme
+    icons: "Adwaita"          # icon theme
+    
+    # Login settings
+    autologin: false          # Enable auto-login
+    autologin_user: "admin"  # Auto-login user
+    
+    # Session settings
+    default_session: "hyprland" # Default session
+```
+
+#### **Desktop Profiles**
+```yaml
+# Available profiles and their packages
+desktop_profiles:
+  minimal:
+    packages: ["base"]
+    services: []
+    autostart: []
+  
+  hyprland:
+    packages: 
+      - "hyprland"
+      - "hyprpaper"
+      - "hyprcursor"
+      - "hypridle"
+      - "hyprland-session"
+      - "xdg-desktop-portal-hyprland"
+      - "xdg-user-dirs"
+      - "font-awesome"
+    services:
+      - "hyprland"
+      - "hypridle"
+    autostart:
+      - "hyprpaper"
+      - "waybar"
+  
+  niri:
+    packages:
+      - "niri"
+      - "niri-session"
+      - "xdg-desktop-portal-wlr"
+      - "xdg-user-dirs"
+    services:
+      - "niri"
+  
+  gnome:
+    packages:
+      - "gnome"
+      - "gnome-tweaks"
+      - "gnome-extensions"
+      - "nautilus"
+      - "gnome-terminal"
+      - "gnome-control-center"
+      - "gnome-software"
+    services:
+      - "gdm"
+    autostart:
+      - "gnome-session"
+  
+  kde:
+    packages:
+      - "plasma-meta"
+      - "konsole"
+      - "dolphin"
+      - "systemsettings"
+      - "plasma-nano"
+      - "plasma-mobile"
+      - "breeze-gtk"
+    services:
+      - "sddm"
+      - "plasma-session"
+    autostart:
+      - "startplasma-x11"
+```
+
+### **Extra Packages**
+```yaml
+extra_packages:               # Additional packages to install
+  - "git"                     # Version control system
+  - "docker"                  # Container runtime
+  - "neovim"                  # Advanced text editor
+  - "htop"                    # Process viewer
+  - "ripgrep"                 # Fast grep alternative
+  - "bat"                     # Cat alternative with syntax highlighting
+  - "jq"                      # JSON processor
+  - "yq"                      # YAML processor
+  - "fzf"                     # Fuzzy finder
+  - "exa"                     # Modern ls alternative
+  - "bat"                     # Cat alternative
+  - "zoxide"                  # Smart cd alternative
+  - "tree"                    # Directory tree viewer
+  - "ncdu"                    # Disk usage analyzer
+  - "htop"                    # Process viewer
+  - "btop"                    # Advanced process viewer
+  - "bottom"                  # System monitor
+```
+
+#### **Package Groups**
+```yaml
+# Organize packages into logical groups
+extra_packages:
+  # Development tools
+  development:
+    - "git"
+    - "git-lfs"
+    - "python-pip"
+    - "nodejs"
+    - "npm"
+    - "rust"
+    - "cargo"
+    - "go"
+    - "rust-analyzer"
+    - "typescript-language-server"
+  
+  # System utilities
+  system:
+    - "htop"
+    - "btop"
+    - "ncdu"
+    - "tree"
+    - "exa"
+    - "bat"
+    - "ripgrep"
+    - "fd"
+    - "delta"
+    - "lazygit"
+  
+  # Security tools
+  security:
+    - "gnupg"
+    - "openssh"
+    - "openssl"
+    - "curl"
+    - "wget"
+    - "tcpdump"
+    - "nmap"
+    - "wireshark-cli"
+```
+
+### **Post-Install Configuration**
+```yaml
+post_install_action: "reboot"  # System action after installation
+                              #   reboot    - Reboot system
+                              #   poweroff  - Power off system
+                              #   none      - No action (stay on)
+
+# Custom post-install scripts
+post_install_scripts:
+  - path: "/usr/local/bin/custom-setup.sh"
+    description: "Custom system setup"
+    required: true
+  - path: "/etc/ouroborOS/post-install.d/setup-apps.sh"
+    description: "Application setup"
+    required: false
+```
+
+## Configuration Validation
+
+### **Syntax Validation**
+```bash
+# Validate configuration syntax
+sudo ouroboros-validator --config system.yaml
+
+# Validate with strict mode
+sudo ouroboros-validator --config system.yaml --strict
+
+# Validate without side effects
+sudo ouroboros-validator --config system.yaml --dry-run
+```
+
+### **Schema Validation**
+```bash
+# Check configuration against schema
+sudo ouroboros-validator --config system.yaml --schema
+
+# Generate schema documentation
+sudo ouroboros-validator --generate-docs
+```
+
+### **System Requirements Check**
+```bash
+# Check if configuration requirements are met
+sudo ouroboros-validator --check-requirements system.yaml
+
+# Validate disk space requirements
+sudo ouroboros-validator --check-disk /dev/vda
+
+# Validate network connectivity
+sudo ouroboros-validator --check-network
+```
+
+## Configuration Management
+
+### **Version Control**
+```bash
+# Initialize version control for system configuration
+git init /etc/ouroborOS/
+cd /etc/ouroborOS/
+git add system.yaml
+git commit -m "Initial system configuration"
+
+# Track configuration changes
+git config --local user.name "System Admin"
+git config --local user.email "admin@ouroboros.la"
+```
+
+### **Configuration Backup**
+```bash
+# Create configuration backup
+sudo tar -czf /backup/ouroborOS-config-$(date +%Y%m%d).tar.gz /etc/ouroborOS/
+
+# Backup with encryption
+sudo tar -czf - /etc/ouroborOS | openssl enc -aes-256-cbc -salt -out /backup/ouroborOS-config-$(date +%Y%m%d).enc
+
+# Remote backup
+sudo scp /etc/ouroborOS/system.yaml admin@backup-server:/backup/ouroborOS/
+```
+
+### **Configuration Templates**
+```bash
+# Create configuration templates
+mkdir -p /usr/share/ouroborOS/templates
+# /usr/share/ouroborOS/templates/desktop.yaml
+# /usr/share/ouroborOS/templates/server.yaml
+# /usr/share/ouroborOS/templates/workstation.yaml
+
+# Use template for new system
+sudo cp /usr/share/ouroborOS/templates/desktop.yaml /etc/ouroborOS/system.yaml
+```
+
+This comprehensive configuration reference covers all available options for customizing your ouroborOS system. By using declarative YAML configuration, you can ensure consistent, reproducible system deployments across any environment.
+
+<Tabs>
+<TabItem label="Basic Config">
+```yaml
+# Minimal working configuration
+user:
+  username: admin
+  password: changeme
+  shell: /bin/bash
+
+network:
+  hostname: ouroboros
+
+disk:
+  device: /dev/vda
+  use_luks: false
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: UTC
+
+desktop:
+  profile: minimal
+```
+</TabItem>
+<TabItem label="Full Config">
+```yaml
+# Complete configuration
+user:
+  username: developer
+  password: "secure_password"
+  shell: /usr/bin/fish
+  groups: [wheel, audio, video, input, docker]
+  homed_storage: subvolume
+
+network:
+  hostname: dev-workstation
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+  wifi:
+    ssid: "CorporateWiFi"
+    passphrase: "secure_pass"
+
+security:
+  secure_boot: true
+  sbctl_include_ms_keys: true
+
+disk:
+  device: /dev/nvme0n1
+  use_luks: true
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/New_York
+
+desktop:
+  profile: hyprland
+  dm: gdm
+
+extra_packages:
+  - git
+  - docker
+  - neovim
+  - htop
+
+post_install_action: reboot
+```
+</TabItem>
+</Tabs>

@@ -1,0 +1,180 @@
+---
+title: Gestión de WiFi
+description: Gestión de redes WiFi con our-wifi en ouroborOS
+slug: network/our-wifi
+---
+
+# Gestión de WiFi (our-wifi)
+
+`our-wifi` es una herramienta intuitiva de gestión WiFi construida sobre iwd (iwctl), que proporciona una interfaz fácil de usar para descubrimiento, conexión y gestión de redes inalámbricas. Se integra perfectamente con la pila de red de ouroborOS.
+
+## Resumen
+
+La herramienta `our-wifi` proporciona:
+
+- **Gestión WiFi simple** con comandos esenciales
+- **Descubrimiento y escaneo de redes** usando iwd
+- **Conexiones seguras** con cifrado WPA2/WPA3
+- **Perfiles de red persistentes** gestionados por iwd
+- **Interfaz CLI limpia** sin innecesaria complejidad
+
+:::note
+
+our-wifi usa iwd (Intel Wireless Daemon) como backend, que soporte inalámbrico moderno con seguridad WPA3 y mejor rendimiento comparado con NetworkManager tradicional.
+
+:::
+
+## Instalación
+
+El gestor WiFi viene preinstalado con ouroborOS. Verifica la instalación:
+
+```bash
+our-wifi --version
+our-wifi --help
+```
+
+## Uso
+
+### Comandos
+
+#### `list` - Escanear y listar redes
+
+```bash
+# Listar redes disponibles
+our-wifi list
+
+# Muestra redes WiFi disponibles con sus nombres y estado de conexión
+```
+
+#### `connect <SSID>` - Conectar a una red WiFi
+
+```bash
+# Conectar de forma interactiva (solicita passphrase)
+our-wifi connect "MiRedWiFi"
+
+# Conectar con contraseña específica
+our-wifi connect "MiRedWiFi" --password mipassword
+
+# Conectar a red oculta (SSIDs especiales)
+our-wifi connect "RedOculta" --password mipassword
+```
+
+#### `status` - Mostrar estado de conexión actual
+
+```bash
+# Mostrar estado actual de conexión WiFi
+our-wifi status
+
+# Muestra detalles de la interfaz inalámbrica y conexión actual
+```
+
+#### `forget <SSID>` - Eliminar red guardada
+
+```bash
+# Olvidar un perfil de red guardado
+our-wifi forget "MiRedWiFi"
+
+# Elimina el archivo PSK guardado para el SSID especificado
+```
+
+#### `show-password <SSID>` - Mostrar passphrase guardada
+
+```bash
+# Mostrar passphrase guardada para una red
+our-wifi show-password "MiRedWiFi"
+
+# Muestra la contraseña almacenada (útil para contraseñas olvidadas)
+```
+
+#### `help` - Mostrar ayuda
+
+```bash
+# Mostrar información de ayuda completa
+our-wifi help
+
+# Muestra instrucciones de uso y comandos disponibles
+```
+
+## Ejemplos
+
+### Flujo básico de conexión
+
+```bash
+# 1. Listar redes disponibles
+our-wifi list
+
+# 2. Conectar a una red (solicita contraseña si no está guardada)
+our-wifi connect "MiCasaWiFi"
+
+# 3. Verificar estado de conexión
+our-wifi status
+
+# 4. Si quieres olvidar la red más tarde
+our-wifi forget "MiCasaWiFi"
+```
+
+### Conexión no interactiva
+
+```bash
+# Conectar sin prompts interactivos
+our-wifi connect "RedOficina" --password "contrasegura123"
+
+# Esto guarda el PSK y conecta automáticamente
+```
+
+### Mostrar contraseña guardada
+
+```bash
+# Mostrar passphrase guardada para una red
+our-wifi show-password "MiCasaWiFi"
+
+# Devuelve la contraseña guardada (útil para contraseñas olvidadas)
+```
+
+## Almacenamiento de Redes
+
+Los perfiles de red son almacenados por iwd en `/var/lib/iwd/`:
+
+```bash
+# Los archivos PSK se almacenan con permisos 600
+ls -la /var/lib/iwd/
+
+# SSIDs con caracteres especiales usan nombres codificados en hex
+# Ejemplo: =48656C6C6F2E70736B para "Hello.psk"
+```
+
+## Integración con el Sistema
+
+### Habilitar servicio iwd
+
+```bash
+# Iniciar servicio iwd si no está corriendo
+sudo systemctl start iwd.service
+
+# Habilitar iwd para iniciar en el arranque
+sudo systemctl enable iwd.service
+
+# Verificar estado del servicio
+sudo systemctl status iwd.service
+```
+
+### Detección de interfaz de red
+
+```bash
+# La herramienta detecta automáticamente interfaces inalámbricas
+# Típicamente wlan0, wlp0s0, o similar
+ip link show
+```
+
+## Requisitos
+
+- **iwd** debe estar instalado y corriendo
+- **Interfaz inalámbrica** debe estar presente (wlan0, wlp*, etc.)
+- **Privilegios de root** son requeridos para operaciones de archivo PSK
+
+## Notas
+
+- **Seguridad de passphrase**: Las contraseñas se almacenan con permisos 600
+- **SSIDs especiales**: Redes con `=`, espacios o caracteres no imprimibles usan nombres codificados en hex
+- **Reconexión automática**: Una vez guardada y conectada una red, iwd intentará reconectar automáticamente
+- **Escaneo WiFi**: El comando `list` escanea automáticamente redes y muestra opciones disponibles

@@ -1,0 +1,604 @@
+---
+title: Logs & Debugging
+description: How to find and interpret system logs on ouroborOS for troubleshooting.
+slug: troubleshooting/logs
+---
+
+# Logs & Debugging
+
+ouroborOS uses systemd's journal as the primary logging system. Here's how to find what you need.
+
+## Essential Commands
+
+```bash
+# View all logs (newest first)
+journalctl -e
+
+# Follow logs in real-time
+journalctl -f
+
+# Filter by service
+journalctl -u ouroboros-health.service
+journalctl -u our-pac.service
+
+# Filter by boot (previous boot)
+journalctl -b -1
+
+# Filter by priority (errors and worse)
+journalctl -p err
+```
+
+## System Health Check
+
+```bash
+# Run the built-in health check
+ouroboros-health --doctor
+
+# Machine-readable output
+ouroboros-health --json
+```
+
+:::note
+`ouroboros-health` checks: root RO status, failed units, machine-id, system.yaml validity, Btrfs pool usage, snapshot count, orphan boot entries, SMART status, Secure Boot, TPM2, and available updates.
+:::
+
+## Installer Logs
+
+### Installation Process Logs
+
+The ouroborOS installer creates detailed logs throughout the installation process:
+
+```bash
+# Main installer log (includes all states and operations)
+cat /tmp/ouroborOS-install.log
+
+# Filter by installation phase
+grep "NETWORK_SETUP" /tmp/ouroborOS-install.log
+grep "CONFIGURE" /tmp/ouroborOS-install.log
+
+# View error logs only
+grep -i error /tmp/ouroborOS-install.log
+
+# Check installation checkpoints
+cat /tmp/ouroborOS-checkpoints/last_checkpoint.json
+```
+
+### Debug Installation Issues
+
+If the installer fails, check the logs for troubleshooting:
+
+```bash
+# View the last 100 lines of installer output
+tail -n 100 /tmp/ouroborOS-install.log
+
+# Filter for specific operations that failed
+grep "pacstrap\|configure\|bootloader" /tmp/ouroborOS-install.log
+
+# Check for disk operation errors
+grep "disk.sh\|format\|mount" /tmp/ouroborOS-install.log
+```
+
+## Snapshot Metadata
+
+### Inspect Snapshot Details
+
+Each snapshot stores metadata for debugging and recovery:
+
+```bash
+# List all snapshots with metadata
+sudo our-snapshot list
+
+# View detailed snapshot information
+sudo our-snapshot info 2026-04-18T143000
+
+# View raw Btrfs properties
+btrfs property get /.snapshots/2026-04-18T143000 ro
+btrfs subvolume show /.snapshots/2026-04-18T143000
+
+# Check snapshot creation time
+stat /.snapshots/2026-04-18T143000
+```
+
+### Boot Entry Analysis
+
+```bash
+# List all systemd-boot entries
+bootctl list
+
+# View specific boot entry
+cat /boot/loader/entries/ouroborOS.conf
+cat /boot/loader/entries/ouroboros-snapshot-2026-04-18T143000.conf
+
+# Check boot entry validity
+bootctl status
+
+# Verify root subvolume paths
+findmnt -n -o OPTIONS / | grep subvol
+```
+
+## Advanced Debugging Techniques
+
+### systemd Journal Analysis
+
+```bash
+# View all logs with human-readable timestamps
+journalctl -xe
+
+# Filter by specific time range
+journalctl --since "2026-04-18 14:30:00" --until "2026-04-18 15:00:00"
+
+# Show logs from specific boot
+journalctl -b -1 -u systemd-networkd
+
+# Filter by process
+journalctl _PID=1
+
+# Show kernel messages
+journalctl -k
+
+# Export logs for debugging
+journalctl > system-logs.txt
+journalctl -u sshd > sshd-logs.txt
+```
+
+### Btrfs System Debugging
+
+```bash
+# Check filesystem integrity
+sudo btrfs check --readonly /
+
+# Show filesystem usage and statistics
+btrfs filesystem df /
+btrfs filesystem usage /
+
+# List all subvolumes
+btrfs subvolume list /
+
+# Show subvolume information
+btrfs subvolume show /
+
+# Balance filesystem status
+btrfs balance status /
+
+# Scrub for bad blocks
+sudo btrfs scrub start /
+```
+
+### Network Debugging
+
+```bash
+# Networkd logs
+journalctl -u systemd-networkd -f
+
+# i wireless daemon logs
+journalctl -u iwd -f
+
+# DNS resolver logs
+journalctl -u systemd-resolved -f
+
+# Show current network status
+networkctl status
+ip addr show
+iwctl station list
+```
+
+### Package Management Debugging
+
+```bash
+# our-pac operation logs
+journalctl -u our-pac.service -f
+
+# Pacman transaction logs
+cat /var/log/pacman.log
+
+# Check for broken packages
+pacman -Qkk
+pacman -T
+
+# Verify package databases
+pacman -Syy --overwrite '*'
+```
+
+### Bootloader Debugging
+
+```bash
+# systemd-boot information
+bootctl list
+bootctl status
+
+# View EFI variables
+efivar -l
+
+# Check kernel command line
+cat /proc/cmdline
+
+# View initramfs logs
+dmesg | grep -i initramfs
+```
+
+## System State Analysis
+
+### Current System Health
+
+```bash
+# Run comprehensive health check
+sudo ouroboros-health --doctor
+
+# JSON output for automation
+sudo ouroboros-health --json
+
+# Check specific components
+systemctl is-system-running
+systemctl list-units --failed
+systemctl list-dependencies
+```
+
+### Resource Monitoring
+
+```bash
+# Memory and CPU usage
+free -h
+top
+htop
+
+# Disk usage
+df -h
+du -sh /*
+
+# Btrfs usage per subvolume
+btrfs filesystem df -b /
+```
+
+## Emergency Logging
+
+### If System Fails to Boot
+
+```bash
+# 1. Boot from live ISO
+# 2. Mount root partition
+mount -t btrfs -o subvol=@ /dev/sdX2 /mnt
+
+# 3. Access logs from mounted system
+cat /mnt/tmp/ouroborOS-install.log
+cat /mnt/var/log/journal/*/system.journal | journalctl -o short-precise
+
+# 4. Check snapshot metadata
+ls -la /mnt/.snapshots/
+cat /mnt/.snapshots/.metadata/
+```
+
+### Save Debug Information
+
+```bash
+# Create debug bundle
+mkdir debug-$(date +%Y%m%d-%H%M%S)
+cd debug-$(date +%Y%m%d-%H%M%S)
+
+# Copy system information
+cp /tmp/ouroborOS-install.log .
+sudo journalctl > system.journal
+sudo btrfs filesystem df / > filesystem-stats.txt
+sudo btrfs subvolume list / > subvolume-list.txt
+bootctl list > boot-entries.txt
+sudo ouroboros-health --json > health.json
+
+# Archive debug bundle
+tar -czf debug-$(date +%Y%m%d-%H%M%S).tar.gz *
+```
+
+## Log Rotation and Management
+
+### Configure Log Retention
+
+```bash
+# View current journal settings
+journalctl --verify --vacuum-size=100M
+journalctl --disk-usage
+
+# Set retention policy
+sudo journalctl --vacuum-size=500M
+sudo journalctl --vacuum-time=2weeks
+```
+
+### Backup Important Logs
+
+```bash
+# Backup critical logs
+mkdir -p /var/backups/logs
+cp /tmp/ouroborOS-install.log /var/backups/logs/
+cp /var/log/pacman.log /var/backups/logs/
+
+# Rotate logs monthly
+logrotate --state /var/log/logrotate.state /etc/logrotate.conf
+```
+
+## Network Debugging Tools
+
+### systemd-networkd Analysis
+
+```bash
+# View network configuration
+networkctl status
+networkctl list
+
+# Check network interfaces
+ip addr show
+ip link show
+
+# Monitor network activity
+tcpdump -i any -n port 80
+tcpdump -i any -n host 8.8.8.8
+
+# Show routing table
+ip route show
+ip neigh show
+
+# Check DNS resolution
+resolvectl status
+dig @1.1.1.1 google.com
+```
+
+### iwd Wireless Debugging
+
+```bash
+# Check wireless device status
+iwctl device list
+iwctl station list
+
+# Enable verbose logging for iwd
+journalctl -u iwd -f -o cat
+
+# Scan for networks
+iwctl station wlan0 scan
+
+# Get detailed station information
+iwctl station wlan0 get-networks
+iwctl station wlan0 show-network SSID
+
+# Manual connection debugging
+iwctl station wlan0 disconnect
+iwctl station wlan0 connect YOUR_SSID
+```
+
+### systemd-resolved Analysis
+
+```bash
+# Check DNS resolver status
+resolvectl status
+resolvectl query example.com
+
+# View resolved logs
+journalctl -u systemd-resolved -f -o cat
+
+# Check DNS cache
+resolvectl statistics
+
+# Test DNS resolution
+systemd-resolve --status
+systemd-resolve --type=A --name=google.com
+```
+
+### Network Performance Analysis
+
+```bash
+# Network speed testing
+iperf3 -c test.server.com
+iperf3 -s  # Server mode
+
+# Connection testing
+mtr -r google.com
+ping -c 4 8.8.8.8
+
+# Network interface statistics
+netstat -i
+ss -tulnp
+
+# Bandwidth monitoring
+nethogs
+iftop -i eth0
+```
+
+### Network Configuration Debugging
+
+```bash
+# Check network configuration files
+cat /etc/systemd/network/*
+cat /etc/iwd/*.conf
+cat /etc/resolv.conf
+
+# Validate network units
+systemctl cat systemd-networkd.service
+systemctl cat iwd.service
+
+# Check for failed network units
+systemctl --failed | grep -i network
+
+# Reload network configuration
+systemctl reload systemd-networkd
+systemctl reload iwd
+```
+
+## Kernel Log Analysis
+
+### dmesg Kernel Messages
+
+```bash
+# View kernel ring buffer
+dmesg
+dmesg -T  # Show human-readable timestamps
+
+# Follow kernel messages in real-time
+dmesg -w
+
+# Filter by specific subsystems
+dmesg -T | grep -i "network"
+dmesg -T | grep -i "usb"
+dmesg -T | grep -i "pci"
+
+# Filter by severity
+dmesg -l err    # Errors only
+dmesg -l warn   # Warnings and errors
+dmesg -l info   # Info and above
+
+# Search for specific patterns
+dmesg | grep "eth0"
+dmesg | grep "driver"
+```
+
+### Kernel Module Analysis
+
+```bash
+# List loaded modules
+lsmod
+lsmod | grep -i network
+
+# Show module information
+modinfo e1000e
+modinfo iwlmvm
+
+# Load/unload modules (debugging)
+sudo modprobe -v e1000e
+sudo rmmod e1000e
+
+# Check module dependencies
+modinfo --depmod e1000e
+```
+
+### Network Driver Debugging
+
+```bash
+# Check network driver status
+ethtool -i eth0
+ethtool eth0
+
+# View driver statistics
+ethtool -S eth0
+ethtool -g eth0
+
+# Enable debugging features
+ethtool -k eth0
+ethtool -K eth0 tx off rx off
+
+# Check for dropped packets
+cat /proc/net/dev
+cat /proc/net/udp
+cat /proc/net/tcp
+```
+
+### Kernel Parameter Analysis
+
+```bash
+# View current kernel parameters
+sysctl -a
+sysctl net.ipv4.conf.all.forwarding
+
+# Check network-related sysctls
+sysctl net.core.rmem_max
+sysctl net.core.wmem_max
+sysctl net.ipv4.ip_forward
+
+# Temporarily modify kernel parameters
+sudo sysctl -w net.ipv4.conf.all.log_martians=1
+```
+
+### Network Stack Debugging
+
+```bash
+# View network namespace information
+ip netns list
+ip netns exec ns0 bash
+
+# Check connection tracking
+cat /proc/net/nf_conntrack
+sudo conntrack -L
+
+# View firewall rules (nftables)
+nft list ruleset
+nft list chain inet filter input
+
+# Monitor packet flow
+xtables-monitor -l
+```
+
+### Advanced Kernel Debugging
+
+```bash
+# Enable verbose kernel logging for debugging
+echo 1 | sudo tee /proc/sys/kernel/printk_debug
+
+# Log dropped packets to syslog
+sudo sysctl -w net.netfilter.nf_log_all=1
+
+# Enable extended BPF debugging
+echo 1 | sudo tee /proc/sys/kernel/bpf_jit_enable
+
+# Monitor kernel memory allocation
+cat /proc/slabinfo
+cat /proc/vmallocinfo
+```
+
+---
+
+## Network Debugging
+
+Check network link and addressing:
+
+```bash
+# Show all network interfaces and status
+networkctl status
+
+# Check IP address assignment
+ip addr show
+
+# Verify DNS resolution
+resolvectl status
+
+# Test connectivity
+ping -c 3 archlinux.org
+```
+
+Debug systemd-networkd issues:
+
+```bash
+# Networkd service logs
+journalctl -u systemd-networkd --since "1 hour ago"
+
+# Check .network configuration files
+ls /etc/systemd/network/
+
+# Verify iwd WiFi status
+iwctl station list
+iwctl station wlan0 show
+```
+
+## Recovery Procedures
+
+### Corrupted Btrfs Filesystem
+
+```bash
+# Check filesystem integrity (mount read-only first)
+mount -o ro /dev/sda2 /mnt
+btrfs scrub start /mnt
+
+# If scrub finds errors, try repair
+btrfs scrub start -B /mnt
+
+# Check device stats for hardware errors
+btrfs device stats /mnt
+```
+
+### Failed Boot Recovery
+
+```bash
+# Boot from ISO, mount the system
+mount -o subvol=@ /dev/sda2 /mnt
+
+# Check bootloader entries
+ls /mnt/loader/entries/
+
+# Verify boot configuration
+cat /mnt/loader/loader.conf
+
+# Reinstall bootloader if needed
+arch-chroot /mnt bootctl install
+```

@@ -1,0 +1,249 @@
+---
+title: Bluetooth Management
+description: Bluetooth device management with our-bluetooth in ouroborOS
+slug: network/our-bluetooth
+---
+
+# Bluetooth Management (our-bluetooth)
+
+`our-bluetooth` is a comprehensive Bluetooth management tool built on top of bluetoothctl with experimental Low Energy (LE) support. It provides intuitive commands for device discovery, pairing, and management in ouroborOS.
+
+## Overview
+
+The `our-bluetooth` tool provides:
+
+- **Complete Bluetooth lifecycle management** with essential commands
+- **Low Energy (LE) support** with experimental features
+- **Device discovery and pairing** with automatic authentication
+- **Power management** for adapter control
+- **FIDO2/WebAuthn integration** via BLE AdvertisingMonitor API
+
+:::note
+
+our-bluetooth uses bluetoothctl as the backend with experimental extensions for Low Energy functionality. The experimental mode is required for LE features and Advertising Monitor API used by FIDO2/WebAuthn.
+
+:::
+
+## Installation
+
+The Bluetooth manager is pre-installed with ouroborOS. Verify installation:
+
+```bash
+our-bluetooth --version
+our-bluetooth --help
+```
+
+## Usage
+
+### Commands
+
+#### `list` - Scan and list devices
+
+```bash
+# List nearby and paired devices (✓ = connected)
+our-bluetooth list
+
+# Shows available devices with connection status
+```
+
+#### `pair <MAC>` - Pair with a device
+
+```bash
+# Pair with a device (interactive PIN if needed)
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# May prompt for PIN confirmation on both device and terminal
+```
+
+#### `connect <MAC>` - Connect to paired device
+
+```bash
+# Connect to a paired device
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+
+# Device must be paired and in range
+```
+
+#### `disconnect <MAC>` - Disconnect from device
+
+```bash
+# Disconnect from a device
+our-bluetooth disconnect AA:BB:CC:DD:EE:FF
+```
+
+#### `forget <MAC>` - Remove pairing
+
+```bash
+# Remove device pairing
+our-bluetooth forget AA:BB:CC:DD:EE:FF
+
+# Permanently removes the pairing information
+```
+
+#### `status` - Show adapter status
+
+```bash
+# Show adapter status and connected devices
+our-bluetooth status
+
+# Displays adapter information and connected devices
+```
+
+#### `on` / `off` - Power control
+
+```bash
+# Power on the Bluetooth adapter
+our-bluetooth on
+
+# Power off the Bluetooth adapter
+our-bluetooth off
+```
+
+#### `le status` - Show BLE capabilities
+
+```bash
+# Show BLE (Low Energy) adapter capabilities
+our-bluetooth le status
+
+# Displays adapter info and experimental mode status
+```
+
+#### `le experimental on|off` - Experimental mode
+
+```bash
+# Enable BlueZ experimental mode (required for FIDO2 QR)
+our-bluetooth le experimental on
+
+# Disable experimental mode
+our-bluetooth le experimental off
+```
+
+#### `le advmon` - Advertising Monitor API
+
+```bash
+# Check AdvertisingMonitor API readiness (for FIDO2 QR)
+our-bluetooth le advmon
+
+# Verifies Chrome/Firefox QR passkey capability
+```
+
+#### `help` - Show help
+
+```bash
+# Show complete help information
+our-bluetooth help
+
+# Displays usage instructions and available commands
+```
+
+## Examples
+
+### Basic device workflow
+
+```bash
+# 1. List available devices
+our-bluetooth list
+
+# 2. Pair with a device (prompts for PIN if needed)
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# 3. Connect to the paired device
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+
+# 4. Check connection status
+our-bluetooth status
+
+# 5. Disconnect when done
+our-bluetooth disconnect AA:BB:CC:DD:EE:FF
+```
+
+### Device management
+
+```bash
+# Remove a device pairing
+our-bluetooth forget AA:BB:CC:DD:EE:FF
+
+# Power off Bluetooth when not in use
+our-bluetooth off
+
+# Power on when ready to use
+our-bluetooth on
+```
+
+### FIDO2/WebAuthn setup
+
+```bash
+# Enable experimental mode for FIDO2 QR passkeys
+our-bluetooth le experimental on
+
+# Check if AdvertisingMonitor API is available
+our-bluetooth le advmon
+
+# Restart Bluetooth service to apply changes
+sudo systemctl restart bluetooth.service
+```
+
+### BLE device management
+
+```bash
+# Check BLE capabilities
+our-bluetooth le status
+
+# Pair with BLE device
+our-bluetooth pair AA:BB:CC:DD:EE:FF
+
+# Connect to BLE device
+our-bluetooth connect AA:BB:CC:DD:EE:FF
+```
+
+## FIDO2 / PASSKEYS / QR CODES
+
+For FIDO2/WebAuthn authentication and QR code passkeys:
+
+- Use `our-fido2` for complete FIDO2 management
+- BlueZ experimental mode is required for CTAP2 hybrid transport
+- Enable with: `our-bluetooth le experimental on`
+- Check readiness with: `our-fido2 qr-ready`
+
+## Requirements
+
+- **bluez and bluez-utils** must be installed
+- **bluetooth.service** must be running
+- **Root privileges** are required for most operations
+- **libfido2** for FIDO2 support (our-fido2 tool)
+
+## System Integration
+
+### Service management
+
+```bash
+# Enable and start Bluetooth service
+sudo systemctl enable bluetooth.service
+sudo systemctl start bluetooth.service
+
+# Check service status
+sudo systemctl status bluetooth.service
+
+# View logs
+journalctl -u bluetooth.service -f
+```
+
+### Experimental mode setup
+
+When enabling experimental mode:
+
+```bash
+# This creates a systemd drop-in for bluetooth.service
+our-bluetooth le experimental on
+
+# You may need to restart the service
+sudo systemctl restart bluetooth.service
+```
+
+## Notes
+
+- **MAC format**: Use AA:BB:CC:DD:EE:FF format
+- **PIN pairing**: Some devices require PIN confirmation on both device and terminal
+- **Experimental mode**: Required for FIDO2 QR passkey flow in Chrome/Firefox
+- **Auto-connect**: Once paired, devices will reconnect automatically when in range
+- **Power management**: Use `on`/`off` to control adapter power state
