@@ -1,0 +1,38 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default>
+  <slot />
+</Default>
+
+<div class="arkh-footer">
+  <a href="https://github.com/Arkh-Ur" target="_blank" rel="noopener noreferrer" aria-label="Arkh-Ur">
+    <img src="/arkh-ur.svg" alt="Arkh-Ur" class="arkh-logo" loading="lazy" />
+  </a>
+</div>
+
+<style>
+  .arkh-footer {
+    display: flex;
+    justify-content: center;
+    padding: 0.75rem 0 0.25rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+    margin-top: 0.5rem;
+  }
+  .arkh-logo {
+    height: 1.5rem;
+    width: auto;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+  }
+  .arkh-logo:hover {
+    opacity: 1;
+  }
+  :root[data-theme='light'] .arkh-logo {
+    opacity: 0.5;
+  }
+  :root[data-theme='light'] .arkh-logo:hover {
+    opacity: 0.8;
+  }
+</style>
