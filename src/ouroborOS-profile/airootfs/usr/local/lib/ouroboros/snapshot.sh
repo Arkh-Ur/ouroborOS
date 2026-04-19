@@ -78,6 +78,51 @@ delete_snapshot() {
     _log_ok "Snapshot deleted: ${path}"
 }
 
+# write_snapshot_metadata SNAP_NAME [TYPE] — write .snapshot.yaml inside a snapshot
+#
+# Args:
+#   SNAP_NAME — snapshot name (subdirectory of /.snapshots)
+#   TYPE      — one of: install, pre-update, manual, rebase (default: manual)
+write_snapshot_metadata() {
+    local snap_name="$1"
+    local snap_type="${2:-manual}"
+    local snap_dir="/.snapshots/${snap_name}"
+    local yaml_file="${snap_dir}/.snapshot.yaml"
+    local system_yaml="/etc/ouroboros/system.yaml"
+
+    [[ -d "$snap_dir" ]] || return 0
+
+    local version="unknown"
+    local pkg_count=0
+    local sys_hash="none"
+
+    if [[ -f "$system_yaml" ]]; then
+        version=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('$system_yaml'))
+print(d.get('version', 'unknown'))
+" 2>/dev/null || echo "unknown")
+        pkg_count=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('$system_yaml'))
+print(len(d.get('base_packages', []) + d.get('user_packages', [])))
+" 2>/dev/null || echo 0)
+        sys_hash="sha256:$(sha256sum "$system_yaml" | cut -d' ' -f1)"
+    fi
+
+    btrfs property set "$snap_dir" ro false 2>/dev/null || true
+    cat > "$yaml_file" <<EOF
+snapshot: ${snap_name}
+created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+type: ${snap_type}
+system_version: ${version}
+system_yaml_hash: ${sys_hash}
+packages_count: ${pkg_count}
+EOF
+    btrfs property set "$snap_dir" ro true 2>/dev/null || true
+    _log_ok "Snapshot metadata written: ${yaml_file}"
+}
+
 # list_snapshots SNAPSHOTS_DIR — list available snapshots
 #
 # Args:
