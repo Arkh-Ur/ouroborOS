@@ -391,13 +391,16 @@ class Installer:
 
     def _handle_preflight(self) -> None:
         """PREFLIGHT — verify system requirements."""
-        checks = [
+        checks: list[tuple[str, object]] = [
             ("UEFI mode", self._check_uefi),
             ("Root privileges", self._check_root),
             ("Required tools", self._check_tools),
             ("Minimum RAM (1 GiB)", self._check_ram),
-            ("Internet connectivity", self._check_network),
         ]
+        if not self._has_internet() and self._detect_offline_cache():
+            log.info("No internet + offline cache detected — skipping connectivity check")
+        else:
+            checks.append(("Internet connectivity", self._check_network))
 
         self._update_progress(State.PREFLIGHT, 0, "Iniciando verificación...")
 
@@ -709,10 +712,25 @@ class Installer:
             return str(cache)
         return None
 
+    def _has_internet(self) -> bool:
+        """Return True if internet is reachable."""
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", "8.8.8.8"],
+            capture_output=True,
+            check=False,
+        )
+        return result.returncode == 0
+
     def _handle_install(self) -> None:
         """INSTALL — pacstrap base system with automatic retries."""
         target = self.config.install_target
-        self._generate_mirrorlist()
+
+        # Offline mode: skip reflector (needs internet), use ISO default mirrorlist
+        if not self._has_internet() and self._detect_offline_cache():
+            log.info("Offline mode: skipping mirrorlist generation (using ISO default)")
+        else:
+            self._generate_mirrorlist()
+
         self._init_pacman_keyring()
 
         # Write custom mkinitcpio.conf BEFORE pacstrap so that the linux-zen
@@ -774,8 +792,8 @@ class Installer:
         self.config.installed_packages = list(packages)
 
         offline_cache = self._detect_offline_cache()
-        if offline_cache:
-            log.info("Offline package cache detected at %s — using --cachedir", offline_cache)
+        if offline_cache and not self._has_internet():
+            log.info("Offline mode: using package cache at %s", offline_cache)
             cmd = ["pacstrap", "-K", "--cachedir", offline_cache, target] + packages
         else:
             cmd = ["pacstrap", "-K", target] + packages

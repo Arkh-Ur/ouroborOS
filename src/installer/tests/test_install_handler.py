@@ -41,6 +41,10 @@ def _failure(code: int = 1) -> CompletedProcess:
 
 
 class TestHandleInstallHappyPath:
+    @pytest.fixture(autouse=True)
+    def _mock_internet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from installer import state_machine  # noqa: PLC0415
+        monkeypatch.setattr(state_machine.Installer, "_has_internet", lambda self: True)
     def test_pacstrap_called_with_base_packages(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
 
@@ -141,6 +145,11 @@ class TestHandleInstallHappyPath:
 
 
 class TestHandleInstallRetry:
+    @pytest.fixture(autouse=True)
+    def _mock_internet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from installer import state_machine  # noqa: PLC0415
+        monkeypatch.setattr(state_machine.Installer, "_has_internet", lambda self: True)
+
     def test_retries_on_failure_then_succeeds(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
         call_count = 0
@@ -209,6 +218,11 @@ class TestHandleInstallRetry:
 
 
 class TestHandleInstallEdgeCases:
+    @pytest.fixture(autouse=True)
+    def _mock_internet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from installer import state_machine  # noqa: PLC0415
+        monkeypatch.setattr(state_machine.Installer, "_has_internet", lambda self: True)
+
     def test_pacstrap_stdout_logged(self, tmp_path: Path) -> None:
         """Covers the stdout-logging block (lines 644-648)."""
         inst = _make_installer(tmp_path)

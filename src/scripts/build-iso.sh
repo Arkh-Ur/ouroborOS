@@ -303,13 +303,17 @@ inject_version
 build_offline_cache() {
     local cache_dest="${PROFILE_DIR}/airootfs/var/cache/pacman/pkg"
     local pkg_list="${PROFILE_DIR}/packages.x86_64"
+    # pacman drops privileges to alpm for downloads — needs a writable path under /var
+    local tmp_cache="/var/cache/pacman/ouroboros-offline-cache"
 
     [[ -f "$pkg_list" ]] || { log_warn "--with-cache: packages.x86_64 not found — skipping cache"; return 0; }
 
     log_section "Building Offline Package Cache"
     log_info "Downloading packages for offline install..."
 
-    mkdir -p "$cache_dest"
+    mkdir -p "$tmp_cache" "$cache_dest"
+    chown alpm:alpm "$tmp_cache" 2>/dev/null || true
+    chmod 755 "$tmp_cache"
 
     local pkgs=()
     while IFS= read -r line; do
@@ -318,7 +322,11 @@ build_offline_cache() {
         pkgs+=("$line")
     done < "$pkg_list"
 
-    pacman --noconfirm --cachedir "$cache_dest" --downloadonly -Syw "${pkgs[@]}" 2>/dev/null || true
+    pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}" || true
+
+    # Copy downloaded packages to airootfs (erofs will include them in the ISO)
+    find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
+    rm -rf "$tmp_cache"
 
     local count
     count=$(find "$cache_dest" -name "*.pkg.tar.zst" | wc -l)
