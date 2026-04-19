@@ -1120,6 +1120,12 @@ class TestSystemYaml:
 class TestInstallSnapshotMetadata:
     """Tests for _write_install_snapshot_metadata() in state_machine.py."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_btrfs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Patch subprocess.run so btrfs property set doesn't fail on tmpfs."""
+        import subprocess  # noqa: PLC0415
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: None)
+
     def _make_installer(self, tmp_path: Path) -> Installer:
         inst = Installer()
         inst.tui = None

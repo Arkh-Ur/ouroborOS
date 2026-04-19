@@ -999,7 +999,12 @@ class Installer:
             f"packages_count: {pkg_count}\n"
         )
         snap_yaml = snap_dir / ".snapshot.yaml"
-        snap_yaml.write_text(metadata, encoding="utf-8")
+        import subprocess  # noqa: PLC0415
+        subprocess.run(["btrfs", "property", "set", str(snap_dir), "ro", "false"], check=True)
+        try:
+            snap_yaml.write_text(metadata, encoding="utf-8")
+        finally:
+            subprocess.run(["btrfs", "property", "set", str(snap_dir), "ro", "true"], check=True)
         log.info("Install snapshot metadata written: %s", snap_yaml)
 
     def _handle_finish(self) -> None:
