@@ -301,7 +301,9 @@ inject_version
 # Pre-downloads packages into the airootfs so the installer can work
 # without an internet connection. Opt-in via --with-cache.
 build_offline_cache() {
-    local cache_dest="${PROFILE_DIR}/airootfs/var/cache/pacman/pkg"
+    # /var/cache/pacman/pkg is wiped by mkarchiso's _cleanup_pacstrap_dir()
+    # so we use a separate path that survives the cleanup phase.
+    local cache_dest="${PROFILE_DIR}/airootfs/var/cache/ouroboros-offline"
     local pkg_list="${PROFILE_DIR}/packages.x86_64"
     local tmp_cache="/var/cache/pacman/ouroboros-offline-cache"
 

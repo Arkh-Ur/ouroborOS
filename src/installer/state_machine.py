@@ -706,8 +706,9 @@ class Installer:
         return None
 
     def _detect_offline_cache(self) -> str | None:
-        """Return path to pre-populated pacman cache if ISO was built with --with-cache."""
-        cache = Path("/var/cache/pacman/pkg")
+        """Return path to pre-populated package cache if ISO was built with --with-cache."""
+        # mkarchiso wipes /var/cache/pacman/pkg — cache lives in a separate path
+        cache = Path("/var/cache/ouroboros-offline")
         if cache.is_dir() and any(cache.glob("*.pkg.tar.zst")):
             return str(cache)
         return None
