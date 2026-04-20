@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -793,9 +794,31 @@ class Installer:
         self.config.installed_packages = list(packages)
 
         offline_cache = self._detect_offline_cache()
-        if offline_cache and not self._has_internet():
+        is_offline = offline_cache and not self._has_internet()
+        if is_offline:
             log.info("Offline mode: using package cache at %s", offline_cache)
-            cmd = ["pacstrap", "-K", "--cachedir", offline_cache, target] + packages
+            # pacstrap has no --cachedir; bind-mount the offline cache onto
+            # pacman's default cache dir so pacstrap -c finds the packages.
+            subprocess.run(
+                ["mount", "--bind", offline_cache, "/var/cache/pacman/pkg"],
+                check=True,
+            )
+            # pacstrap -K runs `pacman -Sy` internally to sync databases,
+            # which fails without mirrors or existing sync DB.  Pre-seed the
+            # target with the host's sync DB so pacman skips the download.
+            target_sync = Path(target) / "var/lib/pacman/sync"
+            target_sync.mkdir(parents=True, exist_ok=True)
+            for db_file in Path("/var/lib/pacman/sync").glob("*"):
+                if db_file.is_file():
+                    shutil.copy2(db_file, target_sync / db_file.name)
+                    log.debug("Copied sync DB: %s", db_file.name)
+            # Also copy mirrorlist so pacman doesn't complain "no servers
+            # configured for repository" when reading the sync DB.
+            target_mirrorlist = Path(target) / "etc/pacman.d"
+            target_mirrorlist.mkdir(parents=True, exist_ok=True)
+            shutil.copy2("/etc/pacman.d/mirrorlist", target_mirrorlist / "mirrorlist")
+            log.info("Pre-seeded pacman sync DB and mirrorlist into target.")
+            cmd = ["pacstrap", "-K", "-c", target] + packages
         else:
             cmd = ["pacstrap", "-K", target] + packages
         max_retries = 10
@@ -830,10 +853,12 @@ class Installer:
                 break
 
             log.warning(
-                "pacstrap attempt %d/%d failed (exit %d). Regenerating mirrorlist and retrying.",
+                "pacstrap attempt %d/%d failed (exit %d). %s and retrying.",
                 attempt, max_retries, result.returncode,
+                "Regenerating mirrorlist" if not is_offline else "Offline — mirrorlist unchanged",
             )
-            self._generate_mirrorlist()
+            if not is_offline:
+                self._generate_mirrorlist()
 
             if attempt == max_retries:
                 raise InstallerError(

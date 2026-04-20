@@ -346,7 +346,7 @@ build_offline_cache() {
         log_info "Including packages from packages.offline manifest"
     fi
 
-    pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}" || true
+    pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}"
 
     find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
     rm -rf "$tmp_cache"
