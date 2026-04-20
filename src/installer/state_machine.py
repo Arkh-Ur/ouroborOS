@@ -803,22 +803,49 @@ class Installer:
                 ["mount", "--bind", offline_cache, "/var/cache/pacman/pkg"],
                 check=True,
             )
-            # pacstrap -K runs `pacman -Sy` internally to sync databases,
-            # which fails without mirrors or existing sync DB.  Pre-seed the
-            # target with the host's sync DB so pacman skips the download.
-            target_sync = Path(target) / "var/lib/pacman/sync"
-            target_sync.mkdir(parents=True, exist_ok=True)
-            for db_file in Path("/var/lib/pacman/sync").glob("*"):
-                if db_file.is_file():
-                    shutil.copy2(db_file, target_sync / db_file.name)
-                    log.debug("Copied sync DB: %s", db_file.name)
-            # Also copy mirrorlist so pacman doesn't complain "no servers
-            # configured for repository" when reading the sync DB.
-            target_mirrorlist = Path(target) / "etc/pacman.d"
-            target_mirrorlist.mkdir(parents=True, exist_ok=True)
-            shutil.copy2("/etc/pacman.d/mirrorlist", target_mirrorlist / "mirrorlist")
-            log.info("Pre-seeded pacman sync DB and mirrorlist into target.")
-            cmd = ["pacstrap", "-K", "-c", target] + packages
+            # pacstrap ALWAYS runs `pacman -Sy` internally, which needs
+            # reachable mirrors.  In offline mode there is no network, so we
+            # build a local file:// repo from the cached packages and point a
+            # custom pacman.conf at it.  This makes `pacman -Sy` succeed by
+            # "syncing" from the local repo DB.
+            cache_dir = Path("/var/cache/pacman/pkg")
+            pkg_files = sorted(cache_dir.glob("*.pkg.tar.zst"))
+            if pkg_files:
+                repo_db = cache_dir / "offline.db.tar.gz"
+                log.info(
+                    "Creating local repo DB from %d cached packages...",
+                    len(pkg_files),
+                )
+                repo_add_cmd = [str(repo_db)] + [str(p) for p in pkg_files]
+                result = subprocess.run(
+                    ["repo-add"] + repo_add_cmd,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    log.warning(
+                        "repo-add failed (exit %d): %s",
+                        result.returncode,
+                        result.stderr,
+                    )
+                else:
+                    log.info("Local repo DB created: %s", repo_db)
+            # Custom pacman.conf that only uses the local offline repo.
+            # SigLevel=Never is safe here — packages came from official repos
+            # during ISO build and are stored in the trusted offline cache.
+            offline_conf = Path("/tmp/offline-pacman.conf")
+            offline_conf.write_text(
+                "[options]\n"
+                "Architecture = auto\n"
+                "SigLevel = Never\n"
+                "CacheDir = /var/cache/pacman/pkg\n"
+                "\n"
+                "[offline]\n"
+                "Server = file:///var/cache/pacman/pkg\n"
+            )
+            log.info("Created offline pacman.conf at %s", offline_conf)
+            cmd = ["pacstrap", "-K", "-c", "-C", str(offline_conf), target] + packages
         else:
             cmd = ["pacstrap", "-K", target] + packages
         max_retries = 10
