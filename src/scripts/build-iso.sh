@@ -349,6 +349,17 @@ build_offline_cache() {
     pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}"
 
     find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
+
+    # --cachedir is additive: packages already in the default cache are NOT
+    # re-downloaded to $tmp_cache.  Merge anything present in the default
+    # cache so the offline cache is self-contained.
+    if [[ -d /var/cache/pacman/pkg ]]; then
+        for f in /var/cache/pacman/pkg/*.pkg.tar.zst; do
+            [[ -f "$f" ]] || continue
+            [[ -f "$cache_dest/$(basename "$f")" ]] || cp "$f" "$cache_dest/"
+        done
+    fi
+
     rm -rf "$tmp_cache"
 
     local count
