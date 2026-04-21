@@ -351,7 +351,18 @@ build_offline_cache() {
         log_info "Including packages from packages.offline manifest"
     fi
 
-    pacman --noconfirm --cachedir "$tmp_cache" -Syw "${pkgs[@]}"
+    # Resolve the full dependency tree explicitly.  pacman -Syw skips
+    # deps of already-installed packages (e.g. tree-sitter for neovim),
+    # so we resolve upfront and pass every package individually.
+    local resolved
+    resolved=$(pacman -S --print-format="%n" "${pkgs[@]}" 2>/dev/null | sort -u)
+    if [[ -z "$resolved" ]]; then
+        resolved="${pkgs[*]}"
+    fi
+    log_info "Resolved %d packages (from %d explicit)" "$(echo "$resolved" | wc -w)" "${#pkgs[@]}"
+
+    # shellcheck disable=SC2086
+    pacman --noconfirm --cachedir "$tmp_cache" -Syw $resolved
 
     find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
 
