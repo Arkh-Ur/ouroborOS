@@ -1120,7 +1120,11 @@ GREETD_EOF
         log_info "No display manager enabled (profile: ${DESKTOP_PROFILE:-minimal})."
     fi
 
-    # GPU driver installation
+    # GPU driver installation — skip in offline mode (no sync DB in chroot).
+    # The user can install GPU drivers post-install with `our-pac`.
+    if [[ "${OFFLINE_MODE:-}" == "true" ]]; then
+        log_info "GPU: offline mode — skipping driver install (install post-boot via our-pac)."
+    else
     case "${GPU_DRIVER:-auto}" in
         nvidia)
             arch-chroot "${TARGET}" pacman -S --noconfirm nvidia nvidia-utils
@@ -1153,6 +1157,7 @@ GREETD_EOF
             log_info "GPU: driver install skipped (none selected)."
             ;;
     esac
+    fi
 
     # our-container autostart — copy default config and enable service if containers are listed.
     # The autostart.conf shipped in the ISO is empty (comments only); users add container

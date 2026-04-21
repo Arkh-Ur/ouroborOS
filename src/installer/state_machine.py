@@ -983,6 +983,7 @@ class Installer:
                 "SECURE_BOOT": "1" if self.config.security.secure_boot else "0",
                 "SBCTL_INCLUDE_MS_KEYS": "1" if self.config.security.sbctl_include_ms_keys else "0",
                 "ISO_VERSION": _read_iso_version(),
+                "OFFLINE_MODE": "true" if (not self._has_internet() and self._detect_offline_cache()) else "false",
             }
         )
 
