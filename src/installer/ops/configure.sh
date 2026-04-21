@@ -1159,6 +1159,11 @@ GREETD_EOF
     esac
     fi
 
+    # GPU driver install via pacman triggers the zzz-post-upgrade hook which
+    # sets the Btrfs @ subvolume read-only.  Undo that so subsequent file
+    # copies to ${TARGET} still work.
+    btrfs property set "${TARGET}" ro false 2>/dev/null || true
+
     # our-container autostart — copy default config and enable service if containers are listed.
     # The autostart.conf shipped in the ISO is empty (comments only); users add container
     # names post-install.  During unattended installs the config can be pre-populated.
