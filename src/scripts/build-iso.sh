@@ -359,7 +359,8 @@ build_offline_cache() {
     # thinks nothing is installed and resolves the complete tree.
     local fake_db
     fake_db=$(mktemp -d /tmp/offline-resolve.XXXXXX)
-    cp /var/lib/pacman/sync/*.db "$fake_db/" 2>/dev/null || true
+    mkdir -p "$fake_db/sync"
+    cp /var/lib/pacman/sync/*.db "$fake_db/sync/" 2>/dev/null || true
     local resolved
     resolved=$(pacman --dbpath "$fake_db" -S --print-format="%n" "${pkgs[@]}" 2>/dev/null | sort -u)
     rm -rf "$fake_db"
