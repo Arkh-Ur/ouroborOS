@@ -416,10 +416,19 @@ BUILD_START=$(date +%s)
 export TMPDIR="$WORK_DIR/tmp"
 mkdir -p "$TMPDIR"
 
+# Disable pipefail for this pipe: `yes` gets SIGPIPE (141) when mkarchiso closes stdin.
+# We only care about mkarchiso's exit code, not yes's.
+set +o pipefail
 yes '' | mkarchiso -v \
     -w "$WORK_DIR/work" \
     -o "$OUTPUT_DIR" \
     "$PROFILE_DIR"
+mk_exit=$?
+set -o pipefail
+if [[ $mk_exit -ne 0 ]]; then
+    log_err "mkarchiso failed with exit code $mk_exit"
+    exit $mk_exit
+fi
 
 BUILD_END=$(date +%s)
 BUILD_DURATION=$((BUILD_END - BUILD_START))
