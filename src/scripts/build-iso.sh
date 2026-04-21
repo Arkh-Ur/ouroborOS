@@ -312,6 +312,7 @@ build_offline_cache() {
     log_section "Building Offline Package Cache"
     log_info "Downloading packages for offline install..."
 
+    rm -rf "$cache_dest"
     mkdir -p "$tmp_cache" "$cache_dest"
     chown alpm:alpm "$tmp_cache" 2>/dev/null || true
     chmod 755 "$tmp_cache"
@@ -351,11 +352,17 @@ build_offline_cache() {
         log_info "Including packages from packages.offline manifest"
     fi
 
-    # Resolve the full dependency tree explicitly.  pacman -Syw skips
-    # deps of already-installed packages (e.g. tree-sitter for neovim),
-    # so we resolve upfront and pass every package individually.
+    # Resolve the full dependency tree against a FAKE empty local database.
+    # pacman -S --print-format skips packages already installed on the host,
+    # so glibc, bash, etc. never appear in the resolved list.  By pointing
+    # --dbpath to a temp dir with only the sync DBs (no local DB), pacman
+    # thinks nothing is installed and resolves the complete tree.
+    local fake_db
+    fake_db=$(mktemp -d /tmp/offline-resolve.XXXXXX)
+    cp /var/lib/pacman/sync/*.db "$fake_db/" 2>/dev/null || true
     local resolved
-    resolved=$(pacman -S --print-format="%n" "${pkgs[@]}" 2>/dev/null | sort -u)
+    resolved=$(pacman --dbpath "$fake_db" -S --print-format="%n" "${pkgs[@]}" 2>/dev/null | sort -u)
+    rm -rf "$fake_db"
     if [[ -z "$resolved" ]]; then
         resolved="${pkgs[*]}"
     fi
