@@ -361,20 +361,26 @@ build_offline_cache() {
     fi
     log_info "Resolved %d packages (from %d explicit)" "$(echo "$resolved" | wc -w)" "${#pkgs[@]}"
 
+    # Download ALL packages to an isolated cache via a custom pacman.conf
+    # that uses ONLY $tmp_cache as CacheDir.  The default --cachedir is
+    # additive (falls back to /var/cache/pacman/pkg), which causes
+    # packages already present there to be skipped — and the host cache
+    # may have been cleaned, leaving gaps in the offline set.
+    local offline_pacman_conf
+    offline_pacman_conf=$(mktemp /tmp/offline-build-pacman.XXXXXX.conf)
+    {
+        printf '[options]\n'
+        printf 'CacheDir = %s\n' "$tmp_cache"
+        printf 'Architecture = auto\n\n'
+        printf '[core]\nInclude = /etc/pacman.d/mirrorlist\n\n'
+        printf '[extra]\nInclude = /etc/pacman.d/mirrorlist\n'
+    } > "$offline_pacman_conf"
+
     # shellcheck disable=SC2086
-    pacman --noconfirm --cachedir "$tmp_cache" -Syw $resolved
+    pacman --config "$offline_pacman_conf" --noconfirm -Syw $resolved
+    rm -f "$offline_pacman_conf"
 
     find "$tmp_cache" -name "*.pkg.tar.zst" -exec cp {} "$cache_dest/" \;
-
-    # --cachedir is additive: packages already in the default cache are NOT
-    # re-downloaded to $tmp_cache.  Merge anything present in the default
-    # cache so the offline cache is self-contained.
-    if [[ -d /var/cache/pacman/pkg ]]; then
-        for f in /var/cache/pacman/pkg/*.pkg.tar.zst; do
-            [[ -f "$f" ]] || continue
-            [[ -f "$cache_dest/$(basename "$f")" ]] || cp "$f" "$cache_dest/"
-        done
-    fi
 
     rm -rf "$tmp_cache"
 
