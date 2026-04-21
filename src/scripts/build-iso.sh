@@ -370,6 +370,7 @@ build_offline_cache() {
     offline_pacman_conf=$(mktemp /tmp/offline-build-pacman.XXXXXX.conf)
     {
         printf '[options]\n'
+        printf 'SigLevel = Required DatabaseOptional\n'
         printf 'CacheDir = %s\n' "$tmp_cache"
         printf 'Architecture = auto\n\n'
         printf '[core]\nInclude = /etc/pacman.d/mirrorlist\n\n'
