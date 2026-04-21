@@ -149,7 +149,7 @@ jobs:
             exit 1
           fi
 
-      - name: Build ISO
+      - name: Build ISO (online)
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
@@ -158,6 +158,31 @@ jobs:
             --workdir /home/ouroborOS-build \
             --output out/ \
             --version="${VERSION}"
+
+      - name: Rename online ISO
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
+          EXT="${ISO##*.}"
+          BASE="${ISO%.*}"
+          mv "$ISO" "${BASE}-online.${EXT}"
+
+      - name: Build ISO (offline cache)
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          bash src/scripts/build-iso.sh \
+            --clean \
+            --with-cache \
+            --workdir /home/ouroborOS-build \
+            --output out/ \
+            --version="${VERSION}"
+
+      - name: Rename offline ISO
+        run: |
+          ISO=$(ls out/ouroborOS-*.iso | grep -v online | head -n 1)
+          EXT="${ISO##*.}"
+          BASE="${ISO%.*}"
+          mv "$ISO" "${BASE}-offline.${EXT}"
 
       - name: Generate channels/stable.yaml
         run: |
@@ -177,35 +202,36 @@ jobs:
           CHANEOF
           cat channels/stable.yaml
 
-      - name: Generate SHA256 checksum
+      - name: Generate SHA256 checksums
         run: |
           cd out/
           sha256sum ouroborOS-*.iso > ouroborOS-SHA256SUMS.txt
           cat ouroborOS-SHA256SUMS.txt
 
-      - name: Verify ISO size (800 MiB – 2.5 GiB)
+      - name: Verify ISO sizes
         run: |
-          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
-          SIZE=$(stat -c%s "$ISO")
-          MIN=$((800 * 1024 * 1024))
-          MAX=$((2560 * 1024 * 1024))
-          echo "ISO size: $(( SIZE / 1024 / 1024 )) MiB"
-          if [[ $SIZE -lt $MIN ]]; then
-            echo "::error::ISO too small: $(( SIZE / 1024 / 1024 )) MiB (min 800 MiB)"
-            exit 1
-          fi
-          if [[ $SIZE -gt $MAX ]]; then
-            echo "::error::ISO too large: $(( SIZE / 1024 / 1024 )) MiB (max 2560 MiB)"
-            exit 1
-          fi
-          echo "ISO size OK."
+          for ISO in out/ouroborOS-*.iso; do
+            SIZE=$(stat -c%s "$ISO")
+            SIZE_MB=$(( SIZE / 1024 / 1024 ))
+            echo "$(basename "$ISO"): ${SIZE_MB} MiB"
+            if [[ $SIZE -lt $((800 * 1024 * 1024)) ]]; then
+              echo "::error::$(basename "$ISO") too small: ${SIZE_MB} MiB (min 800 MiB)"
+              exit 1
+            fi
+            if [[ $SIZE -gt $((5000 * 1024 * 1024)) ]]; then
+              echo "::error::$(basename "$ISO") too large: ${SIZE_MB} MiB (max 5000 MiB)"
+              exit 1
+            fi
+          done
+          echo "All ISO sizes OK."
 
       - name: Create prerelease in private repo
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
-          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
+          ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
+          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Prerelease $TAG already exists — deleting and recreating"
@@ -215,7 +241,8 @@ jobs:
             --title "ouroborOS ${TAG} (Alpha)" \
             --prerelease \
             --notes "Pre-release build from tag ${TAG}. Mirror to public repo follows." \
-            "$ISO" \
+            "$ISO_ONLINE" \
+            "$ISO_OFFLINE" \
             "$CHECKSUM"
 
       - name: Merge tag to origin/main (private)
@@ -256,7 +283,12 @@ jobs:
             echo ""
             echo "### Installation"
             echo ""
-            echo "1. Download the ISO below and verify the checksum:"
+            echo "Two ISO variants are available:"
+            echo ""
+            echo "- **`-online.iso`** (~2.6 GB) — requires internet during install. Smaller download, fits on 4 GB USB."
+            echo "- **`-offline.iso`** (~3.8 GB) — includes package cache for fully offline install. For servers or disconnected environments."
+            echo ""
+            echo "1. Download the desired ISO and verify the checksum:"
             echo '   ```bash'
             echo "   sha256sum -c ouroborOS-SHA256SUMS.txt"
             echo '   ```'
@@ -293,7 +325,8 @@ jobs:
             exit 0
           fi
           TAG="${{ github.ref_name }}"
-          ISO=$(ls out/ouroborOS-*.iso | head -n 1)
+          ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
+          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
 
           # Delete existing release if present (supports hotfix re-runs)
@@ -309,7 +342,8 @@ jobs:
             --target main \
             --prerelease \
             --notes "$RELEASE_NOTES" \
-            "$ISO" \
+            "$ISO_ONLINE" \
+            "$ISO_OFFLINE" \
             "$CHECKSUM"
 
       - name: Write build summary
