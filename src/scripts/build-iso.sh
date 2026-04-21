@@ -401,7 +401,7 @@ BUILD_START=$(date +%s)
 export TMPDIR="$WORK_DIR/tmp"
 mkdir -p "$TMPDIR"
 
-mkarchiso -v \
+yes '' | mkarchiso -v \
     -w "$WORK_DIR/work" \
     -o "$OUTPUT_DIR" \
     "$PROFILE_DIR"
