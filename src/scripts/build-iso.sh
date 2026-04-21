@@ -325,9 +325,14 @@ build_offline_cache() {
         pkgs+=("$line")
     done < "$pkg_list"
 
-    # 2) Installer target packages not already in packages.x86_64
+    # 2) Installer target packages not already in packages.x86_64.
+    #    pacman -Syw base does NOT download deps of the already-installed
+    #    base metapackage, so every package that _handle_install() passes
+    #    to pacstrap must be listed here explicitly.
     #    Source of truth: _handle_install() in state_machine.py
     local installer_pkgs=(
+        systemd
+        which
         linux-zen-headers
         sudo
         zram-generator
