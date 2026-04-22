@@ -229,6 +229,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          git config --global --add safe.directory '*'
           TAG="${{ github.ref_name }}"
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
           ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
