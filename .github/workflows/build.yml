@@ -234,6 +234,14 @@ jobs:
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
           ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+          ASSETS=("$ISO_ONLINE" "$CHECKSUM")
+          OFFLINE_SIZE=$(stat -c%s "$ISO_OFFLINE")
+          if [[ $OFFLINE_SIZE -gt 2147483648 ]]; then
+            echo "Offline ISO ($(( OFFLINE_SIZE / 1024 / 1024 )) MiB) exceeds GitHub 2 GiB limit — compressing"
+            gzip -9 "$ISO_OFFLINE"
+            ISO_OFFLINE="${ISO_OFFLINE}.gz"
+          fi
+          ASSETS+=("$ISO_OFFLINE")
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Prerelease $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
@@ -242,9 +250,7 @@ jobs:
             --title "ouroborOS ${TAG} (Alpha)" \
             --prerelease \
             --notes "Pre-release build from tag ${TAG}. Mirror to public repo follows." \
-            "$ISO_ONLINE" \
-            "$ISO_OFFLINE" \
-            "$CHECKSUM"
+            "${ASSETS[@]}"
 
       - name: Merge tag to origin/main (private)
         run: |
@@ -286,18 +292,22 @@ jobs:
             echo ""
             echo "Two ISO variants are available:"
             echo ""
-            echo "- **`-online.iso`** (~2.6 GB) — requires internet during install. Smaller download, fits on 4 GB USB."
-            echo "- **`-offline.iso`** (~3.8 GB) — includes package cache for fully offline install. For servers or disconnected environments."
+            echo "- **`-online.iso`** (~1.4 GB) — requires internet during install. Smaller download, fits on 4 GB USB."
+            echo "- **`-offline.iso.gz`** (~2.5 GB compressed) — includes package cache for fully offline install. Decompress with \`gunzip\` before flashing."
             echo ""
             echo "1. Download the desired ISO and verify the checksum:"
             echo '   ```bash'
             echo "   sha256sum -c ouroborOS-SHA256SUMS.txt"
             echo '   ```'
-            echo "2. Flash to USB:"
+            echo "2. If using the offline ISO, decompress first:"
+            echo '   ```bash'
+            echo "   gunzip ouroborOS-*-offline.iso.gz"
+            echo '   ```'
+            echo "3. Flash to USB:"
             echo '   ```bash'
             echo "   sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso"
             echo '   ```'
-            echo "3. Boot from USB (UEFI required) and follow the installer."
+            echo "4. Boot from USB (UEFI required) and follow the installer."
             echo ""
             echo "Full changelog: [CHANGELOG.md](https://github.com/Arkh-Ur/ouroborOS/blob/main/CHANGELOG.md)"
             echo "EOF"
@@ -327,10 +337,10 @@ jobs:
           fi
           TAG="${{ github.ref_name }}"
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
-          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
+          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso.gz out/ouroborOS-*-offline.iso 2>/dev/null | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+          ASSETS=("$ISO_ONLINE" "$CHECKSUM" "$ISO_OFFLINE")
 
-          # Delete existing release if present (supports hotfix re-runs)
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --repo Arkh-Ur/ouroborOS --yes --cleanup-tag 2>/dev/null || true
@@ -343,9 +353,7 @@ jobs:
             --target main \
             --prerelease \
             --notes "$RELEASE_NOTES" \
-            "$ISO_ONLINE" \
-            "$ISO_OFFLINE" \
-            "$CHECKSUM"
+            "${ASSETS[@]}"
 
       - name: Write build summary
         if: always()
