@@ -1,31 +1,56 @@
 # channels/stable.yaml — ouroborOS OTA stable channel
-# This file is generated automatically by CI on each release tag.
-# Read by ouroboros-update --check to detect available updates.
+# Generated automatically by CI on tag v0.5.2
 version: 0.5.2
-released: 2026-04-19T00:00:00Z
+released: 2026-04-22T03:55:36Z
 min_compatible_version: 0.5.0
 changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.5.2
 base_packages:
-  - base
-  - base-devel
-  - linux-zen
-  - linux-zen-headers
-  - linux-firmware
-  - systemd
-  - systemd-sysvcompat
-  - btrfs-progs
-  - dosfstools
-  - efibootmgr
-  - python
-  - python-yaml
-  - python-rich
-  - git
-  - openssh
-  - sudo
-  - zram-generator
-  - reflector
-  - pacman-contrib
-  - curl
-  - iwd
-  - intel-ucode
   - amd-ucode
+  - arch-install-scripts
+  - archiso
+  - base
+  - btrfs-progs
+  - cryptsetup
+  - curl
+  - debootstrap
+  - dhcpcd
+  - dialog
+  - diffutils
+  - dosfstools
+  - edk2-shell
+  - efibootmgr
+  - fish
+  - git
+  - gptfdisk
+  - htop
+  - intel-ucode
+  - iw
+  - iwd
+  - less
+  - libnewt
+  - linux-firmware
+  - linux-zen
+  - memtest86+-efi
+  - mkinitcpio-archiso
+  - nano
+  - neovim
+  - openssh
+  - pacman-contrib
+  - parted
+  - pciutils
+  - python
+  - python-pyaml
+  - python-rich
+  - python-yaml
+  - reflector
+  - rsync
+  - sbctl
+  - shellcheck
+  - tpm2-tools
+  - usbutils
+  - util-linux
+  - vim
+  - wget
+  - wireless-regdb
+  - wireless_tools
+  - zsh
