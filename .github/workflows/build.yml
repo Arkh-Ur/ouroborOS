@@ -179,18 +179,12 @@ jobs:
             --version="${VERSION}"
           rm -rf /home/ouroborOS-build/work
 
-      - name: Rename and compress offline ISO
+      - name: Rename offline ISO
         run: |
           ISO=$(ls out/ouroborOS-*.iso | grep -v online | head -n 1)
           EXT="${ISO##*.}"
           BASE="${ISO%.*}"
           mv "$ISO" "${BASE}-offline.${EXT}"
-          OFFLINE="${BASE}-offline.${EXT}"
-          OFFLINE_SIZE=$(stat -c%s "$OFFLINE")
-          if [[ $OFFLINE_SIZE -gt 2147483648 ]]; then
-            echo "Compressing offline ISO ($(( OFFLINE_SIZE / 1024 / 1024 )) MiB) to fit GitHub 2 GiB limit"
-            gzip -9 "$OFFLINE"
-          fi
 
       - name: Generate channels/stable.yaml
         run: |
@@ -240,7 +234,6 @@ jobs:
           git config --global --add safe.directory '*'
           TAG="${{ github.ref_name }}"
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
-          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso.gz out/ouroborOS-*-offline.iso 2>/dev/null | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Prerelease $TAG already exists — deleting and recreating"
@@ -251,7 +244,6 @@ jobs:
             --prerelease \
             --notes "Pre-release build from tag ${TAG}. Mirror to public repo follows." \
             "$ISO_ONLINE" \
-            "$ISO_OFFLINE" \
             "$CHECKSUM"
 
       - name: Merge tag to origin/main (private)
@@ -294,22 +286,21 @@ jobs:
             echo ""
             echo "Two ISO variants are available:"
             echo ""
-            echo "- **`-online.iso`** (~1.4 GB) — requires internet during install. Smaller download, fits on 4 GB USB."
-            echo "- **`-offline.iso.gz`** (~2.5 GB compressed) — includes package cache for fully offline install. Decompress with \`gunzip\` before flashing."
+            echo "- **\`-online.iso\`** (~1.4 GB) — requires internet during install. Download from the assets below."
+            echo "- **\`-offline\`** (~3.8 GB) — includes package cache for fully offline install. Build locally:"
+            echo '   ```bash'
+            echo "   sudo bash src/scripts/build-iso.sh --with-cache"
+            echo '   ```'
             echo ""
-            echo "1. Download the desired ISO and verify the checksum:"
+            echo "1. Download the online ISO and verify the checksum:"
             echo '   ```bash'
             echo "   sha256sum -c ouroborOS-SHA256SUMS.txt"
             echo '   ```'
-            echo "2. If using the offline ISO, decompress first:"
-            echo '   ```bash'
-            echo "   gunzip ouroborOS-*-offline.iso.gz"
-            echo '   ```'
-            echo "3. Flash to USB:"
+            echo "2. Flash to USB:"
             echo '   ```bash'
             echo "   sudo bash src/scripts/flash-usb.sh --iso ouroborOS-*.iso"
             echo '   ```'
-            echo "4. Boot from USB (UEFI required) and follow the installer."
+            echo "3. Boot from USB (UEFI required) and follow the installer."
             echo ""
             echo "Full changelog: [CHANGELOG.md](https://github.com/Arkh-Ur/ouroborOS/blob/main/CHANGELOG.md)"
             echo "EOF"
@@ -339,9 +330,7 @@ jobs:
           fi
           TAG="${{ github.ref_name }}"
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
-          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso.gz out/ouroborOS-*-offline.iso 2>/dev/null | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
-          ASSETS=("$ISO_ONLINE" "$CHECKSUM" "$ISO_OFFLINE")
 
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
@@ -355,7 +344,8 @@ jobs:
             --target main \
             --prerelease \
             --notes "$RELEASE_NOTES" \
-            "${ASSETS[@]}"
+            "$ISO_ONLINE" \
+            "$CHECKSUM"
 
       - name: Write build summary
         if: always()
