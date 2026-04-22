@@ -252,10 +252,7 @@ jobs:
           git config user.name "ouroborOS CI"
           git config user.email "ci@ouroboros.dev"
           cp channels/stable.yaml /tmp/stable.yaml
-          git stash --include-untracked || true
-          git fetch origin main
-          git checkout main
-          git stash pop || true
+          git checkout --force main
           git merge --ff-only "$GITHUB_SHA" || git merge --no-ff "$GITHUB_SHA" -m "release: merge tag ${{ github.ref_name }} to main"
           cp /tmp/stable.yaml channels/stable.yaml
           git add channels/stable.yaml
