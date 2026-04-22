@@ -163,14 +163,16 @@ to `/var/lib/ouroborOS/update-available`.
 
 ## Offline installation
 
-Build the ISO with a pre-downloaded package cache for environments without internet:
+The default ISO requires internet during install. For air-gapped environments (servers, labs, secure facilities), build an offline ISO locally with a pre-downloaded package cache:
 
 ```bash
+# Requires an Arch Linux host with ~20 min and ~5 GB free disk
 sudo bash src/scripts/build-iso.sh --with-cache
 ```
 
-The resulting ISO includes all base packages in `/var/cache/pacman/pkg/`. The installer
-detects the cache automatically and uses it without downloading anything.
+The resulting ISO (~3.8 GB) includes all packages needed for a full install with no internet. The installer detects the cache automatically.
+
+> **Why isn't the offline ISO on the Releases page?** GitHub Free limits release assets to 2 GB. The offline ISO exceeds that, so it must be built locally.
 
 ---
 
