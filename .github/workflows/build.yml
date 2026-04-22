@@ -158,6 +158,7 @@ jobs:
             --workdir /home/ouroborOS-build \
             --output out/ \
             --version="${VERSION}"
+          rm -rf /home/ouroborOS-build/work
 
       - name: Rename online ISO
         run: |
@@ -176,13 +177,20 @@ jobs:
             --workdir /home/ouroborOS-build \
             --output out/ \
             --version="${VERSION}"
+          rm -rf /home/ouroborOS-build/work
 
-      - name: Rename offline ISO
+      - name: Rename and compress offline ISO
         run: |
           ISO=$(ls out/ouroborOS-*.iso | grep -v online | head -n 1)
           EXT="${ISO##*.}"
           BASE="${ISO%.*}"
           mv "$ISO" "${BASE}-offline.${EXT}"
+          OFFLINE="${BASE}-offline.${EXT}"
+          OFFLINE_SIZE=$(stat -c%s "$OFFLINE")
+          if [[ $OFFLINE_SIZE -gt 2147483648 ]]; then
+            echo "Compressing offline ISO ($(( OFFLINE_SIZE / 1024 / 1024 )) MiB) to fit GitHub 2 GiB limit"
+            gzip -9 "$OFFLINE"
+          fi
 
       - name: Generate channels/stable.yaml
         run: |
@@ -232,16 +240,8 @@ jobs:
           git config --global --add safe.directory '*'
           TAG="${{ github.ref_name }}"
           ISO_ONLINE=$(ls out/ouroborOS-*-online.iso | head -n 1)
-          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso | head -n 1)
+          ISO_OFFLINE=$(ls out/ouroborOS-*-offline.iso.gz out/ouroborOS-*-offline.iso 2>/dev/null | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
-          ASSETS=("$ISO_ONLINE" "$CHECKSUM")
-          OFFLINE_SIZE=$(stat -c%s "$ISO_OFFLINE")
-          if [[ $OFFLINE_SIZE -gt 2147483648 ]]; then
-            echo "Offline ISO ($(( OFFLINE_SIZE / 1024 / 1024 )) MiB) exceeds GitHub 2 GiB limit — compressing"
-            gzip -9 "$ISO_OFFLINE"
-            ISO_OFFLINE="${ISO_OFFLINE}.gz"
-          fi
-          ASSETS+=("$ISO_OFFLINE")
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Prerelease $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
@@ -250,7 +250,9 @@ jobs:
             --title "ouroborOS ${TAG} (Alpha)" \
             --prerelease \
             --notes "Pre-release build from tag ${TAG}. Mirror to public repo follows." \
-            "${ASSETS[@]}"
+            "$ISO_ONLINE" \
+            "$ISO_OFFLINE" \
+            "$CHECKSUM"
 
       - name: Merge tag to origin/main (private)
         run: |
