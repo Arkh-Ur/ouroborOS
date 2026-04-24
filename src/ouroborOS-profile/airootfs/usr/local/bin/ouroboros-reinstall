@@ -1,0 +1,573 @@
+#!/usr/bin/env bash
+# ouroboros-reinstall — reinstall ouroborOS from a live ISO, preserving user data
+#
+# Rebuilds the root subvolume (@) from the declarative manifest (system.yaml)
+# while preserving @home, @etc, and @var. Designed to run from the live ISO
+# on a system with an existing ouroborOS installation.
+#
+# Usage:
+#   ouroboros-reinstall --disk /dev/nvme0n1 [options]
+#
+# Options:
+#   --disk DEVICE         Target disk (required)
+#   --from-snapshot NAME  Use specific snapshot instead of latest
+#   --no-home             Do NOT preserve @home
+#   --no-etc              Do NOT preserve @etc
+#   --no-var              Do NOT preserve @var
+#   --dry-run             Show what would be done without making changes
+#   --help|-h             Show help
+#
+# Exit codes:
+#   0  Reinstall completed successfully
+#   1  Fatal error
+set -euo pipefail
+
+readonly PROGRAM="ouroboros-reinstall"
+readonly MOUNT_ROOT="/mnt"
+
+# ── Logging helpers ───────────────────────────────────────────────────────────
+
+_info() { printf '\033[0;34m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_err()  { printf '\033[0;31m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+# ── Root check ────────────────────────────────────────────────────────────────
+
+[[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+
+# ── Helper: read YAML field via python3 ───────────────────────────────────────
+
+_yaml_field() {
+    local file="$1" field="$2"
+    python3 -c "
+import yaml, sys
+d = yaml.safe_load(open('${file}'))
+for key in '${field}'.split('.'):
+    if isinstance(d, dict):
+        d = d.get(key, None)
+    else:
+        d = None
+        break
+if d is None:
+    sys.exit(1)
+if isinstance(d, list):
+    for item in sorted(set(d)):
+        print(item)
+elif isinstance(d, bool):
+    print('true' if d else 'false')
+else:
+    print(d)
+" 2>/dev/null
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+main() {
+    local TARGET_DISK=""
+    local FROM_SNAPSHOT=""
+    local KEEP_HOME=1
+    local KEEP_ETC=1
+    local KEEP_VAR=1
+    local DRY_RUN=0
+    local _LUKS_DEV=""
+    local -a _mounted_subvols=()
+
+    # ── Argument parsing ──────────────────────────────────────────────────
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --disk)          TARGET_DISK="${2:?--disk requires a value}"; shift 2 ;;
+            --disk=*)        TARGET_DISK="${1#*=}"; shift ;;
+            --from-snapshot) FROM_SNAPSHOT="${2:?--from-snapshot requires a value}"; shift 2 ;;
+            --keep-home)     KEEP_HOME=1; shift ;;
+            --no-home)       KEEP_HOME=0; shift ;;
+            --keep-etc)      KEEP_ETC=1; shift ;;
+            --no-etc)        KEEP_ETC=0; shift ;;
+            --keep-var)      KEEP_VAR=1; shift ;;
+            --no-var)        KEEP_VAR=0; shift ;;
+            --dry-run)       DRY_RUN=1; shift ;;
+            --help|-h)
+                cat <<EOF
+Usage: ${PROGRAM} --disk DEVICE [options]
+
+Required:
+  --disk DEVICE         Target disk (e.g. /dev/nvme0n1)
+
+Options:
+  --from-snapshot NAME  Use a specific snapshot instead of the latest
+  --no-home             Do NOT preserve @home subvolume
+  --no-etc              Do NOT preserve @etc subvolume
+  --no-var              Do NOT preserve @var subvolume
+  --dry-run             Show what would be done without making changes
+
+By default, @home, @etc, and @var are preserved. Only @ (root) is rebuilt.
+EOF
+                exit 0
+                ;;
+            *) _die "Unknown option: $1. Use --help for usage." ;;
+        esac
+    done
+
+    [[ -n "$TARGET_DISK" ]] || _die "Missing required option: --disk DEVICE"
+    [[ -b "$TARGET_DISK" ]] || _die "'${TARGET_DISK}' is not a block device."
+
+    # ── Cleanup trap ─────────────────────────────────────────────────────
+
+    _MOUNT_TOPLEVEL=""
+
+    _cleanup() {
+        local i
+        for (( i=${#_mounted_subvols[@]}-1; i>=0; i-- )); do
+            umount "${_mounted_subvols[$i]}" 2>/dev/null || true
+        done
+        if [[ -n "$_MOUNT_TOPLEVEL" && -d "$_MOUNT_TOPLEVEL" ]]; then
+            umount "$_MOUNT_TOPLEVEL" 2>/dev/null || true
+            rmdir "$_MOUNT_TOPLEVEL" 2>/dev/null || true
+        fi
+        [[ -n "$_LUKS_DEV" ]] && cryptsetup close "$_LUKS_DEV" 2>/dev/null || true
+    }
+    trap _cleanup EXIT
+
+    # ── Step 1: Find Btrfs partition ─────────────────────────────────────
+
+    _info "Scanning ${TARGET_DISK} for ouroborOS installation..."
+
+    local BTRFS_PART=""
+    local part fstype
+    while IFS=' ' read -r part fstype; do
+        [[ -n "$part" ]] || continue
+        if [[ "$fstype" == "btrfs" ]]; then
+            BTRFS_PART="/dev/${part}"
+            break
+        fi
+    done < <(lsblk -n -o NAME,FSTYPE "$TARGET_DISK" 2>/dev/null || true)
+
+    if [[ -z "$BTRFS_PART" ]]; then
+        for suffix in p2 2; do
+            if [[ -b "${TARGET_DISK}${suffix}" ]]; then
+                fstype=$(lsblk -n -o FSTYPE "${TARGET_DISK}${suffix}" 2>/dev/null || true)
+                if [[ "$fstype" == "btrfs" ]]; then
+                    BTRFS_PART="${TARGET_DISK}${suffix}"
+                    break
+                fi
+            fi
+        done
+    fi
+
+    [[ -n "$BTRFS_PART" ]] || _die "No Btrfs partition found on ${TARGET_DISK}."
+
+    # Handle LUKS
+    local ROOT_DEV="$BTRFS_PART"
+    fstype=$(lsblk -n -o FSTYPE "$BTRFS_PART" 2>/dev/null || true)
+    if [[ "$fstype" == "crypto_LUKS" ]]; then
+        _info "LUKS detected on ${BTRFS_PART}. Opening..."
+        _LUKS_DEV="/dev/mapper/ouroboros-reinstall-root"
+        cryptsetup open "$BTRFS_PART" ouroboros-reinstall-root || _die "Failed to open LUKS container."
+        ROOT_DEV="$_LUKS_DEV"
+    fi
+
+    # ── Step 2: Mount top-level and detect subvolumes ─────────────────────
+
+    _info "Mounting Btrfs top-level..."
+    _MOUNT_TOPLEVEL=$(mktemp -d)
+    if ! mount -t btrfs -o subvolid=5,ro "$ROOT_DEV" "$_MOUNT_TOPLEVEL" 2>/dev/null; then
+        if ! mount -t btrfs -o subvolid=5 "$ROOT_DEV" "$_MOUNT_TOPLEVEL" 2>/dev/null; then
+            rmdir "$_MOUNT_TOPLEVEL"
+            _die "Cannot mount Btrfs top-level from ${ROOT_DEV}."
+        fi
+    fi
+
+    local HAS_AT=0 HAS_HOME=0 HAS_ETC=0 HAS_VAR=0 HAS_SNAPSHOTS=0
+    [[ -d "${_MOUNT_TOPLEVEL}/@" ]]         && HAS_AT=1
+    [[ -d "${_MOUNT_TOPLEVEL}/@home" ]]     && HAS_HOME=1
+    [[ -d "${_MOUNT_TOPLEVEL}/@etc" ]]      && HAS_ETC=1
+    [[ -d "${_MOUNT_TOPLEVEL}/@var" ]]      && HAS_VAR=1
+    [[ -d "${_MOUNT_TOPLEVEL}/@snapshots" ]] && HAS_SNAPSHOTS=1
+
+    if [[ "$HAS_AT" -eq 0 ]]; then
+        _die "No @ subvolume found on ${TARGET_DISK}. Not an ouroborOS installation."
+    fi
+
+    _info "Found subvolumes: @${HAS_HOME:+ @home}${HAS_ETC:+ @etc}${HAS_VAR:+ @var}${HAS_SNAPSHOTS:+ @snapshots}"
+
+    # ── Step 3: Read system.yaml from installed @ ─────────────────────────
+
+    local _tmp_at
+    _tmp_at=$(mktemp -d)
+    mount -t btrfs -o subvol=@,ro "$ROOT_DEV" "$_tmp_at" 2>/dev/null || _die "Cannot mount @ subvolume."
+
+    local SYSCONFIG="${_tmp_at}/etc/ouroboros/system.yaml"
+    if [[ ! -f "$SYSCONFIG" ]]; then
+        umount "$_tmp_at" 2>/dev/null; rmdir "$_tmp_at" 2>/dev/null
+        _die "system.yaml not found in @ subvolume. Not an ouroborOS installation."
+    fi
+
+    local HOSTNAME LOCALE TIMEZONE DESKTOP_PROFILE DESKTOP_DM USER_SHELL
+    local USE_LUKS BTRFS_LABEL SECURE_BOOT USER_NAME USER_GROUPS
+
+    HOSTNAME=$(_yaml_field "$SYSCONFIG" "system.hostname")          || HOSTNAME="ouroboros"
+    LOCALE=$(_yaml_field "$SYSCONFIG" "system.locale")              || LOCALE="en_US.UTF-8"
+    TIMEZONE=$(_yaml_field "$SYSCONFIG" "system.timezone")          || TIMEZONE="UTC"
+    DESKTOP_PROFILE=$(_yaml_field "$SYSCONFIG" "system.desktop.profile") || DESKTOP_PROFILE="minimal"
+    DESKTOP_DM=$(_yaml_field "$SYSCONFIG" "system.desktop.dm")     || DESKTOP_DM="none"
+    USER_SHELL=$(_yaml_field "$SYSCONFIG" "system.shell")           || USER_SHELL="bash"
+    USE_LUKS=$(_yaml_field "$SYSCONFIG" "disk.use_luks")            || USE_LUKS="false"
+    BTRFS_LABEL=$(_yaml_field "$SYSCONFIG" "disk.btrfs_label")     || BTRFS_LABEL="ouroborOS"
+    SECURE_BOOT=$(_yaml_field "$SYSCONFIG" "security.secure_boot")  || SECURE_BOOT="false"
+    USER_NAME=$(_yaml_field "$SYSCONFIG" "users.0.username")       || USER_NAME="admin"
+    USER_GROUPS=$(_yaml_field "$SYSCONFIG" "users.0.groups")       || USER_GROUPS="wheel,audio,video,input"
+
+    local -a BASE_PACKAGES=() USER_PACKAGES=()
+    mapfile -t BASE_PACKAGES < <(_yaml_field "$SYSCONFIG" "base_packages") || BASE_PACKAGES=()
+    mapfile -t USER_PACKAGES < <(_yaml_field "$SYSCONFIG" "user_packages") || USER_PACKAGES=()
+
+    local SYSTEM_YAML_CONTENT
+    SYSTEM_YAML_CONTENT=$(cat "$SYSCONFIG")
+
+    local SYSCONFIG_HASH
+    SYSCONFIG_HASH=$(sha256sum "$SYSCONFIG" | cut -d' ' -f1)
+
+    _ok "Read system.yaml from installed @ (${#BASE_PACKAGES[@]} base packages)"
+
+    # ── Step 4: Find snapshot to use ──────────────────────────────────────
+
+    if [[ -n "$FROM_SNAPSHOT" ]]; then
+        if [[ ! -d "${_MOUNT_TOPLEVEL}/@snapshots/${FROM_SNAPSHOT}" ]]; then
+            umount "$_tmp_at" 2>/dev/null; rmdir "$_tmp_at" 2>/dev/null
+            _die "Snapshot '${FROM_SNAPSHOT}' not found in @snapshots."
+        fi
+        _info "Using specified snapshot: ${FROM_SNAPSHOT}"
+    else
+        local latest_snap=""
+        local snap_path snap_name
+        while IFS= read -r -d '' snap_path; do
+            snap_name=$(basename "$snap_path")
+            if [[ -f "${snap_path}/.snapshot.yaml" ]]; then
+                latest_snap="$snap_name"
+            fi
+        done < <(find "${_MOUNT_TOPLEVEL}/@snapshots" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null | sort -z)
+
+        if [[ -n "$latest_snap" ]]; then
+            _info "Using latest snapshot: ${latest_snap}"
+        else
+            _warn "No snapshots with .snapshot.yaml found. Using system.yaml packages only."
+        fi
+    fi
+
+    umount "$_tmp_at" 2>/dev/null || true
+    rmdir "$_tmp_at" 2>/dev/null || true
+
+    # ── Step 5: Find ESP partition ────────────────────────────────────────
+
+    local ESP_PART=""
+    while IFS=' ' read -r part fstype; do
+        [[ -n "$part" ]] || continue
+        if [[ "$fstype" == "vfat" ]]; then
+            ESP_PART="/dev/${part}"
+            break
+        fi
+    done < <(lsblk -n -o NAME,FSTYPE "$TARGET_DISK" 2>/dev/null || true)
+
+    if [[ -z "$ESP_PART" ]]; then
+        for suffix in p1 1; do
+            if [[ -b "${TARGET_DISK}${suffix}" ]]; then
+                ESP_PART="${TARGET_DISK}${suffix}"
+                break
+            fi
+        done
+    fi
+
+    [[ -n "$ESP_PART" ]] || _die "Cannot find ESP (FAT32) partition on ${TARGET_DISK}."
+
+    # ── Step 6: Confirm with user ─────────────────────────────────────────
+
+    echo ""
+    _info "═══════════════════════════════════════════════════"
+    _info "  ouroborOS REINSTALL"
+    _info "═══════════════════════════════════════════════════"
+    _info "  Disk:            ${TARGET_DISK}"
+    _info "  Btrfs partition: ${BTRFS_PART}"
+    _info "  ESP partition:   ${ESP_PART}"
+    _info "  Hostname:        ${HOSTNAME}"
+    _info "  Desktop:         ${DESKTOP_PROFILE} (${DESKTOP_DM})"
+    _info "  Base packages:   ${#BASE_PACKAGES[@]}"
+    _info "  User packages:   ${#USER_PACKAGES[@]}"
+    _info "  User:            ${USER_NAME}"
+    _info "  Secure Boot:     ${SECURE_BOOT}"
+    _info "  LUKS:            ${USE_LUKS}"
+    _info "───────────────────────────────────────────────────"
+    _info "  PRESERVE:"
+    _info "    @home:  $([ "$KEEP_HOME" -eq 1 ] && echo 'YES' || echo 'NO')"
+    _info "    @etc:   $([ "$KEEP_ETC" -eq 1 ]  && echo 'YES' || echo 'NO')"
+    _info "    @var:   $([ "$KEEP_VAR" -eq 1 ]   && echo 'YES' || echo 'NO')"
+    _info "───────────────────────────────────────────────────"
+    _info "  @ will be DELETED and rebuilt from scratch."
+    _info "═══════════════════════════════════════════════════"
+    echo ""
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        _ok "[dry-run] No changes made. Exiting."
+        return 0
+    fi
+
+    local confirm
+    read -r -p "Type 'reinstall' to continue: " confirm
+    [[ "$confirm" == "reinstall" ]] || _die "Aborted."
+
+    # ── Step 7: Create safety snapshot ────────────────────────────────────
+
+    local ts
+    ts=$(date +%Y-%m-%dT%H%M%S)
+    local SAFETY_SNAP="pre-reinstall-${ts}"
+
+    _info "Creating safety snapshot: @snapshots/${SAFETY_SNAP}"
+    btrfs property set "${_MOUNT_TOPLEVEL}/@" ro false 2>/dev/null || true
+    btrfs subvolume snapshot "${_MOUNT_TOPLEVEL}/@" "${_MOUNT_TOPLEVEL}/@snapshots/${SAFETY_SNAP}"
+    btrfs property set "${_MOUNT_TOPLEVEL}/@" ro true 2>/dev/null || true
+
+    # Write metadata BEFORE locking the snapshot — btrfs ro subvolumes are read-only
+    # at the kernel level; any write after ro=true yields EROFS and aborts under set -e.
+    cat > "${_MOUNT_TOPLEVEL}/@snapshots/${SAFETY_SNAP}/.snapshot.yaml" <<METAEOF
+snapshot: ${SAFETY_SNAP}
+created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+type: pre-update
+system_version: reinstall
+system_yaml_hash: sha256:${SYSCONFIG_HASH}
+packages_count: ${#BASE_PACKAGES[@]}
+METAEOF
+    btrfs property set "${_MOUNT_TOPLEVEL}/@snapshots/${SAFETY_SNAP}" ro true 2>/dev/null || true
+
+    _ok "Safety snapshot created: ${SAFETY_SNAP}"
+
+    # ── Step 8: Delete @ and recreate ─────────────────────────────────────
+
+    _info "Deleting current @ subvolume..."
+    btrfs property set "${_MOUNT_TOPLEVEL}/@" ro false 2>/dev/null || true
+    btrfs subvolume delete "${_MOUNT_TOPLEVEL}/@" || _die "Failed to delete @ subvolume."
+
+    _info "Creating fresh @ subvolume..."
+    btrfs subvolume create "${_MOUNT_TOPLEVEL}/@" || _die "Failed to create @ subvolume."
+    btrfs property set "${_MOUNT_TOPLEVEL}/@" ro false 2>/dev/null || true
+
+    _ok "Fresh @ subvolume created."
+
+    # ── Step 9: Mount subvolumes for pacstrap ─────────────────────────────
+
+    _info "Mounting subvolumes at ${MOUNT_ROOT}..."
+
+    mount -t btrfs -o subvol=@ "$ROOT_DEV" "$MOUNT_ROOT"
+    _mounted_subvols+=("$MOUNT_ROOT")
+
+    mkdir -p "${MOUNT_ROOT}/.snapshots"
+    mount -t btrfs -o subvol=@snapshots "$ROOT_DEV" "${MOUNT_ROOT}/.snapshots"
+    _mounted_subvols+=("${MOUNT_ROOT}/.snapshots")
+
+    if [[ "$KEEP_HOME" -eq 1 && "$HAS_HOME" -eq 1 ]]; then
+        mkdir -p "${MOUNT_ROOT}/home"
+        mount -t btrfs -o subvol=@home "$ROOT_DEV" "${MOUNT_ROOT}/home"
+        _mounted_subvols+=("${MOUNT_ROOT}/home")
+        _ok "Mounted @home at ${MOUNT_ROOT}/home"
+    else
+        mkdir -p "${MOUNT_ROOT}/home"
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@home" 2>/dev/null || true
+        mount -t btrfs -o subvol=@home "$ROOT_DEV" "${MOUNT_ROOT}/home"
+        _mounted_subvols+=("${MOUNT_ROOT}/home")
+        _warn "Creating fresh @home (not preserved)."
+    fi
+
+    if [[ "$KEEP_ETC" -eq 1 && "$HAS_ETC" -eq 1 ]]; then
+        mkdir -p "${MOUNT_ROOT}/etc"
+        mount -t btrfs -o subvol=@etc "$ROOT_DEV" "${MOUNT_ROOT}/etc"
+        _mounted_subvols+=("${MOUNT_ROOT}/etc")
+        _ok "Mounted @etc at ${MOUNT_ROOT}/etc"
+    else
+        mkdir -p "${MOUNT_ROOT}/etc"
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@etc" 2>/dev/null || true
+        mount -t btrfs -o subvol=@etc "$ROOT_DEV" "${MOUNT_ROOT}/etc"
+        _mounted_subvols+=("${MOUNT_ROOT}/etc")
+    fi
+
+    if [[ "$KEEP_VAR" -eq 1 && "$HAS_VAR" -eq 1 ]]; then
+        mkdir -p "${MOUNT_ROOT}/var"
+        mount -t btrfs -o subvol=@var "$ROOT_DEV" "${MOUNT_ROOT}/var"
+        _mounted_subvols+=("${MOUNT_ROOT}/var")
+        _ok "Mounted @var at ${MOUNT_ROOT}/var"
+    else
+        mkdir -p "${MOUNT_ROOT}/var"
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@var" 2>/dev/null || true
+        mount -t btrfs -o subvol=@var "$ROOT_DEV" "${MOUNT_ROOT}/var"
+        _mounted_subvols+=("${MOUNT_ROOT}/var")
+    fi
+
+    mkdir -p "${MOUNT_ROOT}/boot"
+    mount "$ESP_PART" "${MOUNT_ROOT}/boot" || _die "Failed to mount ESP at ${MOUNT_ROOT}/boot."
+    _mounted_subvols+=("${MOUNT_ROOT}/boot")
+
+    _ok "All subvolumes mounted."
+
+    # ── Step 10: pacstrap ─────────────────────────────────────────────────
+
+    _info "Installing base system (${#BASE_PACKAGES[@]} packages)..."
+
+    local -a ALL_PKGS=()
+    ALL_PKGS+=(base)
+    local pkg
+    for pkg in "${BASE_PACKAGES[@]+"${BASE_PACKAGES[@]}"}"; do
+        [[ "$pkg" != "base" ]] && ALL_PKGS+=("$pkg")
+    done
+    for pkg in "${USER_PACKAGES[@]+"${USER_PACKAGES[@]}"}"; do
+        ALL_PKGS+=("$pkg")
+    done
+
+    mapfile -t ALL_PKGS < <(printf '%s\n' "${ALL_PKGS[@]}" | sort -u)
+
+    _info "pacstrap: ${#ALL_PKGS[@]} unique packages..."
+
+    set +o pipefail
+    yes '' | pacstrap "$MOUNT_ROOT" "${ALL_PKGS[@]}" || _die "pacstrap failed."
+    set -o pipefail
+
+    _ok "Base system installed."
+
+    # ── Step 11: Generate fstab ───────────────────────────────────────────
+
+    _info "Generating fstab..."
+    genfstab -U "$MOUNT_ROOT" > "${MOUNT_ROOT}/etc/fstab" || _die "genfstab failed."
+
+    if ! grep -q '^UUID.*subvol=@.*ro' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null; then
+        sed -i 's/subvol=@,rw/subvol=@,ro/' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null || true
+        sed -i 's/subvol=@ /subvol=@,ro /' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null || true
+    fi
+
+    _ok "fstab generated."
+
+    # ── Step 12: Reinstall system.yaml ───────────────────────────────────
+
+    _info "Reinstalling system.yaml..."
+    mkdir -p "${MOUNT_ROOT}/etc/ouroboros"
+
+    local new_ts
+    new_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo "$SYSTEM_YAML_CONTENT" | python3 -c "
+import yaml, sys
+d = yaml.safe_load(sys.stdin)
+d['installed'] = '${new_ts}'
+yaml.dump(d, sys.stdout, default_flow_style=False, sort_keys=False)
+" > "${MOUNT_ROOT}/etc/ouroboros/system.yaml" 2>/dev/null
+
+    _ok "system.yaml installed."
+
+    # ── Step 13: Run configure.sh in chroot ───────────────────────────────
+
+    _info "Running system configuration in chroot..."
+
+    local CONFIGURE_SH=""
+    local candidate
+    for candidate in \
+        /usr/local/bin/configure.sh \
+        /usr/local/lib/ouroboros/configure.sh \
+        /root/installer/ops/configure.sh \
+        /tmp/installer/ops/configure.sh; do
+        if [[ -f "$candidate" ]]; then
+            CONFIGURE_SH="$candidate"
+            break
+        fi
+    done
+
+    if [[ -n "$CONFIGURE_SH" ]]; then
+        local user_shell_path="/bin/${USER_SHELL}"
+        [[ "$USER_SHELL" == "fish" ]] && user_shell_path="/usr/bin/fish"
+
+        cp "$CONFIGURE_SH" "${MOUNT_ROOT}/tmp/configure.sh"
+        chmod +x "${MOUNT_ROOT}/tmp/configure.sh"
+
+        arch-chroot "$MOUNT_ROOT" /bin/bash -c "
+            export HOSTNAME='${HOSTNAME}'
+            export LOCALE='${LOCALE}'
+            export TIMEZONE='${TIMEZONE}'
+            export DESKTOP_PROFILE='${DESKTOP_PROFILE}'
+            export DESKTOP_DM='${DESKTOP_DM}'
+            export USER_NAME='${USER_NAME}'
+            export USER_PASSWORD=''
+            export USER_SHELL='${user_shell_path}'
+            export USER_GROUPS='${USER_GROUPS}'
+            export ENABLE_NETWORKD=true
+            export ENABLE_IWD=true
+            export ENABLE_RESOLVED=true
+            export SECURE_BOOT='${SECURE_BOOT}'
+            export BTRFS_LABEL='${BTRFS_LABEL}'
+            export SWAP_TYPE=zram
+            bash /tmp/configure.sh
+        " || _warn "configure.sh had errors — some configuration may be incomplete."
+
+        rm -f "${MOUNT_ROOT}/tmp/configure.sh"
+        _ok "System configuration applied."
+    else
+        _warn "configure.sh not found. Skipping system configuration."
+        _warn "You will need to configure the system manually (bootloader, locale, users, etc.)."
+    fi
+
+    # ── Step 14: Post-reinstall snapshot ──────────────────────────────────
+
+    _info "Creating post-reinstall snapshot..."
+    local post_snap="post-reinstall-${ts}"
+
+    # Create writable first so we can write .snapshot.yaml inside, then lock.
+    if btrfs subvolume snapshot "${MOUNT_ROOT}" "${MOUNT_ROOT}/.snapshots/${post_snap}" 2>/dev/null; then
+        cat > "${MOUNT_ROOT}/.snapshots/${post_snap}/.snapshot.yaml" <<METAEOF
+snapshot: ${post_snap}
+created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+type: install
+system_version: reinstall
+system_yaml_hash: sha256:${SYSCONFIG_HASH}
+packages_count: ${#ALL_PKGS[@]}
+METAEOF
+        btrfs property set "${MOUNT_ROOT}/.snapshots/${post_snap}" ro true 2>/dev/null || true
+    else
+        _warn "Could not create post-reinstall snapshot."
+    fi
+
+    _ok "Post-reinstall snapshot: ${post_snap}"
+
+    # ── Step 15: Set root read-only and cleanup ──────────────────────────
+
+    _info "Setting @ to read-only and cleaning up..."
+
+    local i
+    for (( i=${#_mounted_subvols[@]}-1; i>=0; i-- )); do
+        umount "${_mounted_subvols[$i]}" 2>/dev/null || true
+    done
+    _mounted_subvols=()
+
+    btrfs property set "${_MOUNT_TOPLEVEL}/@" ro true 2>/dev/null || _warn "Could not set @ read-only."
+
+    umount "$_MOUNT_TOPLEVEL" 2>/dev/null || true
+    rmdir "$_MOUNT_TOPLEVEL" 2>/dev/null || true
+    _MOUNT_TOPLEVEL=""
+
+    [[ -n "$_LUKS_DEV" ]] && cryptsetup close "$_LUKS_DEV" 2>/dev/null || true
+    _LUKS_DEV=""
+    trap - EXIT
+
+    _ok "Root subvolume set to read-only."
+
+    # ── Summary ───────────────────────────────────────────────────────────
+
+    echo ""
+    _ok "═══════════════════════════════════════════════════"
+    _ok "  REINSTALL COMPLETE"
+    _ok "═══════════════════════════════════════════════════"
+    _ok "  Disk:            ${TARGET_DISK}"
+    _ok "  Base packages:   ${#ALL_PKGS[@]}"
+    _ok "  Preserved:       @home=$([ "$KEEP_HOME" -eq 1 ] && echo YES || echo NO)  @etc=$([ "$KEEP_ETC" -eq 1 ] && echo YES || echo NO)  @var=$([ "$KEEP_VAR" -eq 1 ] && echo YES || echo NO)"
+    _ok "  Safety snapshot: ${SAFETY_SNAP}"
+    _ok "  Post snapshot:   ${post_snap}"
+    _ok "───────────────────────────────────────────────────"
+    _ok "  Next: reboot and boot from the new @."
+    _ok "  If it fails, boot from safety snapshot: ${SAFETY_SNAP}"
+    _ok "═══════════════════════════════════════════════════"
+}
+
+main "$@"

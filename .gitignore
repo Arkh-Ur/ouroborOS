@@ -45,6 +45,7 @@ build-tmp/
 src/ouroborOS-profile/airootfs/tmp/
 src/ouroborOS-profile/airootfs/etc/ouroborOS/e2e-config.yaml
 src/ouroborOS-profile/airootfs/etc/systemd/system/ouroborOS-installer.service.d/e2e-unattended.conf
+src/ouroborOS-profile/airootfs/var/
 
 # Tool logs
 opencode.log

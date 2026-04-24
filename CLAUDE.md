@@ -27,7 +27,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
 - **Installer:** Python state machine + Rich TUI (primary) + Bash ops
-- **Status:** v0.5.0 — Phase 5 in progress
+- **Status:** v0.5.2 — Phase 5 in progress. `ouroboros-health` and `ouroboros-reinstall` added in v0.5.3.
 
 ---
 
@@ -276,6 +276,8 @@ When a tag `v*` is pushed to `ouroborOS-dev`, the release job builds the ISO, cr
 | `docs/architecture/systemd-integration.md` | systemd integration design |
 | `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
 | `IMPLEMENTATION_PLAN.md` | Phased roadmap with milestones |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-health` | System health diagnostics (12 checks, --doctor, --yaml, --json) |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-reinstall` | Reinstall from live ISO preserving @home/@etc/@var |
 | `.github/workflows/build.yml` | ISO build + release pipeline (dual-repo) |
 
 ---

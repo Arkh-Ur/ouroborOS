@@ -7,7 +7,7 @@ iso_name="ouroborOS"
 iso_label="OUROBOROS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
 iso_publisher="ouroborOS <https://github.com/Arkh-Ur/ouroborOS>"
 iso_application="ouroborOS ArchLinux-based immutable Linux distribution"
-iso_version="0.5.0"
+iso_version="0.5.3"
 install_dir="arch"
 buildmodes=('iso')
 bootmodes=('uefi.systemd-boot')
@@ -36,4 +36,6 @@ file_permissions=(
   ["/usr/local/bin/ouroboros-secureboot"]="0:0:755"
   ["/usr/local/bin/ouroboros-snapshot-on-boot"]="0:0:755"
   ["/usr/local/bin/ouroboros-update"]="0:0:755"
+  ["/usr/local/bin/ouroboros-health"]="0:0:755"
+  ["/usr/local/bin/ouroboros-reinstall"]="0:0:755"
 )

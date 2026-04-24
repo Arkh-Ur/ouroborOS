@@ -68,6 +68,8 @@ ouroborOS/
 | Flatpak wrapper | `airootfs/usr/local/bin/our-flat` | Flatpak con interfaz pacman: install/remove/update/search/list/info/remote |
 | Secure Boot | `airootfs/usr/local/bin/ouroboros-secureboot` | setup/status/sign-all/verify/rotate-keys |
 | First boot | `airootfs/usr/local/bin/ouroboros-firstboot` | mirrors/machine-id/timers (oneshot) |
+| Reinstalar sistema | `airootfs/usr/local/bin/ouroboros-reinstall` | Reinstall desde live ISO, preserva @home/@etc/@var |
+| Diagnóstico del sistema | `airootfs/usr/local/bin/ouroboros-health` | 12 checks, --doctor, --yaml, --json |
 | BlueZ config | `airootfs/etc/bluetooth/main.conf` | Experimental + LE tuning |
 | Construir ISO | `src/scripts/build-iso.sh` | Wrapper de mkarchiso |
 | Flashear USB | `src/scripts/flash-usb.sh` | Wrapper seguro de dd |
@@ -104,6 +106,8 @@ ouroborOS/
 | `our-flat` | script | `airootfs/usr/local/bin/our-flat` | Flatpak wrapper: install/remove/update/search/list/info/remote |
 | `ouroboros-secureboot` | script | `airootfs/usr/local/bin/ouroboros-secureboot` | sbctl wrapper: setup/status/sign-all/verify/rotate-keys |
 | `ouroboros-firstboot` | script | `airootfs/usr/local/bin/ouroboros-firstboot` | Oneshot: mirrors + machine-id + timers. Guard: /var/lib/ouroborOS/firstboot.done |
+| `ouroboros-reinstall` | script | `airootfs/usr/local/bin/ouroboros-reinstall` | Reinstall: reconstruye @ preservando @home/@etc/@var desde live ISO |
+| `ouroboros-health` | script | `airootfs/usr/local/bin/ouroboros-health` | Health: 12 checks, --doctor, --yaml, --json |
 
 ## EJECUTABLES `our-*` Y `ouroboros-*`
 
@@ -120,6 +124,8 @@ ouroborOS/
 | `our-flat` | `our-*` | Usuario | Flatpak wrapper (pacman-style) |
 | `ouroboros-secureboot` | `ouroboros-*` | Sistema | Secure Boot via sbctl |
 | `ouroboros-firstboot` | `ouroboros-*` | Sistema | First boot oneshot service |
+| `ouroboros-reinstall` | `ouroboros-*` | Sistema (live ISO) | Reinstalación preservando datos de usuario |
+| `ouroboros-health` | `ouroboros-*` | Sistema | Diagnóstico del sistema con --doctor/--yaml/--json |
 
 ## CONVENCIONES
 

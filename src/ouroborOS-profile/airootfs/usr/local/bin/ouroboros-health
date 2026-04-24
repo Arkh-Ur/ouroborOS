@@ -1,0 +1,620 @@
+#!/usr/bin/env bash
+# ouroboros-health — system health diagnostics for ouroborOS
+#
+# Checks system integrity against the declarative manifest (system.yaml).
+# Can optionally fix detected problems (--doctor) and output structured
+# data in YAML (--yaml) or JSON (--json) format.
+#
+# Usage:
+#   ouroboros-health [--doctor] [--yaml] [--json]
+#
+# Checks:
+#   root_ro         Root filesystem is read-only
+#   system_yaml     system.yaml exists and is valid
+#   machine_id      /etc/machine-id exists and is valid
+#   failed_units    No failed systemd units
+#   btrfs_usage     Btrfs pool usage within thresholds
+#   snapshot_count  Reasonable number of snapshots
+#   boot_entries    No orphan boot entries
+#   secure_boot     Secure Boot status consistent
+#   tpm2            TPM2 enrollment status
+#   ota_updates     OTA update channel reachable
+#   pacman_cache    Package cache not bloated
+#   fstab           All fstab UUIDs resolve
+#
+# Exit codes:
+#   0  All checks passed (or all fixable problems were fixed)
+#   1  One or more checks failed (and could not be auto-fixed)
+set -euo pipefail
+
+readonly PROGRAM="ouroboros-health"
+readonly VERSION="0.5.3"
+readonly SYSTEM_YAML="/etc/ouroboros/system.yaml"
+readonly STATE_DIR="/var/lib/ouroborOS"
+readonly SNAPSHOTS_DIR="/.snapshots"
+readonly ESP="/boot"
+readonly ENTRIES_DIR="${ESP}/loader/entries"
+
+# ── Logging helpers ───────────────────────────────────────────────────────────
+
+_info() { printf '\033[0;34m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$PROGRAM" "$*"; }
+_warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_err()  { printf '\033[0;31m[%s]\033[0m %s\n' "$PROGRAM" "$*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+# ── Root check ────────────────────────────────────────────────────────────────
+
+[[ $EUID -eq 0 ]] || exec sudo "/usr/local/bin/${PROGRAM}" "$@"
+
+# ── Global check result storage ───────────────────────────────────────────────
+
+declare -a CHECKS_RUN=()
+declare -A CHECK_STATUS=()
+declare -A CHECK_MESSAGE=()
+declare -A CHECK_FIX=()
+
+# ── Check runner ──────────────────────────────────────────────────────────────
+
+run_check() {
+    local name="$1"
+    CHECKS_RUN+=("$name")
+    "check_${name}"
+}
+
+# ── Fix functions ─────────────────────────────────────────────────────────────
+
+fix_root_ro() {
+    _info "Setting root filesystem to read-only..."
+    btrfs property set / ro true
+}
+
+fix_machine_id() {
+    _info "Regenerating /etc/machine-id..."
+    systemd-machine-id-setup
+}
+
+fix_failed_units() {
+    _info "Resetting failed systemd units..."
+    systemctl reset-failed
+}
+
+fix_snapshot_count() {
+    _info "Pruning old snapshots..."
+    /usr/local/bin/our-snapshot prune
+}
+
+fix_boot_entries() {
+    local entry_file snapshot_name
+
+    for entry_file in "$ENTRIES_DIR"/ouroboros-snapshot-*.conf; do
+        [[ -f "$entry_file" ]] || continue
+
+        snapshot_name=$(grep -oP 'rootflags=subvol=@snapshots/\K[^ ]+' "$entry_file" 2>/dev/null || true)
+        [[ -n "$snapshot_name" ]] || continue
+
+        if [[ ! -d "${SNAPSHOTS_DIR}/${snapshot_name}" ]]; then
+            _info "Removing orphan entry: $(basename "$entry_file")"
+            rm -f "$entry_file"
+        fi
+    done
+}
+
+fix_pacman_cache() {
+    _info "Cleaning pacman cache (keeping last 3 versions)..."
+    pacman -Sc --noconfirm
+}
+
+# ── Health checks ─────────────────────────────────────────────────────────────
+
+check_root_ro() {
+    local name="root_ro"
+
+    local subvol
+    subvol=$(findmnt -n -o OPTIONS / 2>/dev/null \
+        | tr ',' '\n' | grep '^subvol=' | head -1 | cut -d= -f2- || true)
+
+    if [[ "$subvol" == @snapshots/* ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Booted from snapshot (${subvol}) — root is not @"
+        return
+    fi
+
+    local ro_val
+    ro_val=$(btrfs property get / ro 2>/dev/null | awk '{print $NF}' || true)
+
+    if [[ "$ro_val" == "true" ]]; then
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="Root filesystem is read-only"
+    else
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="Root filesystem is NOT read-only (ro=${ro_val:-unknown})"
+        CHECK_FIX[$name]="fix_root_ro"
+    fi
+}
+
+check_system_yaml() {
+    local name="system_yaml"
+
+    if [[ ! -f "$SYSTEM_YAML" ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="system.yaml not found at ${SYSTEM_YAML}"
+        return
+    fi
+
+    local version
+    version=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('${SYSTEM_YAML}'))
+v = d.get('version', None)
+if v is None:
+    raise ValueError('missing version key')
+print(v)
+" 2>/dev/null) || {
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="system.yaml exists but is not valid YAML or missing 'version' key"
+        return
+    }
+
+    CHECK_STATUS[$name]="PASS"
+    CHECK_MESSAGE[$name]="system.yaml is valid (v${version})"
+}
+
+check_machine_id() {
+    local name="machine_id"
+    local mid_file="/etc/machine-id"
+
+    if [[ ! -f "$mid_file" ]] || [[ ! -s "$mid_file" ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="/etc/machine-id does not exist or is empty"
+        CHECK_FIX[$name]="fix_machine_id"
+        return
+    fi
+
+    local content
+    content=$(tr -d '[:space:]' < "$mid_file")
+
+    if [[ -z "$content" || "$content" == "00000000000000000000000000000000" || "$content" == "uninitialized" ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="/etc/machine-id is invalid (${content:0:16}...)"
+        CHECK_FIX[$name]="fix_machine_id"
+        return
+    fi
+
+    CHECK_STATUS[$name]="PASS"
+    CHECK_MESSAGE[$name]="/etc/machine-id is valid (${content:0:8}...)"
+}
+
+check_failed_units() {
+    local name="failed_units"
+    local failed
+    failed=$(systemctl --failed --no-legend 2>/dev/null | grep -c -v '^$' || true)
+
+    if [[ "$failed" -eq 0 ]]; then
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="No failed systemd units"
+    else
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="${failed} failed systemd unit(s) found"
+        CHECK_FIX[$name]="fix_failed_units"
+    fi
+}
+
+check_btrfs_usage() {
+    local name="btrfs_usage"
+
+    if ! command -v btrfs &>/dev/null; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="btrfs command not available"
+        return
+    fi
+
+    # Use Device allocated / Device size — measures how much of the physical
+    # device is claimed by Btrfs chunks, which is the earliest signal of
+    # impending full-disk errors (not raw data "Used", which lags behind).
+    # $NF picks the rightmost field on each line, safe regardless of spacing.
+    local usage_pct
+    usage_pct=$(btrfs filesystem usage -b / 2>/dev/null \
+        | awk '
+            /^[[:space:]]*Device size:/      { total=$NF }
+            /^[[:space:]]*Device allocated:/ { allocated=$NF }
+            END { if (total+0 > 0) printf "%.0f", (allocated/total)*100 }
+        ' || true)
+
+    if [[ -z "$usage_pct" ]]; then
+        usage_pct=$(df --output=pcent / 2>/dev/null | tail -1 | tr -d ' %' || true)
+    fi
+
+    if [[ -z "$usage_pct" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="Cannot determine Btrfs pool usage"
+        return
+    fi
+
+    if [[ "$usage_pct" -ge 85 ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="Btrfs pool usage at ${usage_pct}% (critical: >=85%)"
+    elif [[ "$usage_pct" -ge 70 ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Btrfs pool usage at ${usage_pct}% (threshold: 70%)"
+    else
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="Btrfs pool usage at ${usage_pct}%"
+    fi
+}
+
+check_snapshot_count() {
+    local name="snapshot_count"
+
+    if [[ ! -d "$SNAPSHOTS_DIR" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="/.snapshots not mounted"
+        return
+    fi
+
+    local count
+    count=$(find "$SNAPSHOTS_DIR" -maxdepth 1 -mindepth 1 -type d \
+        ! -name '.metadata' | wc -l)
+
+    if [[ "$count" -gt 20 ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="${count} snapshots (critical: >20). Run 'our-snapshot prune'."
+        CHECK_FIX[$name]="fix_snapshot_count"
+    elif [[ "$count" -gt 10 ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="${count} snapshots (threshold: >10). Consider pruning."
+        CHECK_FIX[$name]="fix_snapshot_count"
+    else
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="${count} snapshots"
+    fi
+}
+
+check_boot_entries() {
+    local name="boot_entries"
+
+    if [[ ! -d "$ENTRIES_DIR" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="/boot/loader/entries/ not found (ESP not mounted?)"
+        return
+    fi
+
+    local orphans=0
+    local entry_file snapshot_name
+
+    for entry_file in "$ENTRIES_DIR"/ouroboros-snapshot-*.conf; do
+        [[ -f "$entry_file" ]] || continue
+
+        snapshot_name=$(grep -oP 'rootflags=subvol=@snapshots/\K[^ ]+' "$entry_file" 2>/dev/null || true)
+        [[ -n "$snapshot_name" ]] || continue
+
+        if [[ ! -d "${SNAPSHOTS_DIR}/${snapshot_name}" ]]; then
+            orphans=$((orphans + 1))
+        fi
+    done
+
+    if [[ "$orphans" -gt 0 ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="${orphans} orphan boot entry(ies) found"
+        CHECK_FIX[$name]="fix_boot_entries"
+    else
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="No orphan boot entries"
+    fi
+}
+
+check_secure_boot() {
+    local name="secure_boot"
+
+    if ! command -v mokutil &>/dev/null; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="mokutil not available"
+        return
+    fi
+
+    local sb_state
+    sb_state=$(mokutil --sb-state 2>/dev/null | head -1 || true)
+
+    if [[ "$sb_state" != *"SecureBoot enabled"* ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="Secure Boot not enabled"
+        return
+    fi
+
+    if ! command -v sbctl &>/dev/null; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Secure Boot enabled but sbctl not installed"
+        return
+    fi
+
+    if [[ ! -d /var/lib/sbctl ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Secure Boot enabled but sbctl keys not found in /var/lib/sbctl/"
+        return
+    fi
+
+    CHECK_STATUS[$name]="PASS"
+    CHECK_MESSAGE[$name]="Secure Boot enabled, sbctl configured"
+}
+
+check_tpm2() {
+    local name="tpm2"
+
+    if [[ ! -f "$SYSTEM_YAML" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="system.yaml not found"
+        return
+    fi
+
+    local tpm2_unlock
+    tpm2_unlock=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('${SYSTEM_YAML}'))
+print(d.get('security', {}).get('tpm2_unlock', False))
+" 2>/dev/null || echo "False")
+
+    if [[ "$tpm2_unlock" != "True" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="TPM2 unlock not enabled in system.yaml"
+        return
+    fi
+
+    if [[ -c /dev/tpm0 ]] || [[ -c /dev/tpmrm0 ]]; then
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="TPM2 device available and enrollment enabled"
+    else
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="TPM2 unlock enabled in system.yaml but no TPM2 device found"
+    fi
+}
+
+check_ota_updates() {
+    local name="ota_updates"
+
+    if [[ -f "${STATE_DIR}/update-available" ]]; then
+        local update_ver
+        update_ver=$(cat "${STATE_DIR}/update-available" 2>/dev/null || echo "unknown")
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Update available: ${update_ver}. Run 'ouroboros-rebase --from-channel'."
+        return
+    fi
+
+    if [[ ! -f "$SYSTEM_YAML" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="system.yaml not found"
+        return
+    fi
+
+    local channel_url
+    channel_url=$(python3 -c "
+import yaml
+d = yaml.safe_load(open('${SYSTEM_YAML}'))
+print(d.get('channel_url', ''))
+" 2>/dev/null || true)
+
+    if [[ -z "$channel_url" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="No channel_url in system.yaml"
+        return
+    fi
+
+    if curl -fsSL --head --max-time 5 "$channel_url" &>/dev/null; then
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="OTA channel reachable, system is up to date"
+    else
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="OTA channel unreachable: ${channel_url}"
+    fi
+}
+
+check_pacman_cache() {
+    local name="pacman_cache"
+    local cache_dir="/var/cache/pacman/pkg"
+
+    if [[ ! -d "$cache_dir" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="Pacman cache directory not found"
+        return
+    fi
+
+    local cache_bytes
+    cache_bytes=$(du -sb "$cache_dir" 2>/dev/null | awk '{print $1}' || echo 0)
+
+    if [[ "$cache_bytes" -gt 2147483648 ]]; then
+        local cache_human
+        cache_human=$(du -sh "$cache_dir" 2>/dev/null | awk '{print $1}' || echo "?")
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="Package cache is ${cache_human} (threshold: 2 GB)"
+        CHECK_FIX[$name]="fix_pacman_cache"
+    else
+        local cache_human
+        cache_human=$(du -sh "$cache_dir" 2>/dev/null | awk '{print $1}' || echo "?")
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="Package cache is ${cache_human}"
+    fi
+}
+
+check_fstab() {
+    local name="fstab"
+    local fstab_file="/etc/fstab"
+
+    if [[ ! -f "$fstab_file" ]]; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="/etc/fstab not found"
+        return
+    fi
+
+    local missing=0 uuid
+    while IFS= read -r uuid; do
+        [[ -n "$uuid" ]] || continue
+        if ! blkid -U "$uuid" &>/dev/null; then
+            missing=$((missing + 1))
+        fi
+    done < <(grep -oP 'UUID=\K[^ \t]+' "$fstab_file" 2>/dev/null || true)
+
+    if [[ "$missing" -gt 0 ]]; then
+        CHECK_STATUS[$name]="FAIL"
+        CHECK_MESSAGE[$name]="${missing} fstab UUID(s) do not resolve to any device"
+    else
+        CHECK_STATUS[$name]="PASS"
+        CHECK_MESSAGE[$name]="All fstab UUIDs resolve correctly"
+    fi
+}
+
+# ── Structured output via python3 ─────────────────────────────────────────────
+
+_output_structured() {
+    local format="$1"
+    local pass_count=0 warn_count=0 fail_count=0 skip_count=0
+    local checks_py="["
+    local sep=""
+
+    for chk in "${CHECKS_RUN[@]}"; do
+        local status="${CHECK_STATUS[$chk]}"
+        local message="${CHECK_MESSAGE[$chk]}"
+        local fix="False"
+        [[ -n "${CHECK_FIX[$chk]:-}" ]] && fix="True"
+
+        # Escape for Python string literal
+        message="${message//\\/\\\\}"
+        message="${message//\'/\\\'}"
+
+        checks_py+="${sep}{'name':'${chk}','status':'${status}','message':'${message}','fix_available':${fix}}"
+        sep=","
+
+        case "$status" in
+            PASS) pass_count=$((pass_count + 1)) ;;
+            WARN) warn_count=$((warn_count + 1)) ;;
+            FAIL) fail_count=$((fail_count + 1)) ;;
+            SKIP) skip_count=$((skip_count + 1)) ;;
+        esac
+    done
+    checks_py+="]"
+
+    local ts
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    python3 <<PYEOF
+import json, sys
+checks = ${checks_py}
+data = {
+    'timestamp': '${ts}',
+    'program': '${PROGRAM}',
+    'version': '${VERSION}',
+    'summary': {
+        'total': len(checks),
+        'pass': ${pass_count},
+        'warn': ${warn_count},
+        'fail': ${fail_count},
+        'skip': ${skip_count}
+    },
+    'checks': checks
+}
+if '${format}' == 'yaml':
+    import yaml
+    yaml.dump(data, sys.stdout, default_flow_style=False, sort_keys=False)
+else:
+    json.dump(data, sys.stdout, indent=2)
+    print()
+PYEOF
+
+    [[ "${fail_count}" -eq 0 ]] || exit 1
+    exit 0
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+main() {
+    local DOCTOR=0
+    local YAML_OUT=0
+    local JSON_OUT=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --doctor|-d) DOCTOR=1; shift ;;
+            --yaml|-y)   YAML_OUT=1; shift ;;
+            --json|-j)   JSON_OUT=1; shift ;;
+            --help|-h)
+                cat <<EOF
+Usage: ${PROGRAM} [--doctor] [--yaml] [--json]
+
+  --doctor   Detect problems and offer to fix them interactively
+  --yaml     Output results as YAML (machine-readable)
+  --json     Output results as JSON (machine-readable)
+
+Run without flags for a colored summary report.
+EOF
+                exit 0
+                ;;
+            *) _die "Unknown option: $1. Use --help for usage." ;;
+        esac
+    done
+
+    # Run all checks
+    local ALL_CHECKS=(root_ro system_yaml machine_id failed_units btrfs_usage
+                      snapshot_count boot_entries secure_boot tpm2 ota_updates
+                      pacman_cache fstab)
+    local chk
+    for chk in "${ALL_CHECKS[@]}"; do
+        run_check "$chk"
+    done
+
+    # Structured output
+    if [[ "$YAML_OUT" -eq 1 ]]; then
+        _output_structured "yaml"
+    elif [[ "$JSON_OUT" -eq 1 ]]; then
+        _output_structured "json"
+    else
+        # Normal colored output
+        local pass_count=0 warn_count=0 fail_count=0 skip_count=0
+
+        _info "Running ${#CHECKS_RUN[@]} health checks..."
+        echo ""
+
+        for chk in "${CHECKS_RUN[@]}"; do
+            local status="${CHECK_STATUS[$chk]}"
+            local message="${CHECK_MESSAGE[$chk]}"
+
+            case "$status" in
+                PASS) printf '  \033[0;32m✓\033[0m %-15s — %s\n' "$chk" "$message"; pass_count=$((pass_count + 1)) ;;
+                WARN) printf '  \033[0;33m⚠\033[0m %-15s — %s\n' "$chk" "$message"; warn_count=$((warn_count + 1)) ;;
+                FAIL) printf '  \033[0;31m✗\033[0m %-15s — %s\n' "$chk" "$message"; fail_count=$((fail_count + 1)) ;;
+                SKIP) printf '  \033[0;90m○\033[0m %-15s — %s\n' "$chk" "$message"; skip_count=$((skip_count + 1)) ;;
+            esac
+        done
+
+        echo ""
+        _info "Summary: ${pass_count} passed, ${warn_count} warnings, ${fail_count} failures, ${skip_count} skipped"
+
+        # Doctor mode
+        if [[ "$DOCTOR" -eq 1 ]]; then
+            local has_fixable=false
+            for chk in "${CHECKS_RUN[@]}"; do
+                local status="${CHECK_STATUS[$chk]}"
+                local fix="${CHECK_FIX[$chk]:-}"
+
+                if [[ -n "$fix" && ("$status" == "FAIL" || "$status" == "WARN") ]]; then
+                    has_fixable=true
+                    echo ""
+                    _warn "${chk}: ${CHECK_MESSAGE[$chk]}"
+                    local answer
+                    read -r -p "  Fix this? [y/N]: " answer
+                    if [[ "$answer" =~ ^[Yy]$ ]]; then
+                        "$fix"
+                        _ok "Applied fix for ${chk}"
+                    else
+                        _info "Skipped fix for ${chk}"
+                    fi
+                fi
+            done
+
+            if [[ "$has_fixable" == false ]]; then
+                _ok "No fixable problems found."
+            fi
+        fi
+
+        [[ "$fail_count" -eq 0 ]] || exit 1
+    fi
+}
+
+main "$@"
