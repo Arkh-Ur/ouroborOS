@@ -49,6 +49,9 @@ jobs:
             --workdir /home/ouroborOS-build \
             --output out/
 
+      - name: Fix out/ ownership (built as root)
+        run: sudo chown -R $(id -u):$(id -g) out/
+
       - name: Generate SHA256 checksum
         run: |
           cd out/
@@ -152,6 +155,9 @@ jobs:
           ${PKGS}
           CHANEOF
           cat channels/stable.yaml
+
+      - name: Fix out/ ownership (built as root)
+        run: sudo chown -R $(id -u):$(id -g) out/
 
       - name: Generate SHA256 checksums
         run: |
