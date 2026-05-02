@@ -26,8 +26,8 @@ network:
   enable_resolved: true
 
 user:
-  username: hbuddenberg
-  password: "7907"
+  username: testuser
+  password: "testpass123"
   groups:
     - wheel
     - audio

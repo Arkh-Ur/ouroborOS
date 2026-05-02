@@ -53,26 +53,13 @@ set -euo pipefail
 #   2 — prerequisites not met or infrastructure failure
 # =============================================================================
 
-# ── Colors ────────────────────────────────────────────────────────────────────
-# shellcheck disable=SC2034
-readonly GREEN='\033[0;32m'
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[1;33m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly RESET='\033[0m'
+# ── Source shared E2E infrastructure ──────────────────────────────────────────
+E2E_PREFIX="P4"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tests/scripts/e2e-common.sh
+source "${SCRIPT_DIR}/e2e-common.sh"
 
-log_ok()      { echo -e "  ${GREEN}✓${RESET} $*"; }
-log_fail()    { echo -e "  ${RED}✗${RESET} $*"; FAILURES=$((FAILURES + 1)); }
-# shellcheck disable=SC2329
-log_skip()    { echo -e "  ${YELLOW}⏭${RESET} $*"; SKIPPED=$((SKIPPED + 1)); }
-log_section() { echo -e "\n${BOLD}${CYAN}━━ $* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; }
-log_info()    { echo -e "  ${CYAN}→${RESET} $*"; }
-# shellcheck disable=SC2329
-log_warn()    { echo -e "  ${YELLOW}!${RESET} $*"; }
-log_die()     { echo -e "${RED}FATAL: $*${RESET}" >&2; exit 2; }
-
-# ── Configuration ─────────────────────────────────────────────────────────────
+# ── Configuration (Phase 4 specific) ─────────────────────────────────────────
 P4_TEST_USER="${P4_TEST_USER:-admin}"
 P4_TEST_PASSWORD="${P4_TEST_PASSWORD:-changeme}"
 P4_TEST_SSH_PORT="${P4_TEST_SSH_PORT:-2222}"
@@ -104,182 +91,6 @@ SERIAL_INSTALL=""
 SERIAL_BOOT=""
 HAS_INTERNET=0
 
-# ── SSH helpers ────────────────────────────────────────────────────────────────
-ssh_cmd() {
-    sshpass -p "$P4_TEST_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=5 \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -p "$P4_TEST_SSH_PORT" \
-        "${P4_TEST_USER}@localhost" "$@"
-}
-
-ssh_root() {
-    ssh_cmd "echo ${P4_TEST_PASSWORD} | sudo -S $*"
-}
-
-ssh_out() {
-    ssh_cmd "$@" 2>/dev/null || true
-}
-
-ssh_root_out() {
-    ssh_root "$@" 2>/dev/null || true
-}
-
-wait_ssh() {
-    local max_attempts="${1:-40}"
-    local attempt=1
-    log_info "Waiting for SSH on port ${P4_TEST_SSH_PORT}..."
-    while ! ssh_cmd true 2>/dev/null; do
-        if [[ $attempt -ge $max_attempts ]]; then
-            log_die "SSH did not become available after ${max_attempts} attempts"
-        fi
-        sleep 3
-        attempt=$((attempt + 1))
-    done
-    log_ok "SSH available on port ${P4_TEST_SSH_PORT}"
-}
-
-# ── QEMU helpers ───────────────────────────────────────────────────────────────
-launch_qemu() {
-    local disk="$1"
-    local iso="${2:-}"
-    local serial="$3"
-    local config_iso="${4:-}"
-
-    kill_qemu
-
-    # shellcheck disable=SC2054
-    local qemu_args=(
-        -enable-kvm
-        -cpu host
-        -smp 2
-        -m "$P4_QEMU_MEMORY"
-        -drive "if=pflash,format=raw,readonly=on,file=${OVMF_PATH}"
-        -drive "file=${disk},format=qcow2,if=virtio,cache=writeback"
-        -netdev "user,id=net0,hostfwd=tcp::${P4_TEST_SSH_PORT}-:22"
-        -device "e1000,netdev=net0"
-        -rtc base=utc,clock=host
-        -serial "file:${serial}"
-        -vga virtio
-        -display none
-        -vnc ":${P4_VNC_DISPLAY}"
-    )
-
-    [[ -n "$iso" ]]        && qemu_args+=(-cdrom "$iso" -boot d)
-    [[ -n "$config_iso" ]] && qemu_args+=(-drive "file=${config_iso},format=raw,media=cdrom,readonly=on")
-
-    setsid qemu-system-x86_64 "${qemu_args[@]}" &>/dev/null &
-    QEMU_PID=$!
-    log_info "QEMU PID: ${QEMU_PID} — VNC: vncviewer localhost:590${P4_VNC_DISPLAY}"
-}
-
-kill_qemu() {
-    if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-    fi
-    QEMU_PID=""
-}
-
-wait_qemu_exit() {
-    local timeout_secs="${1:-$P4_INSTALL_TIMEOUT}"
-    log_info "Waiting for QEMU to finish (timeout: ${timeout_secs}s)..."
-    if timeout "$timeout_secs" bash -c "while kill -0 $QEMU_PID 2>/dev/null; do sleep 3; done"; then
-        log_ok "QEMU exited cleanly"
-    else
-        log_fail "QEMU timed out after ${timeout_secs}s"
-        kill_qemu
-        return 1
-    fi
-}
-
-# ── Assert helpers ─────────────────────────────────────────────────────────────
-assert_contains() {
-    local description="$1"
-    local output="$2"
-    local pattern="$3"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if echo "$output" | grep -qE "$pattern"; then
-        log_ok "${description}"
-    else
-        log_fail "${description}"
-        log_info "  Expected pattern: ${pattern}"
-        log_info "  Got: $(echo "$output" | tail -3)"
-    fi
-}
-
-assert_equals() {
-    local description="$1"
-    local actual="$2"
-    local expected="$3"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if [[ "$actual" == "$expected" ]]; then
-        log_ok "${description}"
-    else
-        log_fail "${description}"
-        log_info "  Expected: ${expected}"
-        log_info "  Got:      ${actual}"
-    fi
-}
-
-assert_zero() {
-    local description="$1"
-    local value="$2"
-    assert_equals "$description" "$value" "0"
-}
-
-assert_cmd_exists() {
-    local description="$1"
-    local cmd="$2"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if ssh_out "command -v ${cmd}" | grep -q "${cmd}"; then
-        log_ok "${description}"
-    else
-        log_fail "${description}"
-        log_info "  Command not found: ${cmd}"
-    fi
-}
-
-assert_file_exists() {
-    local description="$1"
-    local path="$2"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if ssh_root_out "test -e '${path}' && echo yes" | grep -q "yes"; then
-        log_ok "${description}"
-    else
-        log_fail "${description}"
-        log_info "  Path not found: ${path}"
-    fi
-}
-
-assert_unit_active() {
-    local description="$1"
-    local unit="$2"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    local state
-    state=$(ssh_root_out "systemctl is-active ${unit}" || true)
-    if [[ "$state" == "active" ]]; then
-        log_ok "${description} (active)"
-    else
-        log_fail "${description} (got: ${state})"
-    fi
-}
-
-assert_unit_enabled() {
-    local description="$1"
-    local unit="$2"
-    TESTS_RUN=$((TESTS_RUN + 1))
-    local state
-    state=$(ssh_root_out "systemctl is-enabled ${unit}" || true)
-    if [[ "$state" == "enabled" || "$state" == "static" || "$state" == "indirect" ]]; then
-        log_ok "${description} (${state})"
-    else
-        log_fail "${description} (got: ${state})"
-    fi
-}
-
 # ── Cleanup on exit ────────────────────────────────────────────────────────────
 # shellcheck disable=SC2329
 cleanup() {
@@ -288,6 +99,7 @@ cleanup() {
         [[ -n "$DISK_PATH"       ]] && rm -f "$DISK_PATH"
         [[ -n "$SERIAL_INSTALL"  ]] && rm -f "$SERIAL_INSTALL"
         [[ -n "$SERIAL_BOOT"     ]] && rm -f "$SERIAL_BOOT"
+        [[ -n "${local_config_iso:-}" ]] && rm -f "$local_config_iso"
     else
         log_info "Artifacts kept (P4_KEEP_ARTIFACTS=1):"
         [[ -n "$DISK_PATH"      ]] && log_info "  Disk:          ${DISK_PATH}"
@@ -371,7 +183,8 @@ log_ok "Disk created: ${DISK_PATH} (${P4_DISK_SIZE})"
 
 # Build config ISO (CD-ROM injection method)
 local_config_iso="${P4_SERIAL_DIR}/phase4-config.iso"
-genisoimage -quiet -V OUROBOROS-CONFIG -r -J -o "$local_config_iso" "$E2E_CONFIG" 2>/dev/null
+genisoimage -quiet -V OUROBOROS-CONFIG -r -J -o "$local_config_iso" "$E2E_CONFIG" 2>/dev/null \
+    || log_die "Failed to create config ISO"
 log_ok "Config ISO created for CD-ROM injection"
 
 launch_qemu "$DISK_PATH" "$P4_ISO_PATH" "$SERIAL_INSTALL" "$local_config_iso"
@@ -382,7 +195,7 @@ wait_qemu_exit "$P4_INSTALL_TIMEOUT"
 
 # Validate install serial log
 log_info "Checking install serial log..."
-for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+for state in INIT NETWORK_SETUP PREFLIGHT LOCALE USER DESKTOP SECURE_BOOT PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
     TESTS_RUN=$((TESTS_RUN + 1))
     if grep -q "State completed: ${state}" "$SERIAL_INSTALL" 2>/dev/null; then
         log_ok "Installer reached state: ${state}"
@@ -450,8 +263,8 @@ assert_cmd_exists "our-aur exists"  "/usr/local/bin/our-aur"
 assert_cmd_exists "our-flat exists" "/usr/local/bin/our-flat"
 assert_cmd_exists "flatpak exists"  "flatpak"
 
-assert_file_exists "our-aur is executable" "/usr/local/bin/our-aur"
-assert_file_exists "our-flat is executable" "/usr/local/bin/our-flat"
+assert_file_executable "our-aur is executable" "/usr/local/bin/our-aur"
+assert_file_executable "our-flat is executable" "/usr/local/bin/our-flat"
 
 # Verify permissions (755)
 aur_perms=$(ssh_root_out "stat -c '%a' /usr/local/bin/our-aur 2>/dev/null" || true)
@@ -721,7 +534,6 @@ if [[ "$aur_data" == "absent" ]]; then
     log_ok "/var/lib/our-aur: absent antes del primer uso (lazy init correcto)"
 else
     log_warn "/var/lib/our-aur: ya existe antes del primer our-aur -S (ok si firstboot instaló algo)"
-    TESTS_RUN=$((TESTS_RUN - 1))
     log_skip "/var/lib/our-aur check — estado ambiguo (firstboot pudo crear)"
 fi
 

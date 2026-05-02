@@ -21,17 +21,18 @@ set -euo pipefail
 #   Phase 14 — System integrity (verify host is healthy after all operations)
 #
 # Prerequisites (host):
-#   sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass
+#   sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass genisoimage
 #   /dev/kvm must exist (KVM required)
 #   Host RAM >= 8 GB
 #
 # Environment variables:
-#   OBOX_TEST_PASSWORD   — user password for SSH (default: 7907)
-#   OBOX_TEST_USER       — username for SSH (default: hbuddenberg)
+#   OBOX_TEST_PASSWORD   — user password for SSH (default: changeme)
+#   OBOX_TEST_USER       — username for SSH (default: admin)
 #   OBOX_TEST_SSH_PORT   — forwarded SSH port (default: 2222)
-#   OBOX_TEST_DISK       — qcow2 disk path (default: /tmp/our-container-test.qcow2)
-#   OBOX_TEST_SERIAL     — serial log path (default: /tmp/our-container-serial.log)
+#   OBOX_TEST_DISK       — qcow2 disk path (default: /home/our-container-test.qcow2)
+#   OBOX_TEST_SERIAL     — serial log path (default: /home/our-container-serial.log)
 #   OBOX_QEMU_MEMORY     — RAM for QEMU VM in MB (default: 2048)
+#   OBOX_VNC_DISPLAY     — VNC display number (default: 3)
 #   OBOX_BUILD_WORKDIR   — ISO build workdir (default: /home/our-container-build)
 #   OBOX_SKIP_BUILD      — set to 1 to skip ISO build (uses existing ISO)
 #   OBOX_KEEP_ARTIFACTS  — set to 1 to keep qcow2/logs after tests
@@ -44,29 +45,26 @@ set -euo pipefail
 #   2 — prerequisites not met (abort before testing)
 # =============================================================================
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
-readonly GREEN='\033[0;32m'
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[1;33m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly DIM='\033[2m'
-readonly RESET='\033[0m'
+# ── Source shared E2E infrastructure ──────────────────────────────────────────
+E2E_PREFIX="OBOX"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=e2e-common.sh
+source "${SCRIPT_DIR}/e2e-common.sh"
 
-log_ok()      { echo -e "  ${GREEN}✓${RESET} $*"; }
-log_fail()    { echo -e "  ${RED}✗${RESET} $*"; FAILURES=$((FAILURES + 1)); }
-log_skip()    { echo -e "  ${YELLOW}⏭${RESET} $*"; SKIPPED=$((SKIPPED + 1)); }
-log_section() { echo -e "\n${BOLD}${CYAN}━━ $* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; }
-log_info()    { echo -e "  ${CYAN}→${RESET} $*"; }
-log_warn()    { echo -e "  ${YELLOW}!${RESET} $*"; }
+FAILURES=0
+SKIPPED=0
+TESTS_RUN=0
+
+readonly DIM='\033[2m'
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-OBOX_TEST_PASSWORD="${OBOX_TEST_PASSWORD:-7907}"
-OBOX_TEST_USER="${OBOX_TEST_USER:-hbuddenberg}"
+OBOX_TEST_PASSWORD="${OBOX_TEST_PASSWORD:-changeme}"
+OBOX_TEST_USER="${OBOX_TEST_USER:-admin}"
 OBOX_TEST_SSH_PORT="${OBOX_TEST_SSH_PORT:-2222}"
-OBOX_TEST_DISK="${OBOX_TEST_DISK:-/tmp/our-container-test.qcow2}"
-OBOX_TEST_SERIAL="${OBOX_TEST_SERIAL:-/tmp/our-container-serial.log}"
+OBOX_TEST_DISK="${OBOX_TEST_DISK:-/home/our-container-test.qcow2}"
+OBOX_TEST_SERIAL="${OBOX_TEST_SERIAL:-/home/our-container-serial.log}"
 OBOX_QEMU_MEMORY="${OBOX_QEMU_MEMORY:-2048}"
+OBOX_VNC_DISPLAY="${OBOX_VNC_DISPLAY:-3}"
 OBOX_BUILD_WORKDIR="${OBOX_BUILD_WORKDIR:-/home/our-container-build}"
 OBOX_SKIP_BUILD="${OBOX_SKIP_BUILD:-0}"
 OBOX_KEEP_ARTIFACTS="${OBOX_KEEP_ARTIFACTS:-0}"
@@ -77,36 +75,8 @@ readonly OVMF_CODE="/usr/share/edk2/x64/OVMF_CODE.4m.fd"
 readonly OVMF_CODE_LEGACY="/usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd"
 
 WORKSPACE="${WORKSPACE:-$(cd "$(dirname "$0")/../.." && pwd)}"
-FAILURES=0
-SKIPPED=0
-TESTS_RUN=0
-QEMU_PID=""
-OVMF_PATH=""
 
-# ── SSH Helpers ────────────────────────────────────────────────────────────────
-# Run command as regular user via SSH
-ssh_cmd() {
-    sshpass -p "$OBOX_TEST_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=5 \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -p "$OBOX_TEST_SSH_PORT" \
-        "${OBOX_TEST_USER}@localhost" "$@"
-}
-
-# Run command as root via SSH (sudo)
-ssh_root() {
-    sshpass -p "$OBOX_TEST_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=5 \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -p "$OBOX_TEST_SSH_PORT" \
-        "${OBOX_TEST_USER}@localhost" \
-        "echo ${OBOX_TEST_PASSWORD} | sudo -S $*"
-}
-
+# ── SSH Convenience Wrappers (our-container specific) ─────────────────────────
 # Run our-container command via SSH as root
 # Usage: run_ourbox <args...>
 run_ourbox() {
@@ -119,93 +89,28 @@ run_ourbox_fail() {
     ssh_root "our-container $* 2>&1; true" 2>/dev/null
 }
 
-# Wait for SSH to become available
-wait_ssh() {
-    local max_attempts="${1:-30}"
-    local attempt=1
-    log_info "Waiting for SSH on port ${OBOX_TEST_SSH_PORT}..."
-    while ! ssh_cmd true 2>/dev/null; do
-        if [[ $attempt -ge $max_attempts ]]; then
-            log_fail "SSH did not become available after ${max_attempts} attempts"
-            return 1
-        fi
-        sleep 2
-        attempt=$((attempt + 1))
-    done
-    log_ok "SSH available on port ${OBOX_TEST_SSH_PORT}"
-}
-
-# Wait for QEMU process to exit
-wait_qemu_exit() {
-    local timeout_secs="${1:-600}"
-    log_info "Waiting for QEMU (PID ${QEMU_PID}) to exit (timeout: ${timeout_secs}s)..."
-    if timeout "$timeout_secs" bash -c "while kill -0 $QEMU_PID 2>/dev/null; do sleep 3; done"; then
-        log_ok "QEMU exited cleanly"
+# Assert output does NOT contain a pattern
+assert_not_contains() {
+    local description="$1"
+    local output="$2"
+    local pattern="$3"
+    if echo "$output" | grep -qE "$pattern"; then
+        log_fail "${description}"
+        log_info "  Unexpected pattern found: ${pattern}"
     else
-        log_fail "QEMU timed out after ${timeout_secs}s — killing"
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-        return 1
+        log_ok "${description}"
     fi
+    TESTS_RUN=$((TESTS_RUN + 1))
 }
 
-# Launch QEMU with a given disk (install or boot)
-# Arguments: $1 = disk path, $2 = iso path (empty for no ISO)
-launch_qemu() {
-    local disk_path="$1"
-    local iso_path="${2:-}"
-
-    # Kill any existing QEMU on the same port
-    if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-    fi
-
-    local serial_log="/tmp/our-container-serial-install.log"
-    if [[ -z "$iso_path" ]]; then
-        serial_log="$OBOX_TEST_SERIAL"
-    fi
-
-    local qemu_args
-    # shellcheck disable=SC2054  # qemu args use commas inside values (-drive if=...,format=...)
-    qemu_args=(
-        -enable-kvm
-        -cpu host
-        -smp 2
-        -m "$OBOX_QEMU_MEMORY"
-        -drive "if=pflash,format=raw,readonly=on,file=${OVMF_PATH}"
-        -drive "file=${disk_path},format=qcow2,if=virtio,cache=writeback"
-        -netdev "user,id=net0,hostfwd=tcp::${OBOX_TEST_SSH_PORT}-:22"
-        -device "e1000,netdev=net0"
-        -rtc base=utc,clock=host
-        -serial "file:${serial_log}"
-        -vga virtio
-        -display none
-        -vnc :1
-    )
-
-    if [[ -n "$iso_path" ]]; then
-        qemu_args+=(-cdrom "$iso_path" -boot d)
-    fi
-
-    qemu-system-x86_64 "${qemu_args[@]}" &
-    QEMU_PID=$!
-    log_info "QEMU PID: ${QEMU_PID}"
-}
-
-# Teardown — kill QEMU and optionally clean artifacts
-# shellcheck disable=SC2329  # invoked via 'trap teardown EXIT'
+# shellcheck disable=SC2329
 teardown() {
     log_section "Teardown"
-    if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
-        log_info "Killing QEMU (PID ${QEMU_PID})..."
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-    fi
+    kill_qemu
     if [[ "$OBOX_KEEP_ARTIFACTS" != "1" ]]; then
         log_info "Cleaning test artifacts..."
         rm -f "$OBOX_TEST_DISK" "$OBOX_TEST_SERIAL" \
-              /tmp/our-container-serial-install.log /tmp/our-container-serial-boot.log
+              /home/our-container-serial-install.log /home/our-container-serial-boot.log
         sudo rm -rf "$OBOX_BUILD_WORKDIR" 2>/dev/null || true
     else
         log_info "Keeping artifacts (OBOX_KEEP_ARTIFACTS=1):"
@@ -213,35 +118,6 @@ teardown() {
         log_info "  Serial:  ${OBOX_TEST_SERIAL}"
         log_info "  Build:   ${OBOX_BUILD_WORKDIR}"
     fi
-}
-
-# Assert output contains a pattern
-assert_contains() {
-    local description="$1"
-    local output="$2"
-    local pattern="$3"
-    if echo "$output" | grep -q "$pattern"; then
-        log_ok "${description}"
-    else
-        log_fail "${description}"
-        log_info "  Expected pattern: ${pattern}"
-        log_info "  Output: $(echo "$output" | tail -5)"
-    fi
-    TESTS_RUN=$((TESTS_RUN + 1))
-}
-
-# Assert output does NOT contain a pattern
-assert_not_contains() {
-    local description="$1"
-    local output="$2"
-    local pattern="$3"
-    if echo "$output" | grep -q "$pattern"; then
-        log_fail "${description}"
-        log_info "  Unexpected pattern found: ${pattern}"
-    else
-        log_ok "${description}"
-    fi
-    TESTS_RUN=$((TESTS_RUN + 1))
 }
 
 # ── Phase 0 — Prerequisites ────────────────────────────────────────────────────
@@ -270,12 +146,12 @@ check_prerequisites() {
 
     # Required tools
     local tool
-    for tool in qemu-system-x86_64 qemu-img sshpass ssh; do
+    for tool in qemu-system-x86_64 qemu-img sshpass ssh genisoimage; do
         if command -v "$tool" >/dev/null 2>&1; then
             log_ok "$tool"
         else
             log_fail "$tool not found"
-            log_info "Install with: sudo pacman -S qemu-system-x86 edk2-ovmf openssh sshpass"
+            log_info "Install with: sudo pacman -S qemu-system-x86 edk2-ovmf openssh sshpass cdrtools"
             exit 2
         fi
     done
@@ -320,7 +196,7 @@ build_iso() {
     log_info "Building ISO (workdir: ${OBOX_BUILD_WORKDIR})..."
 
     local build_output
-    if build_output=$(echo "$OBOX_TEST_PASSWORD" | sudo -S bash "$WORKSPACE/src/scripts/build-iso.sh" \
+    if build_output=$(sudo bash "$WORKSPACE/src/scripts/build-iso.sh" \
         --clean --workdir "$OBOX_BUILD_WORKDIR" 2>&1); then
         log_ok "ISO build completed"
     else
@@ -363,17 +239,77 @@ unattended_install() {
     local iso
     iso=$(find "$WORKSPACE/out" -name 'ouroborOS-*.iso' -print -quit 2>/dev/null)
 
-    log_info "Launching QEMU for unattended install..."
-    launch_qemu "$OBOX_TEST_DISK" "$iso"
+    local config_file
+    config_file="$(mktemp /home/obox-config.XXXXXX.yaml)"
+    cat > "$config_file" <<YAML
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
 
-    wait_qemu_exit 900 || return 1
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+network:
+  hostname: ouroboros
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+
+user:
+  username: ${OBOX_TEST_USER}
+  password: ${OBOX_TEST_PASSWORD}
+  groups:
+    - wheel
+    - audio
+    - video
+    - input
+  shell: /bin/bash
+  homed_storage: classic
+
+desktop:
+  profile: minimal
+
+extra_packages:
+  - openssh
+
+post_install_action: shutdown
+YAML
+
+    local config_iso="/home/obox-config.iso"
+    rm -f "$config_iso"
+    local config_staging="/home/obox-config-staging"
+    rm -rf "$config_staging"
+    mkdir -p "$config_staging"
+    cp "$config_file" "${config_staging}/ouroborOS-config.yaml"
+
+    if ! genisoimage -J -R -V "OUROBOROS-CONFIG" -o "$config_iso" \
+        -graft-points "${config_staging}/=/." >/dev/null 2>&1; then
+        log_fail "Failed to create config ISO"
+        rm -f "$config_file"
+        rm -rf "$config_staging"
+        return 1
+    fi
+    rm -rf "$config_staging"
+    log_ok "Config ISO created: ${config_iso}"
+
+    local serial_install="/home/our-container-serial-install.log"
+    log_info "Launching QEMU for unattended install..."
+    launch_qemu "$OBOX_TEST_DISK" "$iso" "$serial_install" "$config_iso"
+
+    wait_qemu_exit 900 || { rm -f "$config_file" "$config_iso"; return 1; }
+
+    rm -f "$config_file" "$config_iso"
 
     # Verify install serial log
     log_info "Verifying install log..."
-    local install_log="/tmp/our-container-serial-install.log"
+    local install_log="$serial_install"
     local states_ok=true
 
-    for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+    for state in INIT NETWORK_SETUP PREFLIGHT LOCALE USER DESKTOP SECURE_BOOT PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
         if grep -q "State completed: ${state}" "$install_log" 2>/dev/null; then
             log_ok "Install state: ${state}"
         else
@@ -415,7 +351,7 @@ boot_installed() {
     rm -f "$OBOX_TEST_SERIAL"
 
     log_info "Launching QEMU (boot from disk, no ISO)..."
-    launch_qemu "$OBOX_TEST_DISK" ""
+    launch_qemu "$OBOX_TEST_DISK" "" "$OBOX_TEST_SERIAL"
 
     # Wait for login prompt
     log_info "Waiting for login prompt..."
@@ -1118,7 +1054,7 @@ test_persistence() {
 
     # Boot again
     rm -f "$OBOX_TEST_SERIAL"
-    launch_qemu "$OBOX_TEST_DISK" ""
+    launch_qemu "$OBOX_TEST_DISK" "" "$OBOX_TEST_SERIAL"
 
     log_info "Waiting for login prompt after reboot..."
     if timeout 60 bash -c "until grep -q 'login:' '$OBOX_TEST_SERIAL' 2>/dev/null; do sleep 2; done"; then
