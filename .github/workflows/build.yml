@@ -103,7 +103,7 @@ jobs:
 
     steps:
       - name: Clean root-owned artifacts from previous run
-        run: sudo rm -rf out/ || true
+        run: sudo git clean -fdx --exclude='.git' || true
 
       - name: Checkout
         uses: actions/checkout@v5
