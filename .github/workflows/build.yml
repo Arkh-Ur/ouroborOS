@@ -102,6 +102,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf out/ || true
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
