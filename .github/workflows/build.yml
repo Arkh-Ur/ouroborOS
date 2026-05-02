@@ -18,8 +18,13 @@ jobs:
       contents: read
 
     steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          clean: false
 
       - name: Set up loop devices
         run: |

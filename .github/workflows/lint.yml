@@ -11,8 +11,13 @@ jobs:
     name: ShellCheck
     runs-on: self-hosted
     steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run shellcheck
         env:
@@ -65,8 +70,13 @@ jobs:
     name: Python Lint (ruff)
     runs-on: self-hosted
     steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Run ruff
         env:
