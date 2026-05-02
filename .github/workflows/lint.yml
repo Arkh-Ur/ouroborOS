@@ -9,17 +9,8 @@ on:
 jobs:
   shellcheck:
     name: ShellCheck
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
+    runs-on: self-hosted
     steps:
-      - name: Install dependencies
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed shellcheck git findutils grep
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -49,14 +40,12 @@ jobs:
 
           for script in "${SCRIPTS[@]}"; do
             rel="${script#"$WORKSPACE/"}"
-            # --format=gcc produces GitHub-compatible annotations
             if ! shellcheck -S style --format=gcc "$script"; then
               echo "::error file=${rel}::shellcheck failed"
               FAILURES=$((FAILURES + 1))
             fi
           done
 
-          # Verify set -euo pipefail in every script
           for script in "${SCRIPTS[@]}"; do
             rel="${script#"$WORKSPACE/"}"
             if ! head -10 "$script" | grep -q "set -euo pipefail"; then
@@ -74,18 +63,8 @@ jobs:
 
   python-lint:
     name: Python Lint (ruff)
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
+    runs-on: self-hosted
     steps:
-      - name: Install dependencies
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed python python-pip git findutils
-          pip install --no-cache-dir --break-system-packages ruff
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -109,8 +88,6 @@ jobs:
 
           echo "Found ${#PY_FILES[@]} Python file(s)."
 
-          # --output-format=github produces inline PR annotations
-          # --line-length 120: project standard (some log/string lines exceed 88)
           ruff check \
             --select "E,W,F,I,UP,ANN001,ANN201,E722" \
             --line-length 120 \

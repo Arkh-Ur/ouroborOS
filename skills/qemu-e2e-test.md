@@ -30,7 +30,7 @@ git status  # must be clean
 
 ```bash
 # Build with E2E config injected — workdir on /home (needs ~6-8 GB, /tmp too small)
-echo "7907" | sudo -S bash src/scripts/build-iso.sh --clean \
+sudo bash src/scripts/build-iso.sh --clean \
   --e2e-config=tests/qemu/minimal-e2e.yaml \
   --workdir /home/ouroborOS-build
 
@@ -114,8 +114,8 @@ echo "Install complete"
 ### 2.4 Verify install serial log
 
 ```bash
-# All 11 states must appear as completed
-for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+# All 13 states must appear as completed
+for state in INIT NETWORK_SETUP PREFLIGHT LOCALE USER DESKTOP SECURE_BOOT PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
   if grep -q "State completed: ${state}" /tmp/ouroboros-serial-install.log; then
     echo "✓ ${state}"
   else
@@ -136,7 +136,7 @@ grep "Boot entry written" /tmp/ouroboros-serial-install.log && echo "✓ Boot en
 grep "Critical /etc files written" /tmp/ouroboros-serial-install.log && echo "✓ /etc seed OK" || echo "✗ /etc seed missing"
 ```
 
-**Pass criteria:** All 11 states ✓, no FAILED/ERROR from installer, snapshot ✓, boot entry ✓, /etc seed ✓.
+**Pass criteria:** All 13 states ✓, no FAILED/ERROR from installer, snapshot ✓, boot entry ✓, /etc seed ✓.
 
 ---
 
@@ -205,25 +205,25 @@ grep -q "snapshot (install)" /tmp/ouroboros-serial-boot.log && echo "✓ Snapsho
 ### 3.3 SSH into installed system
 
 ```bash
-# User from tests/qemu/minimal-e2e.yaml: hbuddenberg / 7907
+# User from tests/qemu/minimal-e2e.yaml: testuser / testpass123
 # SSH forwarded to localhost:2222
 
 # Clear stale host key from previous runs
 ssh-keygen -R "[localhost]:2222" 2>/dev/null || true
 
 # Wait for SSH to be available (up to 90s)
-timeout 90 bash -c 'until sshpass -p "7907" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p 2222 hbuddenberg@localhost true 2>/dev/null; do sleep 3; done'
+timeout 90 bash -c 'until sshpass -p "testpass123" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p 2222 testuser@localhost true 2>/dev/null; do sleep 3; done'
 echo "SSH ready"
 
 # Helper alias
-SSH="sshpass -p 7907 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 hbuddenberg@localhost"
+SSH="sshpass -p testpass123 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 testuser@localhost"
 ```
 
 ### 3.4 System verification commands
 
 ```bash
 # --- Root filesystem is read-only (Btrfs property — mount option alone is unreliable on Btrfs) ---
-$SSH "echo 7907 | sudo -S btrfs property get / ro 2>/dev/null | grep -q 'ro=true'" && echo "✓ Root is RO (Btrfs property)" || echo "✗ Root is NOT read-only"
+$SSH "echo testpass123 | sudo -S btrfs property get / ro 2>/dev/null | grep -q 'ro=true'" && echo "✓ Root is RO (Btrfs property)" || echo "✗ Root is NOT read-only"
 
 # --- No failed systemd units ---
 FAILED=$($SSH 'systemctl --failed --no-legend | wc -l')
@@ -231,11 +231,11 @@ FAILED=$($SSH 'systemctl --failed --no-legend | wc -l')
 
 # --- Btrfs subvolumes present ---
 for sv in @ @var @etc @home @snapshots; do
-  $SSH "echo 7907 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '${sv}$'" && echo "✓ Subvolume ${sv}" || echo "✗ Subvolume ${sv} missing"
+  $SSH "echo testpass123 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '${sv}$'" && echo "✓ Subvolume ${sv}" || echo "✗ Subvolume ${sv} missing"
 done
 
 # --- Install snapshot exists ---
-$SSH "echo 7907 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '@snapshots/install'" && echo "✓ Snapshot install" || echo "✗ Snapshot install missing"
+$SSH "echo testpass123 | sudo -S btrfs subvolume list / 2>/dev/null | grep -q '@snapshots/install'" && echo "✓ Snapshot install" || echo "✗ Snapshot install missing"
 
 # --- systemd-boot entries ---
 $SSH "ls /boot/loader/entries/" | grep -q "ouroborOS.conf" && echo "✓ Main boot entry" || echo "✗ Main boot entry missing"
@@ -262,7 +262,7 @@ $SSH 'test -x /usr/local/bin/our-container' && echo "✓ our-container installed
 $SSH 'test -L /usr/local/bin/ouroboros-upgrade' && echo "✗ ouroboros-upgrade symlink still present (should be gone)" || echo "✓ ouroboros-upgrade symlink removed"
 
 # --- user created correctly ---
-$SSH 'id hbuddenberg' | grep -q "wheel" && echo "✓ User hbuddenberg in wheel" || echo "✗ User not in wheel"
+$SSH 'id testuser' | grep -q "wheel" && echo "✓ User testuser in wheel" || echo "✗ User not in wheel"
 
 # --- bootctl EFI binary present ---
 $SSH 'test -f /boot/EFI/systemd/systemd-bootx64.efi' && echo "✓ EFI binary present" || echo "✗ EFI binary missing"
@@ -300,7 +300,7 @@ echo "Teardown complete"
 | Phase | Check | Expected |
 |-------|-------|----------|
 | Build | ISO exists, size 800M–2G | ✓ |
-| Install | All 11 states completed | ✓ |
+| Install | All 13 states completed | ✓ |
 | Install | No FAILED/ERROR from installer | ✓ |
 | Install | Snapshot + boot entry written | ✓ |
 | Install | /etc seed (machine-id, group) written | ✓ |
@@ -314,7 +314,7 @@ echo "Teardown complete"
 | Verify | DNSOverTLS=opportunistic in resolved.conf | ✓ |
 | Verify | zram swap active | ✓ |
 | Verify | our-pac + our-container present, ouroboros-upgrade symlink absent | ✓ |
-| Verify | User hbuddenberg in wheel group | ✓ |
+| Verify | User testuser in wheel group | ✓ |
 | Verify | EFI binary at /boot/EFI/systemd/ | ✓ |
 
 **Overall PASS**: All rows ✓ with zero exceptions.
@@ -334,7 +334,7 @@ echo "Teardown complete"
 | Build workdir + disk image on `/home` | `/tmp` is tmpfs (~4 GB), ISO build + qcow2 need 6-8 GB |
 | `sshpass` required | Automated SSH with password; install via `pacman -S sshpass` |
 | `ssh-keygen -R "[localhost]:2222"` before SSH | known_hosts persists between runs, breaking auth |
-| Use `echo 7907 \| sudo -S <cmd>` for privileged cmds | `sudo` in installed system is non-interactive over SSH |
+| Use `echo testpass123 \| sudo -S <cmd>` for privileged cmds | `sudo` in installed system is non-interactive over SSH |
 
 ## Known Issues
 
@@ -366,18 +366,18 @@ $SSH 'grep -q "users:" /etc/ouroboros/system.yaml' && echo "✓ users" || echo "
 
 ```bash
 # install snapshot has .snapshot.yaml
-$SSH 'echo changeme | sudo -S test -f /.snapshots/install/.snapshot.yaml' \
+$SSH 'echo testpass123 | sudo -S test -f /.snapshots/install/.snapshot.yaml' \
     && echo "✓ install .snapshot.yaml" || echo "✗"
-$SSH 'echo changeme | sudo -S grep -q "type: install" /.snapshots/install/.snapshot.yaml' \
+$SSH 'echo testpass123 | sudo -S grep -q "type: install" /.snapshots/install/.snapshot.yaml' \
     && echo "✓ type: install" || echo "✗"
 
 # Create snapshot and verify .snapshot.yaml generated
-$SSH 'echo changeme | sudo -S our-snapshot create --name phase5-test'
-$SSH 'echo changeme | sudo -S test -f /.snapshots/phase5-test/.snapshot.yaml' \
+$SSH 'echo testpass123 | sudo -S our-snapshot create --name phase5-test'
+$SSH 'echo testpass123 | sudo -S test -f /.snapshots/phase5-test/.snapshot.yaml' \
     && echo "✓ .snapshot.yaml creado" || echo "✗"
 
 # ouroboros-rebase --dry-run
-$SSH 'echo changeme | sudo -S ouroboros-rebase --dry-run 2>&1' | grep -qiE "nothing|up.to.date|dry" \
+$SSH 'echo testpass123 | sudo -S ouroboros-rebase --dry-run 2>&1' | grep -qiE "nothing|up.to.date|dry" \
     && echo "✓ rebase dry-run OK" || echo "✗"
 ```
 
@@ -385,13 +385,13 @@ $SSH 'echo changeme | sudo -S ouroboros-rebase --dry-run 2>&1' | grep -qiE "noth
 
 ```bash
 # Health reports clean system
-HEALTH=$($SSH 'echo changeme | sudo -S ouroboros-health 2>&1')
+HEALTH=$($SSH 'echo testpass123 | sudo -S ouroboros-health 2>&1')
 echo "$HEALTH" | grep -q "0 failed" && echo "✓ 0 failed units" || echo "✗"
 echo "$HEALTH" | grep -q "read-only\|ro=true" && echo "✓ root RO" || echo "✗"
 echo "$HEALTH" | grep -q "system.yaml" && echo "✓ system.yaml check" || echo "✗"
 
 # Doctor finds nothing to fix on clean install
-$SSH 'echo changeme | sudo -S ouroboros-health --doctor 2>&1' \
+$SSH 'echo testpass123 | sudo -S ouroboros-health --doctor 2>&1' \
     | grep -qi "all.*ok\|nothing\|clean" && echo "✓ doctor clean" || echo "✗"
 ```
 
@@ -422,11 +422,11 @@ $SSH 'grep -c "username:" /etc/ouroboros/system.yaml' | grep -q "2" \
 
 ```bash
 # our-snapshot diff (requires 2+ snapshots)
-$SSH 'echo changeme | sudo -S our-snapshot diff install phase5-test 2>&1' \
+$SSH 'echo testpass123 | sudo -S our-snapshot diff install phase5-test 2>&1' \
     | grep -qiE "added|modified|deleted|no.diff|identical" && echo "✓ diff OK" || echo "✗"
 
 # pending-verification created by our-pac (mock test)
-$SSH 'echo changeme | sudo -S our-pac --dry-run -Syu 2>/dev/null || true'
+$SSH 'echo testpass123 | sudo -S our-pac --dry-run -Syu 2>/dev/null || true'
 ```
 
 ## Pass/Fail Summary — Phase 5

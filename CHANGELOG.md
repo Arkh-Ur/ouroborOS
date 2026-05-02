@@ -5,6 +5,54 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-04-23
+
+### Added
+
+- **`ouroboros-health`** — new script at `/usr/local/bin/ouroboros-health`. Runs 12
+  system integrity checks against the declarative manifest (`system.yaml`): `root_ro`,
+  `system_yaml`, `machine_id`, `failed_units`, `btrfs_usage`, `snapshot_count`,
+  `boot_entries`, `secure_boot`, `tpm2`, `ota_updates`, `pacman_cache`, `fstab`.
+  Outputs a colored summary by default. Supports `--doctor` (interactive auto-fix),
+  `--yaml`, and `--json` for machine-readable structured output.
+- **`ouroboros-reinstall`** — new script at `/usr/local/bin/ouroboros-reinstall`. Runs
+  from the live ISO to rebuild the `@` subvolume from scratch using the existing
+  `system.yaml` manifest, while preserving `@home`, `@etc`, and `@var`. Creates a
+  safety snapshot before deleting `@` and a post-reinstall snapshot after pacstrap.
+  Supports `--no-home`, `--no-etc`, `--no-var`, `--from-snapshot NAME`, and `--dry-run`.
+
+### Fixed
+
+- **`our-pac` function collision** — `our-pac` defined a local `write_snapshot_metadata()`
+  that was silently overridden when `snapshot.sh` was sourced, causing the snapshot.sh
+  version (which writes inside the already read-only snapshot) to run instead. Renamed
+  the our-pac–specific function to `write_pac_metadata()`.
+- **`our-pac` snapshot lock order** — pre-upgrade snapshot was created with `--readonly`,
+  then `write_snapshot_metadata` attempted to write `.snapshot.yaml` inside it, yielding
+  `EROFS` and aborting under `set -e`. Snapshot is now created read-write, metadata is
+  written, then the snapshot is locked with `btrfs property set ro true`.
+- **`snapshot.sh` `pre_upgrade_snapshot()`** — same RW-then-lock fix applied to the
+  pre-upgrade hook so `.snapshot.yaml` is always written before the snapshot is locked.
+- **`ouroboros-reinstall` safety snapshot (Step 7)** — snapshot was locked `ro` before
+  `.snapshot.yaml` was written inside it, aborting the script before `@` was deleted.
+  Metadata is now written before the `btrfs property set ro true` call.
+- **`ouroboros-reinstall` post-reinstall snapshot (Step 14)** — snapshot was created with
+  `btrfs subvolume snapshot -r` (immediately read-only), then `.snapshot.yaml` write
+  failed with `EROFS`, leaving `@` unlocked after reinstall. Now creates a writable
+  snapshot, writes metadata, then locks.
+- **`ouroboros-health` `btrfs_usage` check** — awk pattern matched `Total:` (which does
+  not exist in `btrfs filesystem usage -b` output) and read field `$2` for `Device size:`
+  (which is the word `size:`, not the number). Fixed to match `Device size:` and
+  `Device allocated:` using `$NF`, and changed metric to `Device allocated / Device size`
+  which signals impending out-of-space errors earlier than raw data usage.
+- **`flash-usb.sh` SHA256 verification** — `sha256sum --check` resolved filenames
+  relative to CWD, failing when the script was invoked from a different directory. Now
+  `cd`s to the ISO directory before the check.
+
+### Tests
+
+- 577 tests passing (no regressions from v0.5.2).
+
 ## [0.5.2] - 2026-04-19
 
 ### Added

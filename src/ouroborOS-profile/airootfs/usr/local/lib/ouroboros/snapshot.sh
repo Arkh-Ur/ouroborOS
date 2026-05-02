@@ -27,6 +27,14 @@ _log_error() { printf '\033[0;31m[snapshot]\033[0m %s\n' "$*" >&2; }
 #   SOURCE     — path to existing subvolume (e.g. /mnt/@)
 #   DEST       — path for new snapshot (e.g. /mnt/.snapshots/install)
 #   --readonly — create a read-only snapshot (default: read-write)
+#
+# IMPORTANT: When --readonly is passed, the snapshot is created read-only via
+# 'btrfs subvolume snapshot -r'. Callers that need to write metadata inside the
+# snapshot (e.g. .snapshot.yaml) should NOT pass --readonly. Instead:
+#   1. create_snapshot "$src" "$dest"          # RW
+#   2. write_snapshot_metadata "$name" "$type" # write inside writable snapshot
+#   3. btrfs property set "$dest" ro true      # lock read-only
+# This is the pattern used by our-snapshot(1) and pre_upgrade_snapshot().
 create_snapshot() {
     local source="$1"
     local dest="$2"
@@ -313,7 +321,9 @@ pre_upgrade_snapshot() {
     fi
 
     _log_info "Pre-upgrade snapshot: ${timestamp}"
-    create_snapshot "/" "$snap_path" --readonly
+    create_snapshot "/" "$snap_path"
+    write_snapshot_metadata "$timestamp" "pre-update"
+    btrfs property set "$snap_path" ro true 2>/dev/null || true
     generate_snapshot_boot_entry "$timestamp" "/boot" "quiet"
 
     # Prune old snapshots after creating the new one

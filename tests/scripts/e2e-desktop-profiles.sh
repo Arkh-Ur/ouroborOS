@@ -14,7 +14,7 @@ set -euo pipefail
 #   Phase 6  — Final summary with ✓/✗ per profile
 #
 # Prerequisites (host):
-#   sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass
+#   sudo pacman -S --needed qemu-system-x86 edk2-ovmf openssh sshpass genisoimage
 #   /dev/kvm must exist (KVM required)
 #   Host RAM >= 8 GB
 #
@@ -24,6 +24,7 @@ set -euo pipefail
 #   DP_TEST_SSH_PORT    — forwarded SSH port (default: 2222)
 #   DP_TEST_DISK_SIZE   — qcow2 disk size (default: 20G)
 #   DP_QEMU_MEMORY      — RAM for QEMU VM in MB (default: 2048)
+#   DP_VNC_DISPLAY      — VNC display number (default: 4)
 #   DP_BUILD_WORKDIR    — ISO build workdir (default: /home/dp-build)
 #   DP_SKIP_BUILD       — set to 1 to skip ISO build (uses existing ISO)
 #   DP_KEEP_ARTIFACTS   — set to 1 to keep qcow2/logs after tests
@@ -36,21 +37,18 @@ set -euo pipefail
 #   2 — prerequisites not met (abort before testing)
 # =============================================================================
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
-readonly GREEN='\033[0;32m'
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[1;33m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly DIM='\033[2m'
-readonly RESET='\033[0m'
+# ── Source shared E2E infrastructure ──────────────────────────────────────────
+# shellcheck disable=SC2034
+E2E_PREFIX="DP"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/e2e-common.sh"
 
-log_ok()      { echo -e "  ${GREEN}✓${RESET} $*"; }
-log_fail()    { echo -e "  ${RED}✗${RESET} $*"; FAILURES=$((FAILURES + 1)); }
-log_skip()    { echo -e "  ${YELLOW}⏭${RESET} $*"; SKIPPED=$((SKIPPED + 1)); }
-log_section() { echo -e "\n${BOLD}${CYAN}━━ $* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; }
-log_info()    { echo -e "  ${CYAN}→${RESET} $*"; }
-log_warn()    { echo -e "  ${YELLOW}!${RESET} $*"; }
+FAILURES=0
+SKIPPED=0
+TESTS_RUN=0
+
+readonly DIM='\033[2m'
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 DP_TEST_PASSWORD="${DP_TEST_PASSWORD:-changeme}"
@@ -58,6 +56,7 @@ DP_TEST_USER="${DP_TEST_USER:-admin}"
 DP_TEST_SSH_PORT="${DP_TEST_SSH_PORT:-2222}"
 DP_TEST_DISK_SIZE="${DP_TEST_DISK_SIZE:-20G}"
 DP_QEMU_MEMORY="${DP_QEMU_MEMORY:-2048}"
+DP_VNC_DISPLAY="${DP_VNC_DISPLAY:-4}"
 DP_BUILD_WORKDIR="${DP_BUILD_WORKDIR:-/home/dp-build}"
 DP_SKIP_BUILD="${DP_SKIP_BUILD:-0}"
 DP_KEEP_ARTIFACTS="${DP_KEEP_ARTIFACTS:-0}"
@@ -68,11 +67,6 @@ readonly OVMF_CODE="/usr/share/edk2/x64/OVMF_CODE.4m.fd"
 readonly OVMF_CODE_LEGACY="/usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd"
 
 WORKSPACE="${WORKSPACE:-$(cd "$(dirname "$0")/../.." && pwd)}"
-FAILURES=0
-SKIPPED=0
-TESTS_RUN=0
-QEMU_PID=""
-OVMF_PATH=""
 ISO_PATH=""
 
 # Per-profile results: associative array profile -> "PASS" | "FAIL" | "SKIP"
@@ -80,120 +74,16 @@ declare -A PROFILE_RESULTS
 # Per-profile failure counts
 declare -A PROFILE_FAILURES
 
-# ── SSH Helpers ────────────────────────────────────────────────────────────────
-ssh_cmd() {
-    sshpass -p "$DP_TEST_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=5 \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -p "$DP_TEST_SSH_PORT" \
-        "${DP_TEST_USER}@localhost" "$@"
-}
-
-ssh_root() {
-    sshpass -p "$DP_TEST_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=5 \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -p "$DP_TEST_SSH_PORT" \
-        "${DP_TEST_USER}@localhost" \
-        "echo ${DP_TEST_PASSWORD} | sudo -S $*"
-}
-
-wait_ssh() {
-    local max_attempts="${1:-40}"
-    local attempt=1
-    log_info "Waiting for SSH on port ${DP_TEST_SSH_PORT}..."
-    while ! ssh_cmd true 2>/dev/null; do
-        if [[ $attempt -ge $max_attempts ]]; then
-            log_fail "SSH did not become available after ${max_attempts} attempts"
-            return 1
-        fi
-        sleep 3
-        attempt=$((attempt + 1))
-    done
-    log_ok "SSH available on port ${DP_TEST_SSH_PORT}"
-}
-
-wait_qemu_exit() {
-    local timeout_secs="${1:-900}"
-    log_info "Waiting for QEMU (PID ${QEMU_PID}) to exit (timeout: ${timeout_secs}s)..."
-    if timeout "$timeout_secs" bash -c "while kill -0 $QEMU_PID 2>/dev/null; do sleep 3; done"; then
-        log_ok "QEMU exited cleanly"
-    else
-        log_fail "QEMU timed out after ${timeout_secs}s — killing"
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-        return 1
-    fi
-}
-
-launch_qemu() {
-    local disk_path="$1"
-    local iso_path="${2:-}"
-    local serial_log="$3"
-    local config_iso="${4:-}"
-
-    # Kill any existing QEMU on the same port
-    if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-    fi
-
-    local qemu_args
-    # shellcheck disable=SC2054  # qemu args use commas inside values (-drive if=...,format=...)
-    qemu_args=(
-        -enable-kvm
-        -cpu host
-        -smp 2
-        -m "$DP_QEMU_MEMORY"
-        -drive "if=pflash,format=raw,readonly=on,file=${OVMF_PATH}"
-        -drive "file=${disk_path},format=qcow2,if=virtio,cache=writeback"
-        -netdev "user,id=net0,hostfwd=tcp::${DP_TEST_SSH_PORT}-:22"
-        -device "e1000,netdev=net0"
-        -rtc base=utc,clock=host
-        -serial "file:${serial_log}"
-        -vga virtio
-        -display none
-        -vnc :2
-    )
-
-    if [[ -n "$iso_path" ]]; then
-        qemu_args+=(-cdrom "$iso_path" -boot d)
-    fi
-
-    # Attach config ISO as second CD-ROM drive (IDE slave on secondary channel)
-    # archiso live auto-mounts all CD-ROMs under /run/media/
-    if [[ -n "$config_iso" ]]; then
-        qemu_args+=(-drive "file=${config_iso},format=raw,media=cdrom,readonly=on")
-    fi
-
-    qemu-system-x86_64 "${qemu_args[@]}" &
-    QEMU_PID=$!
-    log_info "QEMU PID: ${QEMU_PID}"
-}
-
-kill_qemu() {
-    if [[ -n "$QEMU_PID" ]] && kill -0 "$QEMU_PID" 2>/dev/null; then
-        kill "$QEMU_PID" 2>/dev/null || true
-        wait "$QEMU_PID" 2>/dev/null || true
-    fi
-    QEMU_PID=""
-}
-
-# Assert helpers
-assert_contains() {
+# shellcheck disable=SC2329
+assert_not_contains() {
     local description="$1"
     local output="$2"
     local pattern="$3"
     if echo "$output" | grep -qE "$pattern"; then
-        log_ok "${description}"
-    else
         log_fail "${description}"
-        log_info "  Expected pattern: ${pattern}"
-        log_info "  Output: $(echo "$output" | tail -5)"
+        log_info "  Unexpected pattern found: ${pattern}"
+    else
+        log_ok "${description}"
     fi
     TESTS_RUN=$((TESTS_RUN + 1))
 }
@@ -232,7 +122,7 @@ user:
     - video
     - input
   shell: /bin/bash
-  homed_storage: subvolume
+  homed_storage: classic
 
 desktop:
   profile: ${profile}
@@ -272,12 +162,12 @@ check_prerequisites() {
 
     # Required tools
     local tool
-    for tool in qemu-system-x86_64 qemu-img sshpass ssh; do
+    for tool in qemu-system-x86_64 qemu-img sshpass ssh genisoimage; do
         if command -v "$tool" >/dev/null 2>&1; then
             log_ok "$tool"
         else
             log_fail "$tool not found"
-            log_info "Install with: sudo pacman -S qemu-system-x86 edk2-ovmf openssh sshpass"
+            log_info "Install with: sudo pacman -S qemu-system-x86 edk2-ovmf openssh sshpass cdrtools"
             exit 2
         fi
     done
@@ -319,7 +209,7 @@ build_iso() {
     log_info "Building ISO (workdir: ${DP_BUILD_WORKDIR})..."
 
     local build_output
-    if build_output=$(echo "$DP_TEST_PASSWORD" | sudo -S bash "$WORKSPACE/src/scripts/build-iso.sh" \
+    if build_output=$(sudo bash "$WORKSPACE/src/scripts/build-iso.sh" \
         --clean --workdir "$DP_BUILD_WORKDIR" 2>&1); then
         log_ok "ISO build completed"
     else
@@ -392,8 +282,13 @@ test_profile() {
     mkdir -p "$config_staging"
     cp "$config_file" "${config_staging}/ouroborOS-config.yaml"
 
-    genisoimage -J -R -V "OUROBOROS-CONFIG" -o "$config_iso" \
-        -graft-points "${config_staging}/=/." >/dev/null 2>&1
+    if ! genisoimage -J -R -V "OUROBOROS-CONFIG" -o "$config_iso" \
+        -graft-points "${config_staging}/=/." >/dev/null 2>&1; then
+        log_fail "Failed to create config ISO for profile ${profile}"
+        rm -rf "$config_staging"
+        rm -f "$config_file"
+        return 1
+    fi
     rm -rf "$config_staging"
     log_ok "Config ISO created: ${config_iso}"
 
@@ -413,7 +308,7 @@ test_profile() {
     log_info "Verifying install log [${profile}]..."
     local states_ok=true
 
-    for state in INIT PREFLIGHT LOCALE USER DESKTOP PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+    for state in INIT NETWORK_SETUP PREFLIGHT LOCALE USER DESKTOP SECURE_BOOT PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
         if grep -q "State completed: ${state}" "$serial_install" 2>/dev/null; then
             log_ok "Install state: ${state}"
         else

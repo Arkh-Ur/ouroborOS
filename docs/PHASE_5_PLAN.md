@@ -253,8 +253,8 @@ Checks: root RO, failed units, machine-id, system.yaml válido,
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-health` | NUEVO |
-| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-reinstall` | NUEVO (live ISO only) |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-health` | NUEVO (v0.5.3: 12 checks, --doctor, --yaml, --json) |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-reinstall` | NUEVO (v0.5.3: live ISO only, preserva @home/@etc/@var) |
 
 ---
 
@@ -367,7 +367,7 @@ our-snapshot diff <SNAP_A> <SNAP_B>
 - [ ] `ouroboros-rebase --from-channel` aplica canal OTA
 - [ ] `ouroboros-update.timer` detecta nuevas versiones diariamente
 - [ ] `ouroboros-reinstall` reconstruye @ preservando @home
-- [ ] `ouroboros-health --doctor` detecta y corrige problemas
+- [x] `ouroboros-health --doctor` detecta y corrige problemas (v0.5.3: 12 checks, --doctor, --yaml, --json)
 - [ ] N usuarios configurables en install (homed directory/luks/classic)
 - [ ] Auto-rollback funciona si update rompe boot
 - [ ] `our-snapshot diff A B` lista cambios entre snapshots

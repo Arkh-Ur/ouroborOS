@@ -13,32 +13,20 @@ jobs:
   build:
     name: Build ouroborOS ISO
     if: "!startsWith(github.ref, 'refs/tags/v')"
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
-    container:
-      image: archlinux:latest
-      options: --privileged
 
     steps:
-      - name: Install build dependencies
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed \
-            archiso dosfstools e2fsprogs squashfs-tools \
-            libisoburn git erofs-utils mtools gettext
-
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Set up loop devices
         run: |
           for i in $(seq 0 7); do
-            mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
+            sudo mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
           done
-          modprobe loop max_loop=8 2>/dev/null || true
+          sudo modprobe loop max_loop=8 2>/dev/null || true
 
       - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
@@ -48,7 +36,7 @@ jobs:
           in_func && /^\}[[:space:]]*$/  { in_func=0 }
           in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
-          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          ' "$MKARCHISO" > /tmp/mkarchiso.patched && sudo mv /tmp/mkarchiso.patched "$MKARCHISO" && sudo chmod +x "$MKARCHISO"
           if ! grep -q '|| true' "$MKARCHISO"; then
             echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
             exit 1
@@ -56,10 +44,13 @@ jobs:
 
       - name: Build ISO
         run: |
-          bash src/scripts/build-iso.sh \
+          sudo bash src/scripts/build-iso.sh \
             --clean \
             --workdir /home/ouroborOS-build \
             --output out/
+
+      - name: Fix out/ ownership (built as root)
+        run: sudo chown -R $(id -u):$(id -g) out/
 
       - name: Generate SHA256 checksum
         run: |
@@ -106,34 +97,26 @@ jobs:
   release:
     name: Build ISO and Publish Release
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write
-    container:
-      image: archlinux:latest
-      options: --privileged
 
     steps:
-      - name: Install build dependencies
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm --needed \
-            archiso dosfstools e2fsprogs squashfs-tools \
-            libisoburn git erofs-utils mtools gettext github-cli
+      - name: Clean root-owned artifacts from previous run
+        run: sudo git clean -fdx --exclude='.git' || true
 
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          clean: false
 
       - name: Set up loop devices
         run: |
           for i in $(seq 0 7); do
-            mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
+            sudo mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
           done
-          modprobe loop max_loop=8 2>/dev/null || true
+          sudo modprobe loop max_loop=8 2>/dev/null || true
 
       - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
         run: |
@@ -143,7 +126,7 @@ jobs:
           in_func && /^\}[[:space:]]*$/  { in_func=0 }
           in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
           { print }
-          ' "$MKARCHISO" > "${MKARCHISO}.patched" && mv "${MKARCHISO}.patched" "$MKARCHISO" && chmod +x "$MKARCHISO"
+          ' "$MKARCHISO" > /tmp/mkarchiso.patched && sudo mv /tmp/mkarchiso.patched "$MKARCHISO" && sudo chmod +x "$MKARCHISO"
           if ! grep -q '|| true' "$MKARCHISO"; then
             echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() indentation or structure"
             exit 1
@@ -153,7 +136,7 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          bash src/scripts/build-iso.sh \
+          sudo bash src/scripts/build-iso.sh \
             --clean \
             --workdir /home/ouroborOS-build \
             --output out/ \
@@ -176,6 +159,9 @@ jobs:
           ${PKGS}
           CHANEOF
           cat channels/stable.yaml
+
+      - name: Fix out/ ownership (built as root)
+        run: sudo chown -R $(id -u):$(id -g) out/
 
       - name: Generate SHA256 checksums
         run: |

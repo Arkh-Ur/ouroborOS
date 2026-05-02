@@ -100,7 +100,12 @@ log_ok "ISO: ${ISO_FILE} (${ISO_SIZE})"
 SHA256_FILE="${ISO_FILE}.sha256"
 if [[ -f "$SHA256_FILE" ]]; then
     log_info "Verifying SHA256 checksum..."
-    if sha256sum --check --status "$SHA256_FILE"; then
+    # sha256sum --check looks up filenames inside the .sha256 file relative to CWD.
+    # cd to the ISO directory so the basename lookup succeeds regardless of where
+    # the user invoked flash-usb.sh from.
+    ISO_DIR="$(cd "$(dirname "$ISO_FILE")" && pwd)"
+    SHA256_BASENAME="$(basename "$SHA256_FILE")"
+    if (cd "$ISO_DIR" && sha256sum --check --status "$SHA256_BASENAME"); then
         log_ok "SHA256 checksum verified."
     else
         log_error "SHA256 checksum FAILED. The ISO may be corrupt."

@@ -9,102 +9,59 @@ on:
 jobs:
   test-shell-validation:
     name: Shell validation
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build test image
-        run: |
-          for i in 1 2 3; do
-            docker build -t ouroboros-test:ci tests/ && break
-            echo "Docker build attempt $i failed, retrying..."
-            sleep 10
-          done
-
       - name: Run shellcheck suite
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace:ro" \
-            -e WORKSPACE=/workspace \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/test-shellcheck.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/test-shellcheck.sh"
 
       - name: Run validate-scripts
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace:ro" \
-            -e WORKSPACE=/workspace \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/validate-scripts.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/validate-scripts.sh"
 
       - name: Run dry-run build test
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace:ro" \
-            -e WORKSPACE=/workspace \
-            --tmpfs /tmp:exec \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/test-build-dry-run.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/test-build-dry-run.sh"
 
   test-python:
     name: Python tests
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build test image
-        run: |
-          for i in 1 2 3; do
-            docker build -t ouroboros-test:ci tests/ && break
-            echo "Docker build attempt $i failed, retrying..."
-            sleep 10
-          done
-
       - name: Run Python lint
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace:ro" \
-            -e WORKSPACE=/workspace \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/lint-python.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/lint-python.sh"
 
       - name: Run pytest
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -e WORKSPACE=/workspace \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/run-pytest.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/run-pytest.sh"
 
   test-profile-smoke:
     name: Profile smoke test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build test image
-        run: |
-          for i in 1 2 3; do
-            docker build -t ouroboros-test:ci tests/ && break
-            echo "Docker build attempt $i failed, retrying..."
-            sleep 10
-          done
-
       - name: Run smoke test
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace:ro" \
-            -e WORKSPACE=/workspace \
-            ouroboros-test:ci \
-            bash /workspace/tests/scripts/smoke-test.sh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: bash "$WORKSPACE/tests/scripts/smoke-test.sh"
 
   report:
     name: Test report
     needs: [test-shell-validation, test-python, test-profile-smoke]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: always()
     steps:
       - name: Write job summary
