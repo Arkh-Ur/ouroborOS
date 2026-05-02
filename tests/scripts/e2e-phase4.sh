@@ -54,9 +54,10 @@ set -euo pipefail
 # =============================================================================
 
 # ── Source shared E2E infrastructure ──────────────────────────────────────────
+# shellcheck disable=SC2034
 E2E_PREFIX="P4"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=tests/scripts/e2e-common.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/e2e-common.sh"
 
 # ── Configuration (Phase 4 specific) ─────────────────────────────────────────
@@ -84,6 +85,7 @@ WORKSPACE="${WORKSPACE:-$(cd "$(dirname "$0")/../.." && pwd)}"
 FAILURES=0
 SKIPPED=0
 TESTS_RUN=0
+# shellcheck disable=SC2034
 QEMU_PID=""
 OVMF_PATH=""
 DISK_PATH=""

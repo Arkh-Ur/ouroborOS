@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# shellcheck shell=bash
+set -euo pipefail
 # =============================================================================
 # e2e-common.sh — Shared infrastructure for E2E test scripts
 # =============================================================================
 # Source this file from e2e-phase3.sh, e2e-phase4.sh, etc.
+# Inherits set -euo pipefail from the caller.
 #
 # Requirements (set before sourcing):
 #   E2E_PREFIX   — variable prefix, e.g. "P3" or "P4"

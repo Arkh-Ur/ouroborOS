@@ -46,9 +46,10 @@ set -euo pipefail
 # =============================================================================
 
 # ── Source shared E2E infrastructure ──────────────────────────────────────────
+# shellcheck disable=SC2034
 E2E_PREFIX="OBOX"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=e2e-common.sh
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/e2e-common.sh"
 
 FAILURES=0
