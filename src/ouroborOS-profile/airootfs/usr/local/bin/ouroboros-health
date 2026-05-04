@@ -58,8 +58,13 @@ declare -A CHECK_FIX=()
 
 run_check() {
     local name="$1"
-    CHECKS_RUN+=("$name")
-    "check_${name}"
+    local valid_check
+    for valid_check in root_ro system_yaml machine_id failed_units btrfs_usage \
+                       snapshot_count boot_entries secure_boot tpm2 ota_updates \
+                       pacman_cache fstab; do
+        [[ "$name" == "$valid_check" ]] && { CHECKS_RUN+=("$name"); "check_${name}"; return; }
+    done
+    _die "Unknown check: ${name}"
 }
 
 # ── Fix functions ─────────────────────────────────────────────────────────────
@@ -187,8 +192,22 @@ check_machine_id() {
 
 check_failed_units() {
     local name="failed_units"
+
+    if ! command -v systemctl &>/dev/null; then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="systemctl not available"
+        return
+    fi
+
+    local systemctl_out
+    if ! systemctl_out=$(systemctl --failed --no-legend 2>/dev/null); then
+        CHECK_STATUS[$name]="SKIP"
+        CHECK_MESSAGE[$name]="systemctl did not respond (no D-Bus / container?)"
+        return
+    fi
+
     local failed
-    failed=$(systemctl --failed --no-legend 2>/dev/null | grep -c -v '^$' || true)
+    failed=$(printf '%s' "$systemctl_out" | grep -c -v '^$' || true)
 
     if [[ "$failed" -eq 0 ]]; then
         CHECK_STATUS[$name]="PASS"
@@ -398,7 +417,13 @@ print(d.get('channel_url', ''))
         return
     fi
 
-    if curl -fsSL --head --max-time 5 "$channel_url" &>/dev/null; then
+    if [[ ! "$channel_url" =~ ^https?:// ]]; then
+        CHECK_STATUS[$name]="WARN"
+        CHECK_MESSAGE[$name]="channel_url is not a valid http/https URL: ${channel_url}"
+        return
+    fi
+
+    if curl -fsSL --head --max-time 5 -- "$channel_url" &>/dev/null; then
         CHECK_STATUS[$name]="PASS"
         CHECK_MESSAGE[$name]="OTA channel reachable, system is up to date"
     else
@@ -466,20 +491,35 @@ check_fstab() {
 _output_structured() {
     local format="$1"
     local pass_count=0 warn_count=0 fail_count=0 skip_count=0
-    local checks_py="["
-    local sep=""
 
+    # Write check results to a temp JSON file using only safe bash primitives.
+    # This avoids embedding user-controlled strings (messages, check names) into
+    # Python source code, which would allow arbitrary code execution.
+    local tmp_json
+    tmp_json=$(mktemp)
+    # shellcheck disable=SC2064
+    trap "rm -f '${tmp_json}'" RETURN
+
+    printf '[' > "$tmp_json"
+    local sep=""
     for chk in "${CHECKS_RUN[@]}"; do
         local status="${CHECK_STATUS[$chk]}"
         local message="${CHECK_MESSAGE[$chk]}"
-        local fix="False"
-        [[ -n "${CHECK_FIX[$chk]:-}" ]] && fix="True"
+        local fix_avail="false"
+        [[ -n "${CHECK_FIX[$chk]:-}" ]] && fix_avail="true"
 
-        # Escape for Python string literal
-        message="${message//\\/\\\\}"
-        message="${message//\'/\\\'}"
-
-        checks_py+="${sep}{'name':'${chk}','status':'${status}','message':'${message}','fix_available':${fix}}"
+        # Use python3 -c to safely JSON-encode each individual record,
+        # writing it as a single line into the accumulation file.
+        python3 -c "
+import json, sys
+rec = {
+    'name':          sys.argv[1],
+    'status':        sys.argv[2],
+    'message':       sys.argv[3],
+    'fix_available': sys.argv[4] == 'true',
+}
+sys.stdout.write(sys.argv[5] + json.dumps(rec))
+" "$chk" "$status" "$message" "$fix_avail" "$sep" >> "$tmp_json"
         sep=","
 
         case "$status" in
@@ -489,28 +529,32 @@ _output_structured() {
             SKIP) skip_count=$((skip_count + 1)) ;;
         esac
     done
-    checks_py+="]"
+    printf ']' >> "$tmp_json"
 
     local ts
     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    python3 <<PYEOF
+    python3 - "$tmp_json" "$ts" "$PROGRAM" "$VERSION" \
+              "$pass_count" "$warn_count" "$fail_count" "$skip_count" \
+              "$format" <<'PYEOF'
 import json, sys
-checks = ${checks_py}
+checks_file, ts, prog, ver, passc, warnc, failc, skipc, fmt = sys.argv[1:]
+with open(checks_file) as f:
+    checks = json.load(f)
 data = {
-    'timestamp': '${ts}',
-    'program': '${PROGRAM}',
-    'version': '${VERSION}',
+    'timestamp': ts,
+    'program':   prog,
+    'version':   ver,
     'summary': {
         'total': len(checks),
-        'pass': ${pass_count},
-        'warn': ${warn_count},
-        'fail': ${fail_count},
-        'skip': ${skip_count}
+        'pass':  int(passc),
+        'warn':  int(warnc),
+        'fail':  int(failc),
+        'skip':  int(skipc),
     },
-    'checks': checks
+    'checks': checks,
 }
-if '${format}' == 'yaml':
+if fmt == 'yaml':
     import yaml
     yaml.dump(data, sys.stdout, default_flow_style=False, sort_keys=False)
 else:
@@ -554,6 +598,7 @@ EOF
     local ALL_CHECKS=(root_ro system_yaml machine_id failed_units btrfs_usage
                       snapshot_count boot_entries secure_boot tpm2 ota_updates
                       pacman_cache fstab)
+    _info "Running ${#ALL_CHECKS[@]} health checks..."
     local chk
     for chk in "${ALL_CHECKS[@]}"; do
         run_check "$chk"
@@ -567,8 +612,6 @@ EOF
     else
         # Normal colored output
         local pass_count=0 warn_count=0 fail_count=0 skip_count=0
-
-        _info "Running ${#CHECKS_RUN[@]} health checks..."
         echo ""
 
         for chk in "${CHECKS_RUN[@]}"; do

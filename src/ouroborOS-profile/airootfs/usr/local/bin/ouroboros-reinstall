@@ -41,10 +41,11 @@ _die()  { _err "$*"; exit 1; }
 
 _yaml_field() {
     local file="$1" field="$2"
-    python3 -c "
+    python3 - "$file" "$field" 2>/dev/null <<'PYEOF'
 import yaml, sys
-d = yaml.safe_load(open('${file}'))
-for key in '${field}'.split('.'):
+file_path, field_path = sys.argv[1], sys.argv[2]
+d = yaml.safe_load(open(file_path))
+for key in field_path.split('.'):
     if isinstance(d, dict):
         d = d.get(key, None)
     else:
@@ -59,7 +60,7 @@ elif isinstance(d, bool):
     print('true' if d else 'false')
 else:
     print(d)
-" 2>/dev/null
+PYEOF
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ main() {
     local KEEP_VAR=1
     local DRY_RUN=0
     local _LUKS_DEV=""
+    local SYSCONFIG_COPY=""
     local -a _mounted_subvols=()
 
     # ── Argument parsing ──────────────────────────────────────────────────
@@ -127,6 +129,7 @@ EOF
             rmdir "$_MOUNT_TOPLEVEL" 2>/dev/null || true
         fi
         [[ -n "$_LUKS_DEV" ]] && cryptsetup close "$_LUKS_DEV" 2>/dev/null || true
+        rm -f "${SYSCONFIG_COPY:-}" 2>/dev/null || true
     }
     trap _cleanup EXIT
 
@@ -135,14 +138,15 @@ EOF
     _info "Scanning ${TARGET_DISK} for ouroborOS installation..."
 
     local BTRFS_PART=""
-    local part fstype
-    while IFS=' ' read -r part fstype; do
+    local part fstype parttype
+    while IFS=' ' read -r part fstype parttype; do
         [[ -n "$part" ]] || continue
+        [[ "$parttype" == "part" || "$parttype" == "lvm" ]] || continue
         if [[ "$fstype" == "btrfs" ]]; then
             BTRFS_PART="/dev/${part}"
             break
         fi
-    done < <(lsblk -n -o NAME,FSTYPE "$TARGET_DISK" 2>/dev/null || true)
+    done < <(lsblk -n -o NAME,FSTYPE,TYPE "$TARGET_DISK" 2>/dev/null || true)
 
     if [[ -z "$BTRFS_PART" ]]; then
         for suffix in p2 2; do
@@ -177,6 +181,8 @@ EOF
             rmdir "$_MOUNT_TOPLEVEL"
             _die "Cannot mount Btrfs top-level from ${ROOT_DEV}."
         fi
+        _warn "Could not mount top-level read-only — falling back to read-write."
+        _warn "No writes will occur during detection, but proceed with caution."
     fi
 
     local HAS_AT=0 HAS_HOME=0 HAS_ETC=0 HAS_VAR=0 HAS_SNAPSHOTS=0
@@ -197,10 +203,10 @@ EOF
     local _tmp_at
     _tmp_at=$(mktemp -d)
     mount -t btrfs -o subvol=@,ro "$ROOT_DEV" "$_tmp_at" 2>/dev/null || _die "Cannot mount @ subvolume."
+    _mounted_subvols+=("$_tmp_at")
 
     local SYSCONFIG="${_tmp_at}/etc/ouroboros/system.yaml"
     if [[ ! -f "$SYSCONFIG" ]]; then
-        umount "$_tmp_at" 2>/dev/null; rmdir "$_tmp_at" 2>/dev/null
         _die "system.yaml not found in @ subvolume. Not an ouroborOS installation."
     fi
 
@@ -223,11 +229,14 @@ EOF
     mapfile -t BASE_PACKAGES < <(_yaml_field "$SYSCONFIG" "base_packages") || BASE_PACKAGES=()
     mapfile -t USER_PACKAGES < <(_yaml_field "$SYSCONFIG" "user_packages") || USER_PACKAGES=()
 
-    local SYSTEM_YAML_CONTENT
-    SYSTEM_YAML_CONTENT=$(cat "$SYSCONFIG")
-
     local SYSCONFIG_HASH
     SYSCONFIG_HASH=$(sha256sum "$SYSCONFIG" | cut -d' ' -f1)
+
+    # Preserve a copy of system.yaml before we unmount _tmp_at — the SYSCONFIG
+    # path will no longer be accessible after the unmount below.
+    local SYSCONFIG_COPY
+    SYSCONFIG_COPY=$(mktemp)
+    cp "$SYSCONFIG" "$SYSCONFIG_COPY"
 
     _ok "Read system.yaml from installed @ (${#BASE_PACKAGES[@]} base packages)"
 
@@ -235,7 +244,6 @@ EOF
 
     if [[ -n "$FROM_SNAPSHOT" ]]; then
         if [[ ! -d "${_MOUNT_TOPLEVEL}/@snapshots/${FROM_SNAPSHOT}" ]]; then
-            umount "$_tmp_at" 2>/dev/null; rmdir "$_tmp_at" 2>/dev/null
             _die "Snapshot '${FROM_SNAPSHOT}' not found in @snapshots."
         fi
         _info "Using specified snapshot: ${FROM_SNAPSHOT}"
@@ -256,8 +264,16 @@ EOF
         fi
     fi
 
+    # Unmount the temporary @ mount — no longer needed after reading system.yaml.
+    # Remove from the tracking array so the cleanup trap does not double-unmount it.
     umount "$_tmp_at" 2>/dev/null || true
     rmdir "$_tmp_at" 2>/dev/null || true
+    local _filtered=()
+    local _item
+    for _item in "${_mounted_subvols[@]}"; do
+        [[ "$_item" == "$_tmp_at" ]] || _filtered+=("$_item")
+    done
+    _mounted_subvols=("${_filtered[@]}")
 
     # ── Step 5: Find ESP partition ────────────────────────────────────────
 
@@ -361,6 +377,10 @@ METAEOF
     _mounted_subvols+=("$MOUNT_ROOT")
 
     mkdir -p "${MOUNT_ROOT}/.snapshots"
+    if [[ "$HAS_SNAPSHOTS" -eq 0 ]]; then
+        _info "Creating @snapshots subvolume (does not exist)..."
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@snapshots" || _die "Failed to create @snapshots subvolume."
+    fi
     mount -t btrfs -o subvol=@snapshots "$ROOT_DEV" "${MOUNT_ROOT}/.snapshots"
     _mounted_subvols+=("${MOUNT_ROOT}/.snapshots")
 
@@ -371,10 +391,14 @@ METAEOF
         _ok "Mounted @home at ${MOUNT_ROOT}/home"
     else
         mkdir -p "${MOUNT_ROOT}/home"
-        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@home" 2>/dev/null || true
+        if [[ -d "${_MOUNT_TOPLEVEL}/@home" ]]; then
+            _warn "Renaming existing @home to @home.old-${ts} (not preserved)."
+            mv "${_MOUNT_TOPLEVEL}/@home" "${_MOUNT_TOPLEVEL}/@home.old-${ts}"
+        fi
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@home" || _die "Failed to create fresh @home subvolume."
         mount -t btrfs -o subvol=@home "$ROOT_DEV" "${MOUNT_ROOT}/home"
         _mounted_subvols+=("${MOUNT_ROOT}/home")
-        _warn "Creating fresh @home (not preserved)."
+        _warn "Fresh @home created (not preserved)."
     fi
 
     if [[ "$KEEP_ETC" -eq 1 && "$HAS_ETC" -eq 1 ]]; then
@@ -384,7 +408,11 @@ METAEOF
         _ok "Mounted @etc at ${MOUNT_ROOT}/etc"
     else
         mkdir -p "${MOUNT_ROOT}/etc"
-        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@etc" 2>/dev/null || true
+        if [[ -d "${_MOUNT_TOPLEVEL}/@etc" ]]; then
+            _warn "Renaming existing @etc to @etc.old-${ts} (not preserved)."
+            mv "${_MOUNT_TOPLEVEL}/@etc" "${_MOUNT_TOPLEVEL}/@etc.old-${ts}"
+        fi
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@etc" || _die "Failed to create fresh @etc subvolume."
         mount -t btrfs -o subvol=@etc "$ROOT_DEV" "${MOUNT_ROOT}/etc"
         _mounted_subvols+=("${MOUNT_ROOT}/etc")
     fi
@@ -396,7 +424,11 @@ METAEOF
         _ok "Mounted @var at ${MOUNT_ROOT}/var"
     else
         mkdir -p "${MOUNT_ROOT}/var"
-        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@var" 2>/dev/null || true
+        if [[ -d "${_MOUNT_TOPLEVEL}/@var" ]]; then
+            _warn "Renaming existing @var to @var.old-${ts} (not preserved)."
+            mv "${_MOUNT_TOPLEVEL}/@var" "${_MOUNT_TOPLEVEL}/@var.old-${ts}"
+        fi
+        btrfs subvolume create "${_MOUNT_TOPLEVEL}/@var" || _die "Failed to create fresh @var subvolume."
         mount -t btrfs -o subvol=@var "$ROOT_DEV" "${MOUNT_ROOT}/var"
         _mounted_subvols+=("${MOUNT_ROOT}/var")
     fi
@@ -426,7 +458,7 @@ METAEOF
     _info "pacstrap: ${#ALL_PKGS[@]} unique packages..."
 
     set +o pipefail
-    yes '' | pacstrap "$MOUNT_ROOT" "${ALL_PKGS[@]}" || _die "pacstrap failed."
+    yes | pacstrap "$MOUNT_ROOT" "${ALL_PKGS[@]}" || _die "pacstrap failed."
     set -o pipefail
 
     _ok "Base system installed."
@@ -436,9 +468,9 @@ METAEOF
     _info "Generating fstab..."
     genfstab -U "$MOUNT_ROOT" > "${MOUNT_ROOT}/etc/fstab" || _die "genfstab failed."
 
-    if ! grep -q '^UUID.*subvol=@.*ro' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null; then
-        sed -i 's/subvol=@,rw/subvol=@,ro/' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null || true
-        sed -i 's/subvol=@ /subvol=@,ro /' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null || true
+    if ! grep -qP '^UUID[^\t]+\bro\b[^\t]*subvol=@' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null && \
+       grep -q 'subvol=@' "${MOUNT_ROOT}/etc/fstab" 2>/dev/null; then
+        sed -i '/subvol=@/ s/\brw\b/ro/' "${MOUNT_ROOT}/etc/fstab"
     fi
 
     _ok "fstab generated."
@@ -450,12 +482,20 @@ METAEOF
 
     local new_ts
     new_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    echo "$SYSTEM_YAML_CONTENT" | python3 -c "
-import yaml, sys
-d = yaml.safe_load(sys.stdin)
-d['installed'] = '${new_ts}'
-yaml.dump(d, sys.stdout, default_flow_style=False, sort_keys=False)
-" > "${MOUNT_ROOT}/etc/ouroboros/system.yaml" 2>/dev/null
+    # Copy the preserved system.yaml (captured before _tmp_at was unmounted) to
+    # avoid content corruption from echo/$() stripping trailing newlines. Then
+    # update only the 'installed' timestamp in-place.
+    cp "$SYSCONFIG_COPY" "${MOUNT_ROOT}/etc/ouroboros/system.yaml"
+    rm -f "$SYSCONFIG_COPY"
+    python3 - "${MOUNT_ROOT}/etc/ouroboros/system.yaml" "$new_ts" <<'PYEOF'
+import sys, yaml
+path, ts = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    d = yaml.safe_load(f)
+d['installed'] = ts
+with open(path, 'w') as f:
+    yaml.dump(d, f, default_flow_style=False, sort_keys=False)
+PYEOF
 
     _ok "system.yaml installed."
 
@@ -483,24 +523,24 @@ yaml.dump(d, sys.stdout, default_flow_style=False, sort_keys=False)
         cp "$CONFIGURE_SH" "${MOUNT_ROOT}/tmp/configure.sh"
         chmod +x "${MOUNT_ROOT}/tmp/configure.sh"
 
-        arch-chroot "$MOUNT_ROOT" /bin/bash -c "
-            export HOSTNAME='${HOSTNAME}'
-            export LOCALE='${LOCALE}'
-            export TIMEZONE='${TIMEZONE}'
-            export DESKTOP_PROFILE='${DESKTOP_PROFILE}'
-            export DESKTOP_DM='${DESKTOP_DM}'
-            export USER_NAME='${USER_NAME}'
-            export USER_PASSWORD=''
-            export USER_SHELL='${user_shell_path}'
-            export USER_GROUPS='${USER_GROUPS}'
-            export ENABLE_NETWORKD=true
-            export ENABLE_IWD=true
-            export ENABLE_RESOLVED=true
-            export SECURE_BOOT='${SECURE_BOOT}'
-            export BTRFS_LABEL='${BTRFS_LABEL}'
-            export SWAP_TYPE=zram
-            bash /tmp/configure.sh
-        " || _warn "configure.sh had errors — some configuration may be incomplete."
+        env \
+            HOSTNAME="$HOSTNAME" \
+            LOCALE="$LOCALE" \
+            TIMEZONE="$TIMEZONE" \
+            DESKTOP_PROFILE="$DESKTOP_PROFILE" \
+            DESKTOP_DM="$DESKTOP_DM" \
+            USER_NAME="$USER_NAME" \
+            USER_PASSWORD="" \
+            USER_SHELL="$user_shell_path" \
+            USER_GROUPS="$USER_GROUPS" \
+            ENABLE_NETWORKD="true" \
+            ENABLE_IWD="true" \
+            ENABLE_RESOLVED="true" \
+            SECURE_BOOT="$SECURE_BOOT" \
+            BTRFS_LABEL="$BTRFS_LABEL" \
+            SWAP_TYPE="zram" \
+            arch-chroot "$MOUNT_ROOT" /bin/bash /tmp/configure.sh \
+        || _warn "configure.sh had errors — some configuration may be incomplete."
 
         rm -f "${MOUNT_ROOT}/tmp/configure.sh"
         _ok "System configuration applied."
@@ -515,8 +555,12 @@ yaml.dump(d, sys.stdout, default_flow_style=False, sort_keys=False)
     local post_snap="post-reinstall-${ts}"
 
     # Create writable first so we can write .snapshot.yaml inside, then lock.
-    if btrfs subvolume snapshot "${MOUNT_ROOT}" "${MOUNT_ROOT}/.snapshots/${post_snap}" 2>/dev/null; then
-        cat > "${MOUNT_ROOT}/.snapshots/${post_snap}/.snapshot.yaml" <<METAEOF
+    # Source must be ${_MOUNT_TOPLEVEL}/@ (clean subvolume root via toplevel mount),
+    # not ${MOUNT_ROOT} which has active submounts (home, etc, var, boot) that
+    # would be included in the snapshot source path — matching how the safety
+    # snapshot was taken in Step 7.
+    if btrfs subvolume snapshot "${_MOUNT_TOPLEVEL}/@" "${_MOUNT_TOPLEVEL}/@snapshots/${post_snap}" 2>/dev/null; then
+        cat > "${_MOUNT_TOPLEVEL}/@snapshots/${post_snap}/.snapshot.yaml" <<METAEOF
 snapshot: ${post_snap}
 created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 type: install
@@ -524,7 +568,7 @@ system_version: reinstall
 system_yaml_hash: sha256:${SYSCONFIG_HASH}
 packages_count: ${#ALL_PKGS[@]}
 METAEOF
-        btrfs property set "${MOUNT_ROOT}/.snapshots/${post_snap}" ro true 2>/dev/null || true
+        btrfs property set "${_MOUNT_TOPLEVEL}/@snapshots/${post_snap}" ro true 2>/dev/null || true
     else
         _warn "Could not create post-reinstall snapshot."
     fi

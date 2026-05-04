@@ -53,7 +53,7 @@ jobs:
 
           for script in "${SCRIPTS[@]}"; do
             rel="${script#"$WORKSPACE/"}"
-            if ! head -10 "$script" | grep -q "set -euo pipefail"; then
+            if ! grep -q "^set -euo pipefail" "$script"; then
               echo "::error file=${rel}::Missing 'set -euo pipefail' guard"
               FAILURES=$((FAILURES + 1))
             fi

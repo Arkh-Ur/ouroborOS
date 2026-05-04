@@ -109,34 +109,38 @@ _post_promote_repair() {
     umount "$tmp"; rmdir "$tmp"
     mount -o remount,rw / 2>/dev/null || true
 
-    # Detect packages with missing files (pacman -Qk checks file existence)
-    local broken_pkgs
-    broken_pkgs=$(pacman -Qk 2>&1 \
-        | grep -E "warning:.*owned by" \
-        | sed -E 's/.*owned by ([^ ]+).*/\1/' \
-        | sort -u \
-        | tr '\n' ' ' \
-        | sed 's/ $//')
+    # Ensure root is re-locked even if the script exits unexpectedly between
+    # unlock and the explicit _lock_root_after_repair call below.
+    trap '_lock_root_after_repair "$root_dev"' EXIT
 
-    if [[ -z "$broken_pkgs" ]]; then
+    # Detect packages with missing files (pacman -Qk checks file existence).
+    # pacman -Qk output for missing files:
+    #   warning: /path/to/file (pkg-name): 'No such file or directory'
+    local -a broken_arr=()
+    mapfile -t broken_arr < <(pacman -Qk 2>&1 \
+        | grep -E "warning:.*: 'No such file or directory'" \
+        | sed -E "s/warning: [^(]+\(([^)]+)\):.*/\1/" \
+        | sort -u)
+
+    if [[ "${#broken_arr[@]}" -eq 0 ]]; then
         _ok "All packages consistent — no repair needed."
+        trap - EXIT
         _lock_root_after_repair "$root_dev"
         return 0
     fi
 
-    local broken_count
-    broken_count=$(echo "$broken_pkgs" | wc -w)
-    _warn "${broken_count} package(s) have missing files: ${broken_pkgs}"
+    local broken_count="${#broken_arr[@]}"
+    _warn "${broken_count} package(s) have missing files: ${broken_arr[*]}"
     _info "Reinstalling broken packages to sync @ with pacman DB..."
 
-    # shellcheck disable=SC2086
-    if pacman -S ${broken_pkgs} --overwrite '*' --noconfirm 2>&1; then
+    if pacman -S "${broken_arr[@]}" --overwrite '*' --noconfirm 2>&1; then
         _ok "Consistency repair complete — ${broken_count} package(s) reinstalled."
     else
         _warn "Some packages could not be reinstalled (network issue?)."
-        _warn "After reboot, run: sudo our-pac -S ${broken_pkgs} --overwrite '*'"
+        _warn "After reboot, run: sudo our-pac -S ${broken_arr[*]} --overwrite '*'"
     fi
 
+    trap - EXIT
     _lock_root_after_repair "$root_dev"
 }
 

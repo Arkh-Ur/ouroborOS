@@ -277,8 +277,9 @@ jobs:
           fi
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
-          git push public "refs/heads/main" --force
-          git push public "${{ github.ref }}" --force
+          git fetch public 2>/dev/null || true
+          git push public "refs/heads/main" --force-with-lease
+          git push public "${{ github.ref }}" --force-with-lease
 
       - name: Create or update GitHub Release in public repo
         env:
@@ -296,7 +297,7 @@ jobs:
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --repo Arkh-Ur/ouroborOS --yes --cleanup-tag 2>/dev/null || true
-            git push public "refs/tags/${TAG}" --force
+            git push public "refs/tags/${TAG}"
           fi
 
           gh release create "$TAG" \
