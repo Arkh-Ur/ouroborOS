@@ -615,14 +615,17 @@ class Installer:
     def _generate_mirrorlist(self) -> None:
         """Generate a working mirrorlist on the live system for pacstrap.
 
-        Strategy: broad pool → score → keep fastest 10.
-        1. Get the 50 most-recently-synced mirrors (age <= 24h).
-        2. Sort by MirrorStatus score (composite: delay + completion + speed).
-        3. Keep the fastest 10.
-        4. If that fails (e.g. geoip unavailable), fallback to worldwide with
-           the same filters.
+        If config.mirrors is set, write them directly and skip reflector.
+        Otherwise: broad pool → score → keep fastest 10.
         """
         host_mirrorlist = Path("/etc/pacman.d/mirrorlist")
+
+        if self.config.mirrors:
+            lines = "\n".join(f"Server = {url}/$repo/os/$arch" for url in self.config.mirrors)
+            host_mirrorlist.write_text(lines + "\n", encoding="utf-8")
+            log.info("Mirrorlist set from config (%d mirrors)", len(self.config.mirrors))
+            return
+
         self._update_progress(State.INSTALL, 0, "Benchmarking mirrors...")
 
         # Attempt 1: regional (auto-detected by reflector via geoip)
@@ -663,9 +666,9 @@ class Installer:
     def _init_pacman_keyring(self) -> None:
         """Initialise the pacman keyring on the live system.
 
-        pacstrap -K copies the host keyring into the new root, but the
-        live ISO keyring may not be populated yet.  Run init + populate
-        once so that subsequent pacstrap calls can verify signatures.
+        pacstrap (without -K/-G) copies the host keyring into the new root.
+        The live ISO keyring may not be populated yet, so we init + populate
+        once here so that the copy pacstrap makes has valid keys.
         """
         self._update_progress(State.INSTALL, 20, "Inicializando keyring...")
 
@@ -773,6 +776,12 @@ class Installer:
             kde_flavor=self.config.desktop.kde_flavor,
         )
 
+        # Remove packages explicitly excluded in config (e.g. for E2E testing)
+        if self.config.skip_packages:
+            skip = set(self.config.skip_packages)
+            packages = [p for p in packages if p not in skip]
+            log.info("Skipped packages from config: %s", ", ".join(skip))
+
         # Add sbctl when Secure Boot is enabled
         if self.config.security.secure_boot and "sbctl" not in packages:
             packages.append("sbctl")
@@ -794,14 +803,10 @@ class Installer:
 
         offline_cache = self._detect_offline_cache()
         is_offline = offline_cache and not self._has_internet()
+        if offline_cache:
+            log.info("Offline package cache detected at %s (no internet mode)", offline_cache)
         if is_offline:
-            log.info("Offline mode: using package cache at %s", offline_cache)
-            # pacstrap has no --cachedir; bind-mount the offline cache onto
-            # pacman's default cache dir so pacstrap -c finds the packages.
-            subprocess.run(
-                ["mount", "--bind", offline_cache, "/var/cache/pacman/pkg"],
-                check=True,
-            )
+            log.info("Offline mode: no internet, using cache exclusively")
             # pacstrap ALWAYS runs `pacman -Sy` internally, which needs
             # reachable mirrors.  In offline mode there is no network, so we
             # build a local file:// repo from the cached packages and point a
@@ -844,9 +849,9 @@ class Installer:
                 "Server = file:///var/cache/pacman/pkg\n"
             )
             log.info("Created offline pacman.conf at %s", offline_conf)
-            cmd = ["pacstrap", "-K", "-c", "-C", str(offline_conf), target] + packages
+            cmd = ["pacstrap", "-c", "-C", str(offline_conf), target] + packages
         else:
-            cmd = ["pacstrap", "-K", target] + packages
+            cmd = ["pacstrap", target] + packages
         max_retries = 10
 
         for attempt in range(1, max_retries + 1):

@@ -87,6 +87,76 @@ _mount_toplevel() {
     echo "$tmp"
 }
 
+# ── Post-promote consistency repair ───────────────────────────────────────────
+# After promote, @var (pacman DB) may reference packages whose files are missing
+# from the new @ (the promoted snapshot). This function detects and repairs those
+# inconsistencies by reinstalling only the broken packages.
+_post_promote_repair() {
+    _info "Checking package consistency after promote..."
+
+    # Unlock @ for write access
+    local root_dev tmp
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    tmp=$(mktemp -d)
+    if ! mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        rmdir "$tmp"
+        _warn "Cannot mount top-level for repair — skipping consistency check."
+        _warn "After reboot, run: sudo our-pac -S \$(pacman -Qq) --overwrite '*'"
+        return 0
+    fi
+
+    btrfs property set "${tmp}/@" ro false 2>/dev/null || true
+    umount "$tmp"; rmdir "$tmp"
+    mount -o remount,rw / 2>/dev/null || true
+
+    # Ensure root is re-locked even if the script exits unexpectedly between
+    # unlock and the explicit _lock_root_after_repair call below.
+    trap '_lock_root_after_repair "$root_dev"' EXIT
+
+    # Detect packages with missing files (pacman -Qk checks file existence).
+    # pacman -Qk output for missing files:
+    #   warning: /path/to/file (pkg-name): 'No such file or directory'
+    local -a broken_arr=()
+    mapfile -t broken_arr < <(pacman -Qk 2>&1 \
+        | grep -E "warning:.*: 'No such file or directory'" \
+        | sed -E "s/warning: [^(]+\(([^)]+)\):.*/\1/" \
+        | sort -u)
+
+    if [[ "${#broken_arr[@]}" -eq 0 ]]; then
+        _ok "All packages consistent — no repair needed."
+        trap - EXIT
+        _lock_root_after_repair "$root_dev"
+        return 0
+    fi
+
+    local broken_count="${#broken_arr[@]}"
+    _warn "${broken_count} package(s) have missing files: ${broken_arr[*]}"
+    _info "Reinstalling broken packages to sync @ with pacman DB..."
+
+    if pacman -S "${broken_arr[@]}" --overwrite '*' --noconfirm 2>&1; then
+        _ok "Consistency repair complete — ${broken_count} package(s) reinstalled."
+    else
+        _warn "Some packages could not be reinstalled (network issue?)."
+        _warn "After reboot, run: sudo our-pac -S ${broken_arr[*]} --overwrite '*'"
+    fi
+
+    trap - EXIT
+    _lock_root_after_repair "$root_dev"
+}
+
+_lock_root_after_repair() {
+    local root_dev="$1"
+    local tmp
+    tmp=$(mktemp -d)
+    if mount -t btrfs -o subvolid=5 "$root_dev" "$tmp" 2>/dev/null; then
+        btrfs property set "${tmp}/@" ro true 2>/dev/null
+        umount "$tmp"; rmdir "$tmp"
+    else
+        rmdir "$tmp"
+    fi
+    mount -o remount,ro / 2>/dev/null || true
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 cmd_list() {
@@ -238,8 +308,10 @@ cmd_promote() {
 
     _ok "Promote complete. @ now has the state of snapshot '${name}'."
     _ok "Snapshot '${name}' is preserved as a restore point."
-    _ok "Reboot to activate the new @."
     _info "Safety snapshot available: ${pre_promote_name}"
+
+    # Step 6: Post-promote consistency repair
+    _post_promote_repair
 }
 
 cmd_undo() {
@@ -283,6 +355,9 @@ cmd_undo() {
 
     umount "$toplevel"; rmdir "$toplevel"; trap - EXIT
     _ok "Undo complete. Reboot to activate."
+
+    # Same consistency issue as promote — @var may be ahead of restored @
+    _post_promote_repair
 }
 
 cmd_help() {

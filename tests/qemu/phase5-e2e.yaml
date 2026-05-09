@@ -54,5 +54,22 @@ security:
 
 extra_packages:
   - openssh
+  - linux-firmware-other   # minimal firmware for QEMU virtual hardware
+  - linux-firmware-whence  # license file required by firmware packages
+
+# Skip heavy packages for QEMU E2E — reduces download deps significantly.
+# linux-firmware: pulls in 18+ firmware subpackages (multi-GB). Replace with minimal above.
+# neovim: has 15+ tree-sitter/lua deps. Users can install via our-pac after boot.
+skip_packages:
+  - linux-firmware
+  - neovim
+
+# Fixed mirrors for QEMU E2E — HTTP only (no TLS/redirect) for SLIRP NAT
+mirrors:
+  - http://mirror.rackspace.com/archlinux
+  - http://mirrors.xtom.com/archlinux
+  - http://archlinux.uk.mirror.allworldit.com/archlinux
+  - http://archlinux.mirror.wearetriple.com
+  - http://mirror.cyberbits.eu/archlinux
 
 post_install_action: shutdown

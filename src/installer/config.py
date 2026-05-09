@@ -151,6 +151,8 @@ class InstallerConfig:
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
     extra_packages: list[str] = field(default_factory=list)
+    skip_packages: list[str] = field(default_factory=list)
+    mirrors: list[str] = field(default_factory=list)
     enable_luks: bool = False
     unattended: bool = False
     post_install_action: str = "reboot"  # "reboot" | "shutdown" | "none"
@@ -474,6 +476,8 @@ def load_config(path: Path) -> InstallerConfig:
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
+    cfg.skip_packages = list(data.get("skip_packages", []))
+    cfg.mirrors = list(data.get("mirrors", []))
     cfg.unattended = True
 
     # Post-install action (optional — defaults to "reboot")
