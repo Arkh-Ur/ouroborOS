@@ -1,7 +1,7 @@
 # channels/stable.yaml — ouroborOS OTA stable channel
 # Generated automatically by CI on tag v0.5.3
 version: 0.5.3
-released: 2026-05-02T18:03:12Z
+released: 2026-05-09T17:42:50Z
 min_compatible_version: 0.5.0
 changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.5.3
 base_packages:
