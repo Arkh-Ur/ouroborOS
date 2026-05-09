@@ -276,6 +276,7 @@ jobs:
             echo "PUBLIC_REPO_TOKEN not set — skipping push to public repo"
             exit 0
           fi
+          git remote remove public 2>/dev/null || true
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
           git fetch public 2>/dev/null || true
