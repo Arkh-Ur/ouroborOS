@@ -5,7 +5,7 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.3] - 2026-04-23
+## [0.5.3] - 2026-05-09
 
 ### Added
 
@@ -49,9 +49,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative to CWD, failing when the script was invoked from a different directory. Now
   `cd`s to the ISO directory before the check.
 
+### Hardening (Judgment Day adversarial review — 23 issues fixed)
+
+Security critical:
+- **`our-rollback` `_post_promote_repair` grep pattern** — `grep -E "warning:.*owned by"` never
+  matched real `pacman -Qk` output; broken packages were never detected. Fixed to match
+  `"warning:.*: 'No such file or directory'"` with correct package-name extraction.
+- **`our-rollback` root re-lock guarantee** — no `trap` covered the unlock→repair path;
+  if interrupted, root stayed `ro=false` permanently. Added `trap '_lock_root_after_repair'
+  EXIT` immediately after unlock, cleared only after explicit re-lock.
+- **`ouroboros-reinstall` `@snapshots` mount** — mount was unconditional; if `@snapshots`
+  didn't exist on disk (e.g. fresh install), mount failed AFTER `@` was already deleted,
+  leaving the system unbootable. Now guarded by `HAS_SNAPSHOTS` check with auto-create.
+- **`ouroboros-reinstall` `--no-home` silent data leak** — when an existing `@home` subvolume
+  was present, `btrfs subvolume create || true` silenced the error and mounted the OLD data
+  instead of a fresh subvolume. Now renames the old subvolume to `@home.old-TS` before
+  creating fresh.
+- **`ouroboros-reinstall` shell injection in `arch-chroot`** — YAML-sourced values (hostname,
+  locale, timezone, user) were interpolated directly into `bash -c "export VAR='${VAR}'"`.
+  Replaced with `env VAR="$VAR" arch-chroot` — no shell interpolation.
+- **`ouroboros-health` Python injection in `_output_structured`** — check messages (including
+  `channel_url` from user-controlled `system.yaml`) were embedded in a Python heredoc as
+  bash string concatenation. A newline in any message would inject arbitrary Python. Replaced
+  with per-record `python3 -c` with `sys.argv` + final reader from temp JSON file.
+
+Additional fixes:
+- `ouroboros-reinstall`: fstab `ro` fixup now replaces `rw` with `ro` on the `subvol=@`
+  line instead of appending `,ro` (which left both `rw` and `ro` in the options).
+- `ouroboros-reinstall`: `_tmp_at` mount registered in `_mounted_subvols`; value-based
+  removal replaces positional slice; `SYSCONFIG_COPY` cleaned in `_cleanup` trap.
+- `ouroboros-reinstall`: post-reinstall snapshot taken from `_MOUNT_TOPLEVEL/@` (not
+  the submount-laden `MOUNT_ROOT`); `lsblk` filters by `TYPE=part` to avoid matching
+  the whole-disk device; rw fallback mount emits prominent warning.
+- `ouroboros-reinstall`: `system.yaml` written via `cp` + in-place Python edit instead
+  of `echo "$CONTENT" | python3` (content truncation + injection vector).
+- `ouroboros-reinstall`: `_yaml_field` uses `sys.argv` for file path and field — no shell
+  variable interpolation in Python source.
+- `ouroboros-health`: `run_check()` validates name against known whitelist before dispatch.
+- `ouroboros-health`: `check_failed_units` returns SKIP when `systemctl` is unavailable
+  instead of false PASS.
+- `ouroboros-health`: `channel_url` validated for `https://` before passing to `curl`.
+- `our-rollback`: `broken_pkgs` string replaced with `broken_arr` array; `pacman -S`
+  invocation uses `"${broken_arr[@]}"` to prevent flag injection.
+- CI: `--force` → `--force-with-lease` on public repo pushes; `git fetch public` before
+  lease-push to establish tracking refs.
+- CI: `lint.yml` set-euo-pipefail check uses `grep` on full file instead of `head -10`.
+- `pacman.conf`: restored `ParallelDownloads = 5` (rate-limit experiment reverted).
+
+### Installer
+
+- **`mirrors` config field** — when set in the install config, writes the mirrorlist
+  directly and bypasses reflector. Required for QEMU E2E testing where SLIRP NAT picks
+  slow mirrors.
+- **`skip_packages` config field** — removes packages from the default pacstrap list.
+  Used in `phase5-e2e.yaml` to skip `linux-firmware` meta (pulls 18+ subpackages, multi-GB)
+  and `neovim` (15+ tree-sitter deps) for faster QEMU E2E runs.
+- **pacstrap without `-K`** — removed `-K` flag from pacstrap invocations. `-K` created a
+  new keyring from PGP keyservers (unreachable in QEMU SLIRP); without `-K`, pacstrap copies
+  the host's already-initialized keyring. Both online and offline modes benefit.
+
 ### Tests
 
-- 577 tests passing (no regressions from v0.5.2).
+- 555 tests passing (no regressions from v0.5.2; container integration tests excluded from
+  count — they require `machinectl` which is unavailable in the test host environment).
 
 ## [0.5.2] - 2026-04-19
 
