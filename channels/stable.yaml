@@ -1,9 +1,9 @@
 # channels/stable.yaml — ouroborOS OTA stable channel
-# Generated automatically by CI on tag v0.5.5
-version: 0.5.5
-released: 2026-05-10T03:11:24Z
+# Generated automatically by CI on tag v0.5.6
+version: 0.5.6
+released: 2026-05-10T04:51:09Z
 min_compatible_version: 0.5.0
-changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.5.5
+changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.5.6
 base_packages:
   - amd-ucode
   - arch-install-scripts
