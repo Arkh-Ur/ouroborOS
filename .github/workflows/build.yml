@@ -278,14 +278,18 @@ jobs:
           fi
           # actions/checkout stores its GITHUB_TOKEN credential at the LOCAL repo
           # level (not global). Unset both to let our PAT remote URL take precedence.
+          TAG="${{ github.ref_name }}"
           git config --local --unset-all "http.https://github.com/.extraheader" || true
           git config --global --unset-all "http.https://github.com/.extraheader" || true
+          # Re-fetch the tag in case Merge-to-main step displaced it locally
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --force 2>/dev/null || \
+            git tag -f "$TAG" "${{ github.sha }}"
           git remote remove public 2>/dev/null || true
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
           git fetch public 2>/dev/null || true
           git push public "refs/heads/main" --force-with-lease
-          git push public "${{ github.ref }}" --force-with-lease
+          git push public "refs/tags/${TAG}"
 
       - name: Create or update GitHub Release in public repo
         env:
