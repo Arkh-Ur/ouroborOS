@@ -464,7 +464,10 @@ class Installer:
                 u.password_hash = ud["password_hash"]
                 u.password_plaintext = ud.get("password", "")
                 u.real_name = ud.get("real_name", "")
-                u.groups = list(ud.get("groups", ["wheel", "audio", "video", "input"]))
+                is_primary = len(self.config.users) == 0
+                default_groups = ["wheel", "audio", "video", "input"] if is_primary else ["audio", "video", "input"]
+                _raw_groups = ud.get("groups", default_groups)
+                u.groups = _raw_groups if isinstance(_raw_groups, list) else [g for g in _raw_groups.split(",") if g]
                 u.shell = shell_path(shell_name)
                 u.homed_storage = ud.get("homed_storage", "subvolume")
                 self.config.users.append(u)

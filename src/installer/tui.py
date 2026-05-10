@@ -907,7 +907,7 @@ class TUI:
                     "homed_storage": _homed_opts.get(_choice, "subvolume"),
                 }
                 if default_groups is not None:
-                    result["groups"] = ",".join(default_groups)
+                    result["groups"] = list(default_groups)
                 return result
             self._console.print(
                 f"  [bold red]Passwords do not match. "
@@ -1438,7 +1438,7 @@ class TUI:
         table.add_row("Disk", config.disk.device)
         table.add_row("LUKS", "Yes" if config.disk.use_luks else "No")
         table.add_row("Hostname", config.network.hostname)
-        table.add_row("User", config.user.username)
+        table.add_row("User", config.users[0].username if config.users else "unknown")
         table.add_row("Locale", config.locale.locale)
         table.add_row("Timezone", config.locale.timezone)
         self._console.print()
@@ -1458,7 +1458,7 @@ class TUI:
             f"  Disk:      {config.disk.device}\n"
             f"  LUKS:      {'Yes' if config.disk.use_luks else 'No'}\n"
             f"  Hostname:  {config.network.hostname}\n"
-            f"  User:      {config.user.username}\n"
+            f"  User:      {config.users[0].username if config.users else 'unknown'}\n"
             f"  Locale:    {config.locale.locale}\n"
             f"  Timezone:  {config.locale.timezone}\n\n"
             f"{_('Remove the installation media.')}"
