@@ -39,7 +39,7 @@ FAKE_PROFILE="$(mktemp -d /tmp/ouroborOS-profile-XXXXXX)"
 FAKE_OUTPUT="/tmp/ouroborOS-output-$$"
 FAKE_WORK="/tmp/ouroborOS-work-$$"
 
-trap 'rm -rf "$MOCK_DIR" "$FAKE_PROFILE" "$FAKE_OUTPUT" "$FAKE_WORK"' EXIT
+trap 'sudo rm -rf "$MOCK_DIR" "$FAKE_PROFILE" "$FAKE_OUTPUT" "$FAKE_WORK" 2>/dev/null || rm -rf "$MOCK_DIR" "$FAKE_PROFILE" "$FAKE_OUTPUT" "$FAKE_WORK" 2>/dev/null || true' EXIT
 
 # Mock mkarchiso: captures args, creates fake ISO, exits 0
 cat > "$MOCK_DIR/mkarchiso" << 'MOCK_EOF'
@@ -112,7 +112,7 @@ fi
 log_test "3. Arguments --output/--workdir/--profile passed to mkarchiso"
 mkdir -p "$FAKE_PROFILE"  # Profile must exist to pass preflight
 
-bash "$BUILD_ISO" \
+sudo env PATH="$PATH" bash "$BUILD_ISO" \
     --output "$FAKE_OUTPUT" \
     --workdir "$FAKE_WORK" \
     --profile "$FAKE_PROFILE" 2>/dev/null || true
@@ -129,15 +129,16 @@ else
     log_fail "  mkarchiso was never called (args file not created)"
     FAILURES=$((FAILURES + 1))
 fi
-rm -f /tmp/mkarchiso-args-captured
+sudo rm -f /tmp/mkarchiso-args-captured 2>/dev/null || rm -f /tmp/mkarchiso-args-captured 2>/dev/null || true
 
 # ── Test 4: --clean removes working directory before build ───────────────────
 log_test "4. --clean removes existing working directory"
+sudo rm -rf "$FAKE_WORK" 2>/dev/null || true
 mkdir -p "$FAKE_WORK/leftover-data"
 touch "$FAKE_WORK/leftover-data/old-file.txt"
 mkdir -p "$FAKE_PROFILE"
 
-bash "$BUILD_ISO" \
+sudo env PATH="$PATH" bash "$BUILD_ISO" \
     --clean \
     --output "$FAKE_OUTPUT" \
     --workdir "$FAKE_WORK" \
