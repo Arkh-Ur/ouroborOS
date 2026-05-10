@@ -40,6 +40,8 @@ users:
       - video
       - input
     homed_storage: classic    # QEMU constraint: homectl fails in virtual Btrfs
+    tpm2_enroll: false        # QEMU constraint: no TPM2 hardware
+    fido2_enroll: false       # QEMU constraint: no FIDO2 token
 
 shell: bash
 

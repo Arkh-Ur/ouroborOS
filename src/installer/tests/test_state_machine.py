@@ -1475,6 +1475,35 @@ class TestMultiUser:
         installer._handle_user()
         assert installer.config.users[0].real_name == "Alice Wonder"
 
+    def test_users_json_includes_tpm2_fido2(self, tmp_path: Path) -> None:
+        from installer.config import UserConfig  # noqa: PLC0415
+        installer = self._make_installer()
+        installer.config.disk.device = "/dev/vda"
+        u = UserConfig()
+        u.username = "alice"
+        u.password_hash = "$6$aaa"
+        u.tpm2_enroll = True
+        u.fido2_enroll = True
+        installer.config.users = [u]
+
+        captured_env: dict[str, str] = {}
+
+        def fake_run(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
+            if env:
+                captured_env.update(env)
+            m = MagicMock()
+            m.returncode = 0
+            return m
+
+        installer.tui = None
+        with patch("subprocess.run", side_effect=fake_run), \
+             patch("installer.state_machine.OPS_DIR", tmp_path):
+            installer._handle_configure()
+
+        users_data = json.loads(captured_env["USERS_JSON"])
+        assert users_data[0]["tpm2_enroll"] is True
+        assert users_data[0]["fido2_enroll"] is True
+
 
 # ---------------------------------------------------------------------------
 # _handle_secure_boot — enabled branch

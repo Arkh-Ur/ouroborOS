@@ -929,3 +929,95 @@ class TestMultiUserConfig:
         """
         cfg = load_config(_write_yaml(tmp_path, content))
         assert "wheel" in cfg.users[0].groups
+
+
+# ---------------------------------------------------------------------------
+# homed luks + TPM2/FIDO2 per-user (v0.5.5)
+# ---------------------------------------------------------------------------
+
+
+class TestHomedLuksConfig:
+    def test_tpm2_enroll_default_false(self) -> None:
+        u = UserConfig()
+        assert u.tpm2_enroll is False
+
+    def test_fido2_enroll_default_false(self) -> None:
+        u = UserConfig()
+        assert u.fido2_enroll is False
+
+    def test_tpm2_enroll_loaded_from_yaml(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+                tpm2_enroll: true
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert cfg.users[0].tpm2_enroll is True
+
+    def test_fido2_enroll_loaded_from_yaml(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+                fido2_enroll: true
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert cfg.users[0].fido2_enroll is True
+
+    def test_tpm2_enroll_must_be_bool(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [{"username": "alice", "password_hash": "$6$x$y", "tpm2_enroll": "yes"}],
+        }
+        with pytest.raises(ConfigValidationError, match="tpm2_enroll"):
+            validate_config(data)
+
+    def test_fido2_enroll_must_be_bool(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [{"username": "alice", "password_hash": "$6$x$y", "fido2_enroll": 1}],
+        }
+        with pytest.raises(ConfigValidationError, match="fido2_enroll"):
+            validate_config(data)
+
+    def test_homed_storage_luks_accepted(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [{"username": "alice", "password_hash": "$6$x$y", "homed_storage": "luks"}],
+        }
+        validate_config(data)  # must not raise
+
+    def test_tpm2_fido2_defaults_false_in_yaml(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert cfg.users[0].tpm2_enroll is False
+        assert cfg.users[0].fido2_enroll is False

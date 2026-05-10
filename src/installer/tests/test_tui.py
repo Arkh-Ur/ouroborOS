@@ -355,6 +355,7 @@ class TestRichShowUserCreation:
                 "alice",
                 "password123",
                 "password123",
+                "1",        # homed_storage: subvolume
             ]
             mocks["Confirm"].ask.return_value = False  # don't add another user
             result = rich_tui.show_user_creation()
@@ -831,11 +832,12 @@ class TestRichPassphraseShortRetry:
 class TestRichUserCreationShortPassword:
     def test_short_password_then_valid(self, rich_tui: TUI) -> None:
         with _patch_rich() as mocks:
-            # username, then short/short, then valid/valid
+            # username, then short/short, then valid/valid, then homed_storage
             mocks["Prompt"].ask.side_effect = [
                 "alice",
                 "hi", "hi",
                 "validpassword", "validpassword",
+                "1",        # homed_storage: subvolume
             ]
             mocks["Confirm"].ask.return_value = False  # don't add another user
             result = rich_tui.show_user_creation()

@@ -976,6 +976,8 @@ class Installer:
                         "shell": u.shell,
                         "real_name": u.real_name,
                         "homed_storage": u.homed_storage,
+                        "tpm2_enroll": u.tpm2_enroll,
+                        "fido2_enroll": u.fido2_enroll,
                     }
                     for u in self.config.users
                 ]),

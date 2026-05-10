@@ -886,10 +886,25 @@ class TUI:
                         "  [bold red]Password must be at least 4 characters.[/]"
                     )
                     continue
+                _homed_opts = {
+                    "1": "subvolume",
+                    "2": "directory",
+                    "3": "luks",
+                    "4": "classic",
+                }
+                self._console.print(
+                    "  Home storage:\n"
+                    "  [1] subvolume (Btrfs, default)\n"
+                    "  [2] directory (plain directory)\n"
+                    "  [3] luks (encrypted per-user)\n"
+                    "  [4] classic (/etc/passwd, no homed)"
+                )
+                _choice = Prompt.ask("  Choose [1-4]", default="1", console=self._console)
                 result: dict[str, str] = {
                     "username": username,
                     "password_hash": _hash_password(password),
                     "password": password,
+                    "homed_storage": _homed_opts.get(_choice, "subvolume"),
                 }
                 if default_groups is not None:
                     result["groups"] = ",".join(default_groups)

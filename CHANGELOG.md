@@ -5,6 +5,34 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-05-10
+
+### Added
+
+- **`homed_storage: luks` per-usuario** — suporte completo en todo el stack: `UserConfig`,
+  `validate_config()`, `configure_homed()`, y `homed-migrate.sh`. El preflight de `homed-migrate.sh`
+  ya aceptaba `luks`; ahora el campo llega correctamente desde el YAML via `USERS_JSON`.
+- **`UserConfig.tpm2_enroll`** — campo booleano (default `False`). Cuando `true`, `homed-migrate.sh`
+  ejecuta `homectl update --tpm2-device=auto` en el primer boot post-migración. Fallback silencioso
+  si el hardware no está disponible.
+- **`UserConfig.fido2_enroll`** — campo booleano (default `False`). Análogo al anterior para FIDO2:
+  `homectl update --fido2-device=auto` en primer boot. Fallback silencioso si no hay token.
+- **TUI: selección de `homed_storage` por usuario** — `_rich_user_creation()` pregunta el backend
+  de home (subvolume/directory/luks/classic) después del password.
+- **`USERS_JSON` incluye `tpm2_enroll`/`fido2_enroll`** — pasados a `configure.sh` por usuario.
+- **`configure_homed()` escribe flags en `homed-migration.conf`** — `HOMED_TPM2_ENROLL` y
+  `HOMED_FIDO2_ENROLL` como variables para la systemd unit `EnvironmentFile`.
+- **`templates/install-config.yaml` actualizado** — formato `users:` lista con `tpm2_enroll`,
+  `fido2_enroll` documentados. La clave `user:` (singular) sigue siendo backwards compat.
+
+### Tests
+
+- `TestHomedLuksConfig` (7 tests): defaults False, carga desde YAML, validación de boolean,
+  `homed_storage: luks` aceptado, `tpm2_enroll`/`fido2_enroll` defaults en YAML.
+- `TestMultiUser.test_users_json_includes_tpm2_fido2`: verifica que `USERS_JSON` incluye
+  `tpm2_enroll` y `fido2_enroll` por usuario.
+- 580 tests passing, ruff clean, shellcheck 0 warnings.
+
 ## [0.5.4] - 2026-05-09
 
 ### Added
