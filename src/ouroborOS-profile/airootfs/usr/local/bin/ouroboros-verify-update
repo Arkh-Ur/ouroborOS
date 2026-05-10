@@ -37,12 +37,14 @@ systemctl --failed --no-legend 2>/dev/null || true
 
 if [[ ! -d "/.snapshots/${SNAP_NAME}" ]]; then
     log "ERROR: Snapshot '${SNAP_NAME}' not found — cannot roll back."
-    rm -f "$STATE_FILE"
     exit 1
 fi
 
 log "Promoting snapshot '${SNAP_NAME}' to @ ..."
-our-rollback promote "$SNAP_NAME"
+if ! /usr/local/bin/our-rollback promote "$SNAP_NAME"; then
+    log "ERROR: our-rollback failed — keeping state file, NOT rebooting."
+    exit 1
+fi
 
 rm -f "$STATE_FILE"
 log "Rollback complete. Rebooting..."

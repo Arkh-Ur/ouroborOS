@@ -48,6 +48,7 @@ set -euo pipefail
 : "${ENABLE_DUAL_BOOT:='0'}"
 : "${SECURE_BOOT:='0'}"
 : "${SBCTL_INCLUDE_MS_KEYS:='0'}"
+: "${USER_PASSWORD:=''}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -760,10 +761,10 @@ _configure_single_user_legacy() {
 configure_users() {
     if [[ -n "${USERS_JSON:-}" ]]; then
         log_info "Creating user accounts from USERS_JSON..."
-        python3 - "${TARGET}" <<PYEOF
-import json, subprocess, sys
+        python3 - "${TARGET}" <<'PYEOF'
+import json, os, subprocess, sys
 
-users = json.loads("""${USERS_JSON}""")
+users = json.loads(os.environ["USERS_JSON"])
 target = sys.argv[1]
 
 # Read existing /etc/shells once
@@ -1076,10 +1077,7 @@ print(1 if any(u.get('homed_storage','subvolume') not in ('classic',) for u in u
         case "$HOMED_STORAGE" in
             subvolume|directory|luks)
                 needs_homed=1
-                homed_users_json=$(python3 -c "
-import json
-print(json.dumps([{'username': '${USERNAME}', 'homed_storage': '${HOMED_STORAGE}', 'password': '${USER_PASSWORD}'}]))
-")
+                homed_users_json=$(python3 -c "import json,sys; print(json.dumps([{'username': sys.argv[1], 'homed_storage': sys.argv[2], 'password': sys.argv[3]}]))" "${USERNAME}" "${HOMED_STORAGE}" "${USER_PASSWORD}")
                 ;;
             classic)
                 log_info "homed_storage=classic — skipping migration setup."

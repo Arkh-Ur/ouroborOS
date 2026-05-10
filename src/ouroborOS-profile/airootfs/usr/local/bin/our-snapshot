@@ -264,6 +264,7 @@ cmd_diff() {
         _err "Could not mount Btrfs top-level from ${root_dev}"
         exit 1
     fi
+    trap 'umount "$tmp_tl" 2>/dev/null || true; rmdir "$tmp_tl" 2>/dev/null || true' EXIT
 
     local path_a="${tmp_tl}/@snapshots/${snap_a}"
     local path_b="${tmp_tl}/@snapshots/${snap_b}"
@@ -273,18 +274,35 @@ cmd_diff() {
 
     umount "$tmp_tl" 2>/dev/null || true
     rmdir "$tmp_tl" 2>/dev/null || true
+    trap - EXIT
 
     if [[ -z "$out" ]]; then
         echo "Snapshots are identical."
         return 0
     fi
 
-    echo "$out" \
-        | sed \
-            -e "s|^Only in ${path_a}[^:]*: \(.*\)$|Deleted:  /\1|" \
-            -e "s|^Only in ${path_b}[^:]*: \(.*\)$|Added:    /\1|" \
-            -e "s|^Files ${path_a}/\(.*\) and .*differ$|Modified: /\1|" \
-        | sort
+    # Use Python for the reformatting to avoid sed regex metacharacter injection
+    # (snapshot names may contain dots, brackets, etc. that break sed patterns).
+    printf '%s\n' "$out" | python3 -c "
+import sys
+path_a = sys.argv[1]
+path_b = sys.argv[2]
+lines = []
+for line in sys.stdin:
+    line = line.rstrip()
+    if line.startswith('Only in ' + path_a) and ': ' in line:
+        fname = line.split(': ', 1)[1]
+        lines.append('Deleted:  /' + fname)
+    elif line.startswith('Only in ' + path_b) and ': ' in line:
+        fname = line.split(': ', 1)[1]
+        lines.append('Added:    /' + fname)
+    elif line.startswith('Files ' + path_a + '/') and ' and ' in line and line.endswith('differ'):
+        rest = line[len('Files ' + path_a + '/'):]
+        fname = rest.split(' and ')[0]
+        lines.append('Modified: /' + fname)
+for l in sorted(lines):
+    print(l)
+" "$path_a" "$path_b"
 }
 
 cmd_help() {

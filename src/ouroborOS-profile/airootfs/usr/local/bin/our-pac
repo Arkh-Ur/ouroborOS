@@ -282,9 +282,6 @@ if is_immutable_root; then
             # Lock snapshot read-only after all metadata is written
             btrfs property set "/.snapshots/${snap_name}" ro true 2>/dev/null || true
             generate_snapshot_boot_entry "$snap_name" "/boot" "quiet ro" 2>/dev/null || true
-            # Write pending-verification — cleared by ouroboros-verify-update.service on clean boot
-            mkdir -p "/var/lib/ouroborOS"
-            printf '%s' "$snap_name" > "/var/lib/ouroborOS/pending-verification"
         fi
     else
         _warn "Snapshot library not found at ${SNAPSHOT_LIB} — skipping snapshot"
@@ -322,7 +319,13 @@ if is_immutable_root; then
     pacman_exit=0
     /usr/bin/pacman "$@" || pacman_exit=$?
 
-    # 6b. Update system.yaml user_packages for explicit installs/removes
+    # 6b. Write pending-verification only after pacman succeeds (snapshot is now the baseline)
+    if [[ "$pacman_exit" -eq 0 && -n "$snap_name" && -d "/.snapshots/${snap_name}" ]]; then
+        mkdir -p "/var/lib/ouroborOS" 2>/dev/null || true
+        printf '%s' "$snap_name" > "/var/lib/ouroborOS/pending-verification"
+    fi
+
+    # 6c. Update system.yaml user_packages for explicit installs/removes
     if [[ "$pacman_exit" -eq 0 ]]; then
         _pac_op=$(_pac_operation "$@")
         mapfile -t _pac_pkgs < <(_pac_pkg_names "$@")
