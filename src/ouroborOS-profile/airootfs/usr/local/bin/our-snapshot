@@ -244,6 +244,49 @@ cmd_sync_boot_entries() {
     fi
 }
 
+cmd_diff() {
+    local snap_a="${1:-}" snap_b="${2:-}"
+    if [[ -z "$snap_a" || -z "$snap_b" ]]; then
+        echo "Usage: ${PROGRAM} diff <SNAP_A> <SNAP_B>"
+        exit 1
+    fi
+
+    _check_snapshots_dir
+    [[ -d "${SNAPSHOTS_DIR}/${snap_a}" ]] || { _err "Snapshot not found: ${snap_a}"; exit 1; }
+    [[ -d "${SNAPSHOTS_DIR}/${snap_b}" ]] || { _err "Snapshot not found: ${snap_b}"; exit 1; }
+
+    local root_dev tmp_tl
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/\[.*//')
+    tmp_tl=$(mktemp -d)
+
+    if ! mount -t btrfs -o ro,subvolid=5 "$root_dev" "$tmp_tl" 2>/dev/null; then
+        rmdir "$tmp_tl"
+        _err "Could not mount Btrfs top-level from ${root_dev}"
+        exit 1
+    fi
+
+    local path_a="${tmp_tl}/@snapshots/${snap_a}"
+    local path_b="${tmp_tl}/@snapshots/${snap_b}"
+
+    local out
+    out=$(diff -rq --no-dereference "$path_a" "$path_b" 2>/dev/null || true)
+
+    umount "$tmp_tl" 2>/dev/null || true
+    rmdir "$tmp_tl" 2>/dev/null || true
+
+    if [[ -z "$out" ]]; then
+        echo "Snapshots are identical."
+        return 0
+    fi
+
+    echo "$out" \
+        | sed \
+            -e "s|^Only in ${path_a}[^:]*: \(.*\)$|Deleted:  /\1|" \
+            -e "s|^Only in ${path_b}[^:]*: \(.*\)$|Added:    /\1|" \
+            -e "s|^Files ${path_a}/\(.*\) and .*differ$|Modified: /\1|" \
+        | sort
+}
+
 cmd_help() {
     cat << EOF
 ${PROGRAM} — Btrfs snapshot manager for ouroborOS
@@ -259,6 +302,7 @@ COMMANDS
   prune [--keep N]        Remove old snapshots (default: keep 5, 30 days)
         [--days D]
   sync-boot-entries       Write missing systemd-boot entries for all snapshots
+  diff <A> <B>            Show files added, modified, or deleted between two snapshots
   help                    Show this help
 
 EXAMPLES
@@ -267,6 +311,7 @@ EXAMPLES
   sudo ${PROGRAM} delete 2026-04-10T143200
   sudo ${PROGRAM} prune --keep 3 --days 14
   sudo ${PROGRAM} sync-boot-entries
+  sudo ${PROGRAM} diff 2026-04-10T143200 2026-04-11T080000
 
 NOTES
   - The 'install' baseline snapshot is protected and cannot be deleted.
@@ -289,6 +334,7 @@ case "$command" in
     info)               cmd_info "${1:-}" ;;
     prune)              cmd_prune "$@" ;;
     sync-boot-entries)  cmd_sync_boot_entries ;;
+    diff)               cmd_diff "${1:-}" "${2:-}" ;;
     help|--help|-h)     cmd_help ;;
     *)
         _err "Unknown command: ${command}"

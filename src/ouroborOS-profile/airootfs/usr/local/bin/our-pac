@@ -282,6 +282,9 @@ if is_immutable_root; then
             # Lock snapshot read-only after all metadata is written
             btrfs property set "/.snapshots/${snap_name}" ro true 2>/dev/null || true
             generate_snapshot_boot_entry "$snap_name" "/boot" "quiet ro" 2>/dev/null || true
+            # Write pending-verification — cleared by ouroboros-verify-update.service on clean boot
+            mkdir -p "/var/lib/ouroborOS"
+            printf '%s' "$snap_name" > "/var/lib/ouroborOS/pending-verification"
         fi
     else
         _warn "Snapshot library not found at ${SNAPSHOT_LIB} — skipping snapshot"
