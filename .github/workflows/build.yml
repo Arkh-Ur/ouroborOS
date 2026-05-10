@@ -276,6 +276,10 @@ jobs:
             echo "PUBLIC_REPO_TOKEN not set — skipping push to public repo"
             exit 0
           fi
+          # Remove the actions/checkout credential helper — it uses GITHUB_TOKEN
+          # which has no write access to the public repo. Our PAT (in the remote URL)
+          # must take precedence.
+          git config --global --unset "http.https://github.com/.extraheader" || true
           git remote remove public 2>/dev/null || true
           git remote add public \
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
