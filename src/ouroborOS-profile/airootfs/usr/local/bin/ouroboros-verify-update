@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# ouroboros-verify-update — verify system health after a package update.
+#
+# Called by ouroboros-verify-update.service (After=multi-user.target).
+# Reads /var/lib/ouroborOS/pending-verification to find the pre-update snapshot name.
+#
+# Outcome:
+#   - 0 failed units after 60s → clear flag (update confirmed)
+#   - Failed units detected    → our-rollback promote <snapshot> → reboot
+
+STATE_FILE="/var/lib/ouroborOS/pending-verification"
+
+log() { echo "[ouroboros-verify-update] $*"; }
+
+if [[ ! -f "$STATE_FILE" ]]; then
+    log "No pending verification — nothing to do."
+    exit 0
+fi
+
+SNAP_NAME=$(cat "$STATE_FILE")
+
+log "Verifying boot after update (pre-update snapshot: ${SNAP_NAME})..."
+log "Waiting 60s for services to settle..."
+sleep 60
+
+FAILED_COUNT=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
+
+if [[ "$FAILED_COUNT" -eq 0 ]]; then
+    log "Boot clean — 0 failed units. Update confirmed."
+    rm -f "$STATE_FILE"
+    exit 0
+fi
+
+log "WARNING: ${FAILED_COUNT} failed unit(s) detected. Rolling back to '${SNAP_NAME}'..."
+systemctl --failed --no-legend 2>/dev/null || true
+
+if [[ ! -d "/.snapshots/${SNAP_NAME}" ]]; then
+    log "ERROR: Snapshot '${SNAP_NAME}' not found — cannot roll back."
+    rm -f "$STATE_FILE"
+    exit 1
+fi
+
+log "Promoting snapshot '${SNAP_NAME}' to @ ..."
+our-rollback promote "$SNAP_NAME"
+
+rm -f "$STATE_FILE"
+log "Rollback complete. Rebooting..."
+systemctl reboot

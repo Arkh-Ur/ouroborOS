@@ -944,6 +944,7 @@ STUB
         our-aur
         ouroboros-secureboot
         ouroboros-rebase
+        ouroboros-verify-update
     )
     for _tool in "${_p3_tools[@]}"; do
         local _src="/usr/local/bin/${_tool}"
@@ -1296,6 +1297,19 @@ GREETD_EOF
         log_ok "ouroboros-update.timer enabled (daily OTA check)."
     else
         log_warn "ouroboros-update units not found on live ISO — skipping."
+    fi
+
+    # ouroboros-verify-update — post-update boot verification service.
+    # Clears pending-verification on clean boot; rolls back to pre-update snapshot
+    # and reboots automatically if failed units are detected.
+    local VERIFY_SVC_SRC="/etc/systemd/system/ouroboros-verify-update.service"
+    if [[ -f "${VERIFY_SVC_SRC}" ]]; then
+        mkdir -p "${TARGET}/etc/systemd/system"
+        cp "${VERIFY_SVC_SRC}" "${TARGET}/etc/systemd/system/ouroboros-verify-update.service"
+        in_chroot systemctl enable ouroboros-verify-update.service
+        log_ok "ouroboros-verify-update.service enabled (post-update auto-rollback)."
+    else
+        log_warn "ouroboros-verify-update.service not found on live ISO — skipping."
     fi
 
     # ouroboros-snapshot-on-boot — early-boot service that auto-creates and promotes

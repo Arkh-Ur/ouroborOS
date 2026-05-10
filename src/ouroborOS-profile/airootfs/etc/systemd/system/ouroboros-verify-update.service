@@ -1,0 +1,14 @@
+[Unit]
+Description=ouroborOS post-update boot verification
+After=multi-user.target
+ConditionPathExists=/var/lib/ouroborOS/pending-verification
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ouroboros-verify-update
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

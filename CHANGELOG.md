@@ -5,6 +5,28 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-05-10
+
+### Added
+
+- **`our-pac` auto-rollback** — después de cada operación de paquetes, `our-pac` escribe
+  `/var/lib/ouroborOS/pending-verification` con el nombre del snapshot pre-update.
+- **`ouroboros-verify-update`** — nuevo script instalado en el sistema. Corre como servicio
+  oneshot `After=multi-user.target`. Espera 60s para que los servicios arranquen, verifica
+  `systemctl --failed`. Si hay 0 units fallidas → confirma el update (borra el flag). Si hay
+  units fallidas → `our-rollback promote <snapshot>` + `systemctl reboot` automático.
+- **`ouroboros-verify-update.service`** — nuevo servicio systemd habilitado en el sistema
+  instalado. Se activa solo cuando `/var/lib/ouroborOS/pending-verification` existe
+  (`ConditionPathExists`), sin overhead en boots normales.
+- **`our-snapshot diff <A> <B>`** — nuevo subcomando. Monta el top-level Btrfs (`subvolid=5`),
+  compara los dos snapshots con `diff -rq` y muestra `Added`, `Modified` o `Deleted` por archivo.
+  Reutiliza el patrón de `our-rollback` para bypass del VFS ro.
+
+### Tests
+
+- 580 tests passing (sin cambios en suite — nueva funcionalidad es scripting puro Bash).
+- shellcheck 0 warnings en todos los archivos modificados.
+
 ## [0.5.5] - 2026-05-10
 
 ### Added
