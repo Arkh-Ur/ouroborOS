@@ -5,6 +5,44 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-05-09
+
+### Added
+
+- **Multi-user support** — installer now accepts `users: list` in YAML config (previously
+  only `user:` singular was supported). Each user has `username`, `password`/`password_hash`,
+  `groups`, `shell`, `real_name` (GECOS field), and `homed_storage` fields.
+- **Backwards compatibility** — configs using `user:` (singular form) are automatically
+  converted to a single-element `users:` list. No migration required.
+- **`UserConfig.real_name`** — new field for the GECOS full name. Passed to `useradd --comment`.
+- **`configure_users()` multi-user path** — `configure.sh` receives `USERS_JSON` (JSON array)
+  and creates each user via Python/arch-chroot loop. Falls back to legacy single-user path
+  when `USERS_JSON` is not set.
+- **`configure_homed()` multi-user** — iterates `USERS_JSON` to enable `systemd-homed` only
+  for users with non-classic `homed_storage`. Writes homed-migration.conf for primary user
+  (backwards compat with homed-migrate.sh single-user path).
+- **TUI `show_users_creation()`** — Rich backend prompts "Add another user?" after each user.
+  First user defaults to `[wheel, audio, video, input]`; additional users get
+  `[audio, video, input]`. Whiptail backend creates a single user (unchanged).
+- **`to_system_yaml()` version bumped to `0.5.4`** — `users:` list now includes all configured
+  users with `real_name` field.
+- **`phase5-e2e.yaml` uses `users:` list** — includes `real_name: "Administrator"` field.
+
+### Tests
+
+- Added `TestMultiUserConfig` (11 tests) in `test_config.py`:
+  `test_users_list_parsed`, `test_user_singular_backwards_compat`, `test_real_name_loaded`,
+  `test_to_system_yaml_all_users`, `test_at_least_one_user_required`,
+  `test_username_validated_per_user`, `test_homed_storage_validated_per_user`,
+  `test_password_hashed_per_user`, `test_missing_user_and_users_raises`,
+  `test_userconfig_real_name_defaults_empty`, `test_default_groups_per_user`.
+- Added `TestMultiUser` (4 tests) in `test_state_machine.py`:
+  `test_handle_user_appends_multiple`, `test_configure_passes_users_json`,
+  `test_configure_clears_plaintext_for_all_users`, `test_real_name_propagated`.
+- Updated `TestHandleUser`, `TestSystemYaml`, `TestPasswordPlaintextLifecycle`,
+  `TestInstallerConfigDefaults` to use `cfg.users[0]` instead of `cfg.user`.
+- 571 tests passing, ruff clean, shellcheck 0 warnings.
+
 ## [0.5.3] - 2026-05-09
 
 ### Added

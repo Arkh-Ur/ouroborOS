@@ -441,32 +441,37 @@ class Installer:
         self._update_progress(State.LOCALE, 100)
 
     def _handle_user(self) -> None:
-        """USER — collect username, password, and shell BEFORE touching the disk.
+        """USER — collect user accounts and shell BEFORE touching the disk.
 
         This state used to live inside CONFIGURE (after pacstrap). It was
         moved forward so a cancelled prompt cannot waste a disk wipe.
+        Supports multiple users (v0.5.4+) via show_users_creation().
         """
         self._update_progress(State.USER, 0)
         if self.tui:
-            user_cfg = self.tui.show_user_creation()
-            self.config.user.username = user_cfg["username"]
-            self.config.user.password_hash = user_cfg["password_hash"]
-            if "password" in user_cfg:
-                self.config.user.password_plaintext = user_cfg["password"]
-
+            from installer.config import UserConfig  # noqa: PLC0415
+            user_dicts = self.tui.show_users_creation()
             shell_name = self.tui.show_shell_selection()
-            self.config.user.shell = shell_path(shell_name)
 
-            # If the chosen shell is not part of 'base', schedule it for install
             pkg = shell_package(shell_name)
             if pkg and pkg not in self.config.extra_packages:
                 self.config.extra_packages.append(pkg)
                 log.info("Shell package queued: %s", pkg)
 
+            for ud in user_dicts:
+                u = UserConfig()
+                u.username = ud["username"]
+                u.password_hash = ud["password_hash"]
+                u.password_plaintext = ud.get("password", "")
+                u.real_name = ud.get("real_name", "")
+                u.groups = list(ud.get("groups", ["wheel", "audio", "video", "input"]))
+                u.shell = shell_path(shell_name)
+                u.homed_storage = ud.get("homed_storage", "subvolume")
+                self.config.users.append(u)
+
         log.info(
-            "User configured: %s (shell: %s)",
-            self.config.user.username,
-            self.config.user.shell,
+            "Users configured: %s",
+            [u.username for u in self.config.users],
         )
         self._update_progress(State.USER, 100)
 
@@ -962,11 +967,24 @@ class Installer:
                 "KEYMAP": self.config.locale.keymap,
                 "TIMEZONE": self.config.locale.timezone,
                 "HOSTNAME": self.config.network.hostname,
-                "USERNAME": self.config.user.username,
-                "USER_PASSWORD_HASH": self.config.user.password_hash,
-                "USER_PASSWORD": self.config.user.password_plaintext,
-                "USER_GROUPS": ",".join(self.config.user.groups),
-                "USER_SHELL": self.config.user.shell,
+                "USERS_JSON": json.dumps([
+                    {
+                        "username": u.username,
+                        "password_hash": u.password_hash,
+                        "password": u.password_plaintext,
+                        "groups": list(u.groups),
+                        "shell": u.shell,
+                        "real_name": u.real_name,
+                        "homed_storage": u.homed_storage,
+                    }
+                    for u in self.config.users
+                ]),
+                # Backwards compat — configure.sh legacy functions use these
+                "USERNAME": self.config.users[0].username if self.config.users else "",
+                "USER_PASSWORD_HASH": self.config.users[0].password_hash if self.config.users else "",
+                "USER_PASSWORD": self.config.users[0].password_plaintext if self.config.users else "",
+                "USER_GROUPS": ",".join(self.config.users[0].groups) if self.config.users else "",
+                "USER_SHELL": self.config.users[0].shell if self.config.users else "/bin/bash",
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
                 "ENABLE_TPM2": "1" if self.config.security.tpm2_unlock else "0",
@@ -978,7 +996,7 @@ class Installer:
                 "DESKTOP_KDE_FLAVOR": self.config.desktop.kde_flavor,
                 "GPU_DRIVER": self.config.desktop.gpu_driver,
                 "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
-                "HOMED_STORAGE": self.config.user.homed_storage,
+                "HOMED_STORAGE": self.config.users[0].homed_storage if self.config.users else "subvolume",
                 "WIFI_SSID": self.config.network.wifi_ssid,
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
                 "BLUETOOTH_ENABLE": "1" if self.config.network.bluetooth_enable else "0",
@@ -994,7 +1012,8 @@ class Installer:
         result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
 
         # Clear transient secrets after configure — no longer needed
-        self.config.user.password_plaintext = ""
+        for u in self.config.users:
+            u.password_plaintext = ""
         self.config.network.wifi_passphrase = ""
 
         if result.returncode != 0:
