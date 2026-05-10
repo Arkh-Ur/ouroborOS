@@ -19,6 +19,8 @@ set -euo pipefail
 : "${HOMED_USERNAME:?HOMED_USERNAME must be set}"
 : "${HOMED_STORAGE:?HOMED_STORAGE must be set}"
 : "${HOMED_PASSWORD:?HOMED_PASSWORD must be set}"
+: "${HOMED_TPM2_ENROLL:=0}"
+: "${HOMED_FIDO2_ENROLL:=0}"
 
 HOME_DIR="/home/${HOMED_USERNAME}"
 HOME_BACKUP="${HOME_DIR}.homed-migration-backup"
@@ -237,6 +239,24 @@ IDENTITY_EOF
     if ! rsync -aHAX --exclude='.homedir' "${HOME_BACKUP}/" "${HOME_DIR}/"; then
         log_error "rsync failed during data copy."
         rollback "after_rsync"
+    fi
+
+    # Step 5b: TPM2/FIDO2 enroll for homed (optional — skip silently if absent)
+    if [[ "${HOMED_TPM2_ENROLL:-0}" == "1" ]]; then
+        log_info "Enrolling homed user '${HOMED_USERNAME}' with TPM2..."
+        if homectl update "$HOMED_USERNAME" --tpm2-device=auto 2>/dev/null; then
+            log_ok "TPM2 enrolled for '${HOMED_USERNAME}'."
+        else
+            log_warn "TPM2 enroll failed (hardware may not be available) — skipping."
+        fi
+    fi
+    if [[ "${HOMED_FIDO2_ENROLL:-0}" == "1" ]]; then
+        log_info "Enrolling homed user '${HOMED_USERNAME}' with FIDO2..."
+        if homectl update "$HOMED_USERNAME" --fido2-device=auto 2>/dev/null; then
+            log_ok "FIDO2 enrolled for '${HOMED_USERNAME}'."
+        else
+            log_warn "FIDO2 enroll failed (hardware may not be available) — skipping."
+        fi
     fi
 
     # Step 6: Patch PAM for homed compatibility (SSH logins)

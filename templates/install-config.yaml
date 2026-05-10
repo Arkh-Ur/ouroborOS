@@ -27,17 +27,22 @@ network:
   # bluetooth:
   #   enable: false
 
-user:
-  username: admin
-  password: changeme
-  groups:
-    - wheel
-    - audio
-    - video
-    - input
-  # systemd-homed storage backend for the home directory.
-  # Options: subvolume (default, Btrfs) | luks | directory | classic
-  homed_storage: subvolume
+users:
+  - username: admin
+    password: changeme
+    real_name: "Administrator"
+    groups:
+      - wheel
+      - audio
+      - video
+      - input
+    # systemd-homed storage backend for the home directory.
+    # Options: subvolume (default, Btrfs) | luks | directory | classic
+    homed_storage: subvolume
+    # Per-user homed TPM2/FIDO2 enroll (applied on first boot via homed-migrate.sh).
+    # Silently skipped if hardware is absent.
+    tpm2_enroll: false
+    fido2_enroll: false
 
 # Login shell. Options: bash (default) | zsh | fish
 # zsh and fish are installed automatically if selected.

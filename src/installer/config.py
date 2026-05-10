@@ -67,6 +67,10 @@ class UserConfig:
     # systemd-homed storage backend: "subvolume" (Btrfs, default) | "luks"
     # | "directory" | "classic" (legacy /etc/passwd, opt-out).
     homed_storage: str = "subvolume"
+    # Per-user homed enroll flags (applied on first boot by homed-migrate.sh).
+    # Silently skipped if hardware is absent.
+    tpm2_enroll: bool = False       # homectl update --tpm2-device=auto post-migrate
+    fido2_enroll: bool = False      # homectl update --fido2-device=auto post-migrate
 
 
 @dataclass
@@ -324,6 +328,16 @@ def validate_config(data: dict) -> None:
                 f"user '{username}' homed_storage must be one of "
                 f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
             )
+        tpm2_enroll = usr.get("tpm2_enroll", False)
+        if not isinstance(tpm2_enroll, bool):
+            raise ConfigValidationError(
+                f"user '{username}' tpm2_enroll must be a boolean (true/false)"
+            )
+        fido2_enroll = usr.get("fido2_enroll", False)
+        if not isinstance(fido2_enroll, bool):
+            raise ConfigValidationError(
+                f"user '{username}' fido2_enroll must be a boolean (true/false)"
+            )
     # shell (top-level, optional — defaults to "bash")
     shell = data.get("shell", "bash")
     if shell not in VALID_SHELLS:
@@ -415,6 +429,8 @@ def _parse_user(usr: dict, default_shell_name: str) -> UserConfig:
     u.shell = shell_path(str(usr.get("shell", default_shell_name)))
     u.real_name = str(usr.get("real_name", ""))
     u.homed_storage = str(usr.get("homed_storage", "subvolume"))
+    u.tpm2_enroll = bool(usr.get("tpm2_enroll", False))
+    u.fido2_enroll = bool(usr.get("fido2_enroll", False))
     return u
 
 

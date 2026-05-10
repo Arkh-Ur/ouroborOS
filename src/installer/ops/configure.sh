@@ -1121,16 +1121,20 @@ print(json.dumps([{'username': '${USERNAME}', 'homed_storage': '${HOMED_STORAGE}
 
     mkdir -p "${TARGET}/etc/ouroboros"
 
-    # Primary user (backwards compat for homed-migrate.sh single-user path)
-    local primary_user primary_storage primary_password
+    # Primary user conf (homed-migrate.sh single-user path, backwards compat)
+    local primary_user primary_storage primary_password primary_tpm2 primary_fido2
     primary_user=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0]['username'])")
     primary_storage=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0].get('homed_storage','subvolume'))")
     primary_password=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0].get('password',''))")
+    primary_tpm2=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print('1' if u[0].get('tpm2_enroll') else '0')")
+    primary_fido2=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print('1' if u[0].get('fido2_enroll') else '0')")
 
     cat > "${TARGET}/etc/ouroboros/homed-migration.conf" << EOF
 HOMED_USERNAME=${primary_user}
 HOMED_STORAGE=${primary_storage}
 HOMED_PASSWORD=${primary_password}
+HOMED_TPM2_ENROLL=${primary_tpm2}
+HOMED_FIDO2_ENROLL=${primary_fido2}
 EOF
     chmod 600 "${TARGET}/etc/ouroboros/homed-migration.conf"
 
