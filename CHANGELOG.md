@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.6] - 2026-05-10
 
+### Security / Fixed (Judgment Day review)
+
+- **Injection via `USERS_JSON` en heredoc** — `configure_users()` usaba `<<PYEOF` sin comillas,
+  permitiendo que caracteres `"""` en `real_name`/`username` terminaran el string Python y ejecutaran
+  código arbitrario. Corregido: `<<'PYEOF'` + `os.environ["USERS_JSON"]`.
+- **Injection de `USER_PASSWORD` en literal Python** — `configure_homed()` interpolaba la contraseña
+  en una cadena Python literal. Corregido: pasada via `sys.argv`.
+- **TUI groups como string → `list()` carácter a carácter** — `_rich_user_creation()` retornaba
+  `",".join(groups)` y `_handle_user()` hacía `list(...)` produciendo grupos de un carácter.
+  Corregido: retorna lista directamente.
+- **`config.user.username` → `AttributeError` en FINISH** — referencias a `config.user` (eliminado
+  en v0.5.4) en `show_summary()`. Corregido: `config.users[0].username`.
+- **`USER_PASSWORD` unbound bajo `set -u`** — no tenía valor por defecto en el bloque de validación
+  de `configure.sh`. Corregido: `: "${USER_PASSWORD:=''}"`.
+- **Secondary users recibían `wheel` en whiptail** — el backend whiptail omitía el campo `groups`
+  y todos los usuarios recibían el grupo `wheel` por defecto. Corregido: `is_primary` logic.
+- **`ouroboros-verify-update`**: path absoluto para `our-rollback`, verifica exit code antes de
+  borrar el flag, preserva el state file cuando el snapshot no existe.
+- **`our-snapshot diff`**: trap EXIT para cleanup de mount, Python `startswith()` en lugar de
+  sed con metacaracteres.
+- **`our-pac`**: `pending-verification` escrito solo tras `pacman_exit == 0` (no antes de pacman).
+
 ### Added
 
 - **`our-pac` auto-rollback** — después de cada operación de paquetes, `our-pac` escribe
