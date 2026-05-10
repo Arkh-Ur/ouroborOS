@@ -13,6 +13,7 @@ from installer.config import (
     ConfigValidationError,
     InstallerConfig,
     SecurityConfig,
+    UserConfig,
     find_unattended_config,
     load_config,
     load_config_from_url,
@@ -211,7 +212,7 @@ class TestLoadConfig:
         assert cfg.locale.keymap == "us"
         assert cfg.locale.timezone == "UTC"
         assert cfg.network.hostname == "ouroboros"
-        assert cfg.user.username == "testuser"
+        assert cfg.users[0].username == "testuser"
         assert cfg.unattended is True
 
     def test_file_not_found_raises(self, tmp_path: Path) -> None:
@@ -475,8 +476,8 @@ class TestLoadConfigBranches:
         path = _write_yaml(tmp_path, content)
         cfg = load_config(path)
         # Hash must look like a SHA-512 crypt hash
-        assert cfg.user.password_hash.startswith("$6$")
-        assert cfg.user.password_plaintext == "supersecret"
+        assert cfg.users[0].password_hash.startswith("$6$")
+        assert cfg.users[0].password_plaintext == "supersecret"
 
     def test_invalid_post_install_action_raises(self, tmp_path: Path) -> None:
         import textwrap as _tw
@@ -768,3 +769,163 @@ class TestFindUnattendedConfigCmdline:
         result = find_unattended_config()
         assert result is not None
         assert str(result) == str(fake_config)
+
+
+# ---------------------------------------------------------------------------
+# Multi-user support (v0.5.4)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiUserConfig:
+    def test_users_list_parsed(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+              - username: bob
+                password_hash: "$6$a$b"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert len(cfg.users) == 2
+        assert cfg.users[0].username == "alice"
+        assert cfg.users[1].username == "bob"
+
+    def test_user_singular_backwards_compat(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            user:
+              username: admin
+              password_hash: "$6$x$y"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert len(cfg.users) == 1
+        assert cfg.users[0].username == "admin"
+
+    def test_real_name_loaded(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+                real_name: "Alice Liddell"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert cfg.users[0].real_name == "Alice Liddell"
+
+    def test_to_system_yaml_all_users(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+              - username: bob
+                password_hash: "$6$a$b"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        data = cfg.to_system_yaml()
+        usernames = [u["username"] for u in data["users"]]
+        assert "alice" in usernames
+        assert "bob" in usernames
+
+    def test_at_least_one_user_required(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [],
+        }
+        with pytest.raises(ConfigValidationError, match="non-empty"):
+            validate_config(data)
+
+    def test_username_validated_per_user(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [
+                {"username": "Alice Bad!", "password_hash": "$6$x$y"},
+            ],
+        }
+        with pytest.raises(ConfigValidationError, match="POSIX"):
+            validate_config(data)
+
+    def test_homed_storage_validated_per_user(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+            "users": [
+                {"username": "alice", "password_hash": "$6$x$y", "homed_storage": "btrfs"},
+            ],
+        }
+        with pytest.raises(ConfigValidationError, match="homed_storage"):
+            validate_config(data)
+
+    def test_password_hashed_per_user(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password: mypassword
+              - username: bob
+                password: otherpass
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert cfg.users[0].password_hash.startswith("$6$")
+        assert cfg.users[1].password_hash.startswith("$6$")
+        assert cfg.users[0].password_plaintext == "mypassword"
+        assert cfg.users[1].password_plaintext == "otherpass"
+
+    def test_missing_user_and_users_raises(self) -> None:
+        data = {
+            "disk": {"device": "/dev/vda"},
+            "locale": {"timezone": "UTC"},
+            "network": {"hostname": "myhost"},
+        }
+        with pytest.raises(ConfigValidationError, match="user"):
+            validate_config(data)
+
+    def test_userconfig_real_name_defaults_empty(self) -> None:
+        u = UserConfig()
+        assert u.real_name == ""
+
+    def test_default_groups_per_user(self, tmp_path: Path) -> None:
+        content = """\
+            disk:
+              device: /dev/vda
+            locale:
+              timezone: UTC
+            network:
+              hostname: myhost
+            users:
+              - username: alice
+                password_hash: "$6$x$y"
+        """
+        cfg = load_config(_write_yaml(tmp_path, content))
+        assert "wheel" in cfg.users[0].groups

@@ -826,19 +826,46 @@ class TUI:
     # User creation
     # ------------------------------------------------------------------
 
-    def show_user_creation(self) -> dict[str, str]:
+    def show_users_creation(self) -> list[dict[str, str]]:
+        """Collect configuration for one or more user accounts."""
         if self._backend == "rich":
-            return self._rich_user_creation()
-        return self._whiptail_user_creation()
+            return self._rich_users_creation()
+        return [self._whiptail_user_creation()]
 
-    def _rich_user_creation(self) -> dict[str, str]:
+    def show_user_creation(self) -> dict[str, str]:
+        """Backwards-compat alias — returns the first user only."""
+        return self.show_users_creation()[0]
+
+    def _rich_users_creation(self) -> list[dict[str, str]]:
+        assert self._console is not None
+        users: list[dict[str, str]] = []
+        while True:
+            n = len(users) + 1
+            label = "Primary User" if n == 1 else f"Additional User #{n}"
+            default_groups = (
+                ["wheel", "audio", "video", "input"] if n == 1
+                else ["audio", "video", "input"]
+            )
+            user_cfg = self._rich_user_creation(label=label, default_groups=default_groups)
+            users.append(user_cfg)
+            if not Confirm.ask(
+                "  Add another user?", default=False, console=self._console
+            ):
+                break
+        return users
+
+    def _rich_user_creation(
+        self,
+        label: str = "User Account",
+        default_groups: list[str] | None = None,
+    ) -> dict[str, str]:
         assert self._console is not None
         self._stop_progress()
         self._console.print(
-            f"\n[bold blue]{self._title} - User Account[/]"
+            f"\n[bold blue]{self._title} - {label}[/]"
         )
         username = Prompt.ask(
-            "  Enter username for the primary user",
+            "  Enter username",
             default="user",
             console=self._console,
         )
@@ -859,7 +886,14 @@ class TUI:
                         "  [bold red]Password must be at least 4 characters.[/]"
                     )
                     continue
-                return {"username": username, "password_hash": _hash_password(password), "password": password}
+                result: dict[str, str] = {
+                    "username": username,
+                    "password_hash": _hash_password(password),
+                    "password": password,
+                }
+                if default_groups is not None:
+                    result["groups"] = ",".join(default_groups)
+                return result
             self._console.print(
                 f"  [bold red]Passwords do not match. "
                 f"Attempt {attempt + 1}/3.[/]"

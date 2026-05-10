@@ -53,7 +53,7 @@ class NetworkConfig:
 
 @dataclass
 class UserConfig:
-    """Primary user account configuration."""
+    """User account configuration (one per user)."""
 
     username: str = ""
     password_hash: str = ""          # SHA-512 crypt hash — never plaintext
@@ -62,6 +62,7 @@ class UserConfig:
         default_factory=lambda: ["wheel", "audio", "video", "input"]
     )
     shell: str = "/bin/bash"
+    real_name: str = ""              # GECOS full name (optional)
     create_home: bool = True
     # systemd-homed storage backend: "subvolume" (Btrfs, default) | "luks"
     # | "directory" | "classic" (legacy /etc/passwd, opt-out).
@@ -144,7 +145,7 @@ class InstallerConfig:
     disk: DiskConfig = field(default_factory=DiskConfig)
     locale: LocaleConfig = field(default_factory=LocaleConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
-    user: UserConfig = field(default_factory=UserConfig)
+    users: list[UserConfig] = field(default_factory=list)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
 
@@ -168,8 +169,9 @@ class InstallerConfig:
         and ouroboros-reinstall in Phase 5+.
         """
         from datetime import datetime, timezone  # noqa: PLC0415
+        primary_shell = self.users[0].shell if self.users else "/bin/bash"
         return {
-            "version": "0.5.0",
+            "version": "0.5.4",
             "channel": "stable",
             "channel_url": (
                 "https://raw.githubusercontent.com/Arkh-Ur/ouroborOS/main/channels/stable.yaml"
@@ -183,19 +185,20 @@ class InstallerConfig:
                     "profile": self.desktop.profile,
                     "dm": self.desktop.dm,
                 },
-                "shell": self.user.shell,
+                "shell": primary_shell,
             },
             "base_packages": sorted(self.installed_packages),
             "user_packages": [],
             "aur_packages": [],
             "users": [
                 {
-                    "username": self.user.username,
-                    "real_name": "",
-                    "groups": list(self.user.groups),
-                    "shell": self.user.shell,
-                    "homed_storage": self.user.homed_storage,
+                    "username": u.username,
+                    "real_name": u.real_name,
+                    "groups": list(u.groups),
+                    "shell": u.shell,
+                    "homed_storage": u.homed_storage,
                 }
+                for u in self.users
             ],
             "security": {
                 "secure_boot": self.security.secure_boot,
@@ -215,8 +218,8 @@ class InstallerConfig:
 # YAML schema validation
 # ---------------------------------------------------------------------------
 
-# Required keys in an unattended config file
-_REQUIRED_KEYS: set[str] = {"disk", "locale", "network", "user"}
+# Required keys in an unattended config file (user/users validated separately)
+_REQUIRED_KEYS: set[str] = {"disk", "locale", "network"}
 
 # Valid timezone pattern (basic check — full validation via /usr/share/zoneinfo)
 _TIMEZONE_RE = re.compile(r"^[A-Za-z_]+(/[A-Za-z_]+)*$")
@@ -295,23 +298,32 @@ def validate_config(data: dict) -> None:
                 "network.wifi.ssid is required when network.wifi.passphrase is set"
             )
 
-    # user section
-    user = data["user"]
-    username = _require(user, "username", "user")
-    if not _USERNAME_RE.match(str(username)):
+    # user / users section — accept both singular and list forms
+    if "user" not in data and "users" not in data:
         raise ConfigValidationError(
-            f"user.username must be a valid POSIX username: {username!r}"
+            "Config must include a 'user' or 'users' section"
         )
-    if "password_hash" not in user and "password" not in user:
-        raise ConfigValidationError(
-            "user section must include 'password_hash' (SHA-512 crypt) or 'password'"
-        )
-    homed_storage = user.get("homed_storage", "subvolume")
-    if homed_storage not in ("subvolume", "luks", "directory", "classic"):
-        raise ConfigValidationError(
-            f"user.homed_storage must be one of "
-            f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
-        )
+    user_list: list[dict] = (
+        data["users"] if "users" in data else [data["user"]]
+    )
+    if not isinstance(user_list, list) or len(user_list) == 0:
+        raise ConfigValidationError("'users' must be a non-empty list")
+    for usr in user_list:
+        username = _require(usr, "username", "user")
+        if not _USERNAME_RE.match(str(username)):
+            raise ConfigValidationError(
+                f"user.username must be a valid POSIX username: {username!r}"
+            )
+        if "password_hash" not in usr and "password" not in usr:
+            raise ConfigValidationError(
+                f"user '{username}' must include 'password_hash' or 'password'"
+            )
+        homed_storage = usr.get("homed_storage", "subvolume")
+        if homed_storage not in ("subvolume", "luks", "directory", "classic"):
+            raise ConfigValidationError(
+                f"user '{username}' homed_storage must be one of "
+                f"'subvolume'|'luks'|'directory'|'classic', got: {homed_storage!r}"
+            )
     # shell (top-level, optional — defaults to "bash")
     shell = data.get("shell", "bash")
     if shell not in VALID_SHELLS:
@@ -382,6 +394,30 @@ def validate_config(data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _parse_user(usr: dict, default_shell_name: str) -> UserConfig:
+    """Parse a single user dict (from YAML) into a UserConfig."""
+    u = UserConfig()
+    u.username = str(usr["username"])
+    if "password_hash" in usr:
+        u.password_hash = str(usr["password_hash"])
+    elif "password" in usr:
+        plaintext = str(usr["password"])
+        result = subprocess.run(
+            ["openssl", "passwd", "-6", "-stdin"],
+            input=plaintext,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        u.password_hash = result.stdout.strip()
+        u.password_plaintext = plaintext
+    u.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
+    u.shell = shell_path(str(usr.get("shell", default_shell_name)))
+    u.real_name = str(usr.get("real_name", ""))
+    u.homed_storage = str(usr.get("homed_storage", "subvolume"))
+    return u
+
+
 def load_config(path: Path) -> InstallerConfig:
     """Load and validate an unattended install config YAML file.
 
@@ -438,25 +474,12 @@ def load_config(path: Path) -> InstallerConfig:
     bt_cfg = net.get("bluetooth", {}) or {}
     cfg.network.bluetooth_enable = bool(bt_cfg.get("enable", False))
 
-    # User
-    usr = data["user"]
-    cfg.user.username = str(usr["username"])
-    if "password_hash" in usr:
-        cfg.user.password_hash = str(usr["password_hash"])
-    elif "password" in usr:
-        plaintext = str(usr["password"])
-        result = subprocess.run(
-            ["openssl", "passwd", "-6", "-stdin"],
-            input=plaintext,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        cfg.user.password_hash = result.stdout.strip()
-        cfg.user.password_plaintext = plaintext
-    cfg.user.groups = list(usr.get("groups", ["wheel", "audio", "video", "input"]))
-    cfg.user.shell = shell_path(str(data.get("shell", "bash")))
-    cfg.user.homed_storage = str(usr.get("homed_storage", "subvolume"))
+    # Users — accept both 'user:' (singular, backwards compat) and 'users:' (list)
+    default_shell_name = str(data.get("shell", "bash"))
+    raw_users: list[dict] = (
+        data["users"] if "users" in data else [data["user"]]
+    )
+    cfg.users = [_parse_user(u, default_shell_name) for u in raw_users]
 
     # Desktop profile (optional)
     desk = data.get("desktop", {}) or {}

@@ -30,16 +30,16 @@ network:
   enable_iwd: false
   enable_resolved: true
 
-# Single user (v0.5.0-v0.5.3) — upgrades to users: list in v0.5.4
-user:
-  username: admin
-  password: changeme
-  groups:
-    - wheel
-    - audio
-    - video
-    - input
-  homed_storage: classic    # QEMU constraint: homectl fails in virtual Btrfs
+users:
+  - username: admin
+    password: changeme
+    real_name: "Administrator"
+    groups:
+      - wheel
+      - audio
+      - video
+      - input
+    homed_storage: classic    # QEMU constraint: homectl fails in virtual Btrfs
 
 shell: bash
 

@@ -106,9 +106,14 @@ class TestInstallerConfigDefaults:
         cfg = InstallerConfig()
         assert cfg.network.hostname == "ouroboros"
 
-    def test_default_user_groups_includes_wheel(self) -> None:
+    def test_default_users_list_empty(self) -> None:
         cfg = InstallerConfig()
-        assert "wheel" in cfg.user.groups
+        assert isinstance(cfg.users, list)
+
+    def test_userconfig_default_groups_includes_wheel(self) -> None:
+        from installer.config import UserConfig  # noqa: PLC0415
+        u = UserConfig()
+        assert "wheel" in u.groups
 
     def test_unattended_defaults_to_false(self) -> None:
         cfg = InstallerConfig()
@@ -891,11 +896,14 @@ class TestHandleConfigure:
         User prompt was moved to _handle_user, which runs before PARTITION,
         so the disk wipe can't happen on a cancelled user prompt.
         """
+        from installer.config import UserConfig  # noqa: PLC0415
         installer = Installer()
         installer._update_progress = MagicMock()
         installer.config.disk.device = "/dev/vda"
-        installer.config.user.username = "prefilled"
-        installer.config.user.password_hash = "$6$xxx"
+        u = UserConfig()
+        u.username = "prefilled"
+        u.password_hash = "$6$xxx"
+        installer.config.users = [u]
         mock_tui = MagicMock()
         installer.tui = mock_tui
         ok = MagicMock()
@@ -903,24 +911,23 @@ class TestHandleConfigure:
         with patch("subprocess.run", return_value=ok), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
-        mock_tui.show_user_creation.assert_not_called()
-        assert installer.config.user.username == "prefilled"
+        mock_tui.show_users_creation.assert_not_called()
+        assert installer.config.users[0].username == "prefilled"
 
     def test_handle_user_prompts_before_disk_touch(self) -> None:
         """Phase 2: _handle_user collects credentials pre-wipe."""
         installer = Installer()
         installer._update_progress = MagicMock()
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "testuser",
-            "password_hash": "$6$xxx",
-        }
+        mock_tui.show_users_creation.return_value = [
+            {"username": "testuser", "password_hash": "$6$xxx"},
+        ]
         mock_tui.show_shell_selection.return_value = "bash"
         installer.tui = mock_tui
         installer._handle_user()
-        assert installer.config.user.username == "testuser"
-        assert installer.config.user.password_hash == "$6$xxx"
-        assert installer.config.user.shell == "/bin/bash"
+        assert installer.config.users[0].username == "testuser"
+        assert installer.config.users[0].password_hash == "$6$xxx"
+        assert installer.config.users[0].shell == "/bin/bash"
 
     def test_handle_desktop_sets_profile(self) -> None:
         """Phase 2: _handle_desktop stores the selected profile and DM."""
@@ -1031,17 +1038,19 @@ class TestHandleFinish:
 
 class TestSystemYaml:
     def _make_config(self) -> InstallerConfig:  # noqa: F821
-        from installer.config import InstallerConfig  # noqa: PLC0415
+        from installer.config import InstallerConfig, UserConfig  # noqa: PLC0415
         cfg = InstallerConfig()
         cfg.network.hostname = "test-host"
         cfg.locale.locale = "en_US.UTF-8"
         cfg.locale.timezone = "America/Santiago"
         cfg.desktop.profile = "minimal"
         cfg.desktop.dm = "none"
-        cfg.user.username = "testuser"
-        cfg.user.shell = "/bin/bash"
-        cfg.user.homed_storage = "classic"
-        cfg.user.groups = ["wheel", "audio"]
+        u = UserConfig()
+        u.username = "testuser"
+        u.shell = "/bin/bash"
+        u.homed_storage = "classic"
+        u.groups = ["wheel", "audio"]
+        cfg.users = [u]
         cfg.disk.device = "/dev/vda"
         cfg.disk.use_luks = False
         cfg.disk.btrfs_label = "ouroborOS"
@@ -1345,23 +1354,20 @@ class TestHandleUser:
     def test_password_plaintext_set_from_tui(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "alice",
-            "password_hash": "$6$hash",
-            "password": "plaintext123",
-        }
+        mock_tui.show_users_creation.return_value = [
+            {"username": "alice", "password_hash": "$6$hash", "password": "plaintext123"},
+        ]
         mock_tui.show_shell_selection.return_value = "bash"
         installer.tui = mock_tui
         installer._handle_user()
-        assert installer.config.user.password_plaintext == "plaintext123"
+        assert installer.config.users[0].password_plaintext == "plaintext123"
 
     def test_non_base_shell_queued_as_extra_package(self) -> None:
         installer = self._make_installer()
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "alice",
-            "password_hash": "$6$hash",
-        }
+        mock_tui.show_users_creation.return_value = [
+            {"username": "alice", "password_hash": "$6$hash"},
+        ]
         mock_tui.show_shell_selection.return_value = "fish"
         installer.tui = mock_tui
         installer._handle_user()
@@ -1371,14 +1377,103 @@ class TestHandleUser:
         installer = self._make_installer()
         installer.config.extra_packages = ["fish"]
         mock_tui = MagicMock()
-        mock_tui.show_user_creation.return_value = {
-            "username": "alice",
-            "password_hash": "$6$hash",
-        }
+        mock_tui.show_users_creation.return_value = [
+            {"username": "alice", "password_hash": "$6$hash"},
+        ]
         mock_tui.show_shell_selection.return_value = "fish"
         installer.tui = mock_tui
         installer._handle_user()
         assert installer.config.extra_packages.count("fish") == 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-user support (v0.5.4)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiUser:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_handle_user_appends_multiple(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_users_creation.return_value = [
+            {"username": "alice", "password_hash": "$6$aaa"},
+            {"username": "bob", "password_hash": "$6$bbb"},
+        ]
+        mock_tui.show_shell_selection.return_value = "bash"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert len(installer.config.users) == 2
+        assert installer.config.users[0].username == "alice"
+        assert installer.config.users[1].username == "bob"
+
+    def test_configure_passes_users_json(self, tmp_path: Path) -> None:
+        from installer.config import UserConfig  # noqa: PLC0415
+        installer = self._make_installer()
+        installer.config.disk.device = "/dev/vda"
+        u1 = UserConfig()
+        u1.username = "alice"
+        u1.password_hash = "$6$aaa"
+        u2 = UserConfig()
+        u2.username = "bob"
+        u2.password_hash = "$6$bbb"
+        installer.config.users = [u1, u2]
+
+        captured_env: dict[str, str] = {}
+
+        def fake_run(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
+            if env:
+                captured_env.update(env)
+            m = MagicMock()
+            m.returncode = 0
+            return m
+
+        installer.tui = None
+        with patch("subprocess.run", side_effect=fake_run), \
+             patch("installer.state_machine.OPS_DIR", tmp_path):
+            installer._handle_configure()
+
+        assert "USERS_JSON" in captured_env
+        users_json = json.loads(captured_env["USERS_JSON"])
+        assert len(users_json) == 2
+        assert users_json[0]["username"] == "alice"
+        assert users_json[1]["username"] == "bob"
+
+    def test_configure_clears_plaintext_for_all_users(self, tmp_path: Path) -> None:
+        from installer.config import UserConfig  # noqa: PLC0415
+        installer = self._make_installer()
+        installer.config.disk.device = "/dev/vda"
+        for name in ("alice", "bob"):
+            u = UserConfig()
+            u.username = name
+            u.password_hash = "$6$x"
+            u.password_plaintext = "secret"
+            installer.config.users.append(u)
+
+        ok = MagicMock()
+        ok.returncode = 0
+        installer.tui = None
+        with patch("subprocess.run", return_value=ok), \
+             patch("installer.state_machine.OPS_DIR", tmp_path):
+            installer._handle_configure()
+
+        for u in installer.config.users:
+            assert u.password_plaintext == ""
+
+    def test_real_name_propagated(self) -> None:
+        installer = self._make_installer()
+        mock_tui = MagicMock()
+        mock_tui.show_users_creation.return_value = [
+            {"username": "alice", "password_hash": "$6$aaa", "real_name": "Alice Wonder"},
+        ]
+        mock_tui.show_shell_selection.return_value = "bash"
+        installer.tui = mock_tui
+        installer._handle_user()
+        assert installer.config.users[0].real_name == "Alice Wonder"
 
 
 # ---------------------------------------------------------------------------

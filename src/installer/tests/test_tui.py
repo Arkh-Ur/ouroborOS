@@ -356,6 +356,7 @@ class TestRichShowUserCreation:
                 "password123",
                 "password123",
             ]
+            mocks["Confirm"].ask.return_value = False  # don't add another user
             result = rich_tui.show_user_creation()
         assert result["username"] == "alice"
         assert result["password_hash"].startswith("$6$")
@@ -371,6 +372,7 @@ class TestRichShowUserCreation:
                 "pass1",
                 "pass2",
             ]
+            mocks["Confirm"].ask.return_value = False
             with pytest.raises(TUIError, match="3 attempts"):
                 rich_tui.show_user_creation()
 
@@ -835,6 +837,7 @@ class TestRichUserCreationShortPassword:
                 "hi", "hi",
                 "validpassword", "validpassword",
             ]
+            mocks["Confirm"].ask.return_value = False  # don't add another user
             result = rich_tui.show_user_creation()
         assert result["username"] == "alice"
 

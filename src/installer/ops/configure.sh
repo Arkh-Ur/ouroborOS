@@ -27,6 +27,7 @@ set -euo pipefail
 : "${KEYMAP:?'KEYMAP must be set'}"
 : "${TIMEZONE:?'TIMEZONE must be set'}"
 : "${HOSTNAME:?'HOSTNAME must be set'}"
+: "${USERS_JSON:=''}"
 : "${USERNAME:?'USERNAME must be set'}"
 : "${USER_PASSWORD_HASH:?'USER_PASSWORD_HASH must be set'}"
 : "${USER_GROUPS:='wheel,audio,video,input'}"
@@ -740,25 +741,68 @@ EOF
 
 # --- Step 8: User account ---------------------------------------------------
 
-configure_users() {
-    log_info "Creating user account: ${USERNAME}"
-
-    # Ensure the chosen shell is registered in /etc/shells inside the target.
-    # Some shells (e.g. fish) may not add themselves during pacstrap.
+_configure_single_user_legacy() {
+    # Legacy path for configs that set USERNAME/USER_PASSWORD_HASH directly
+    # (no USERS_JSON). Preserved for backwards compatibility.
     if ! grep -qx "$USER_SHELL" "${TARGET}/etc/shells" 2>/dev/null; then
         echo "$USER_SHELL" >> "${TARGET}/etc/shells"
         log_info "Registered shell in /etc/shells: ${USER_SHELL}"
     fi
-
-    # Create user
     in_chroot useradd \
         --create-home \
         --shell "$USER_SHELL" \
         --groups "$USER_GROUPS" \
         "$USERNAME"
-
-    # Set hashed password directly in /etc/shadow
     in_chroot chpasswd --encrypted <<< "${USERNAME}:${USER_PASSWORD_HASH}"
+    log_ok "User '${USERNAME}' created (legacy path)."
+}
+
+configure_users() {
+    if [[ -n "${USERS_JSON:-}" ]]; then
+        log_info "Creating user accounts from USERS_JSON..."
+        python3 - "${TARGET}" <<PYEOF
+import json, subprocess, sys
+
+users = json.loads("""${USERS_JSON}""")
+target = sys.argv[1]
+
+# Read existing /etc/shells once
+shells_file = f"{target}/etc/shells"
+try:
+    existing_shells = open(shells_file).read().splitlines()
+except FileNotFoundError:
+    existing_shells = []
+
+for u in users:
+    uname = u["username"]
+    phash = u["password_hash"]
+    groups = ",".join(u.get("groups", ["wheel", "audio", "video", "input"]))
+    shell = u.get("shell", "/bin/bash")
+    real_name = u.get("real_name", "")
+
+    if shell not in existing_shells:
+        with open(shells_file, "a") as f:
+            f.write(shell + "\n")
+        existing_shells.append(shell)
+
+    cmd = ["arch-chroot", target, "useradd", "--create-home", "--shell", shell, "--groups", groups]
+    if real_name:
+        cmd += ["--comment", real_name]
+    cmd.append(uname)
+    subprocess.run(cmd, check=True)
+
+    subprocess.run(
+        ["arch-chroot", target, "chpasswd", "--encrypted"],
+        input=f"{uname}:{phash}",
+        text=True,
+        check=True,
+    )
+    print(f"[configure] User '{uname}' created (groups: {groups})", flush=True)
+
+PYEOF
+    else
+        _configure_single_user_legacy
+    fi
 
     # Configure sudo: wheel group members can sudo
     cat > "${TARGET}/etc/sudoers.d/10-wheel" << 'EOF'
@@ -770,7 +814,7 @@ EOF
     # Lock root account (access via sudo only)
     in_chroot passwd --lock root
 
-    log_ok "User '${USERNAME}' created."
+    log_ok "Users configured."
 }
 
 # --- Step 9: Read-only root compatibility -----------------------------------
@@ -1011,24 +1055,52 @@ EOF
 # --- Step 11: systemd-homed migration setup ---------------------------------
 
 configure_homed() {
-    log_info "Configuring systemd-homed (storage: ${HOMED_STORAGE})"
+    # Determine which users need homed migration (non-classic storage)
+    local homed_users_json="[]"
+    local needs_homed=0
 
-    case "$HOMED_STORAGE" in
-        subvolume|directory|luks) ;;
-        classic)
-            log_info "homed_storage=classic — skipping migration setup."
-            return 0
-            ;;
-        *)
-            log_error "Unknown homed_storage: ${HOMED_STORAGE}"
-            return 1
-            ;;
-    esac
+    if [[ -n "${USERS_JSON:-}" ]]; then
+        homed_users_json=$(python3 -c "
+import json, sys
+users = json.loads(sys.argv[1])
+homed = [u for u in users if u.get('homed_storage', 'subvolume') not in ('classic',)]
+print(json.dumps(homed))
+" "${USERS_JSON}")
+        needs_homed=$(python3 -c "
+import json, sys
+users = json.loads(sys.argv[1])
+print(1 if any(u.get('homed_storage','subvolume') not in ('classic',) for u in users) else 0)
+" "${USERS_JSON}")
+    else
+        case "$HOMED_STORAGE" in
+            subvolume|directory|luks)
+                needs_homed=1
+                homed_users_json=$(python3 -c "
+import json
+print(json.dumps([{'username': '${USERNAME}', 'homed_storage': '${HOMED_STORAGE}', 'password': '${USER_PASSWORD}'}]))
+")
+                ;;
+            classic)
+                log_info "homed_storage=classic — skipping migration setup."
+                return 0
+                ;;
+            *)
+                log_error "Unknown homed_storage: ${HOMED_STORAGE}"
+                return 1
+                ;;
+        esac
+    fi
+
+    if [[ "$needs_homed" -eq 0 ]]; then
+        log_info "All users use classic storage — skipping homed migration setup."
+        return 0
+    fi
+
+    log_info "Configuring systemd-homed for $(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(len(u))") user(s)..."
 
     in_chroot systemctl enable systemd-homed.service
 
-    local homed_migrate_src=""
-    homed_migrate_src="/usr/local/lib/ouroboros/homed-migrate.sh"
+    local homed_migrate_src="/usr/local/lib/ouroboros/homed-migrate.sh"
     if [[ -f "$homed_migrate_src" && -r "$homed_migrate_src" ]]; then
         mkdir -p "${TARGET}/usr/local/lib/ouroboros"
         cp "$homed_migrate_src" "${TARGET}/usr/local/lib/ouroboros/homed-migrate.sh"
@@ -1048,10 +1120,17 @@ configure_homed() {
     fi
 
     mkdir -p "${TARGET}/etc/ouroboros"
+
+    # Primary user (backwards compat for homed-migrate.sh single-user path)
+    local primary_user primary_storage primary_password
+    primary_user=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0]['username'])")
+    primary_storage=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0].get('homed_storage','subvolume'))")
+    primary_password=$(echo "$homed_users_json" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0].get('password',''))")
+
     cat > "${TARGET}/etc/ouroboros/homed-migration.conf" << EOF
-HOMED_USERNAME=${USERNAME}
-HOMED_STORAGE=${HOMED_STORAGE}
-HOMED_PASSWORD=${USER_PASSWORD}
+HOMED_USERNAME=${primary_user}
+HOMED_STORAGE=${primary_storage}
+HOMED_PASSWORD=${primary_password}
 EOF
     chmod 600 "${TARGET}/etc/ouroboros/homed-migration.conf"
 
