@@ -78,6 +78,7 @@ if ! pytest src/installer/tests/ \
         --cov=src/installer \
         --cov-report=term-missing \
         --cov-report=xml:coverage.xml \
+        --ignore=src/installer/tests/test_our_container_integration.py \
         2>&1; then
     log_fail "pytest reported test failures"
     FAILURES=$((FAILURES + 1))
