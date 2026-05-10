@@ -59,7 +59,7 @@ fish
 # System tools
 htop
 rsync
-wget
+# wget  # temporarily disabled: nettle 4.0/3.x ABI transition, repo inconsistency
 curl
 git
 
@@ -72,7 +72,7 @@ diffutils
 shellcheck
 
 # Container bootstrapping (our-container: Debian/Ubuntu containers)
-debootstrap
+# debootstrap  # temporarily disabled: depends on wget (nettle ABI transition)
 
 # Secure Boot key management (ouroboros-secureboot)
 sbctl
