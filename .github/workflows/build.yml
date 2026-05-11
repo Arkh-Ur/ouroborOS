@@ -289,7 +289,7 @@ jobs:
             "https://x-access-token:${PUBLIC_TOKEN}@github.com/Arkh-Ur/ouroborOS.git"
           git fetch public 2>/dev/null || true
           git push public "refs/heads/main" --force-with-lease
-          git push public "refs/tags/${TAG}"
+          git push public "refs/tags/${TAG}" --force
 
       - name: Create or update GitHub Release in public repo
         env:
