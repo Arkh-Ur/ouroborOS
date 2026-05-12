@@ -5,6 +5,25 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-05-11
+
+### Added
+
+- **ISO signing GPG** — el release job firma el ISO con GPG cuando el secret `GPG_KEY_ID`
+  está configurado en el repo privado. Importa `GPG_PRIVATE_KEY`, firma con
+  `gpg --batch --detach-sign --armor --local-user "$GPG_KEY_ID"` y sube el archivo `.asc`
+  como asset adicional en ambos releases (privado y público). Sin el secret, el paso se
+  omite silenciosamente. El instalador puede verificar con:
+  `gpg --verify ouroborOS-*.iso.asc ouroborOS-*.iso`
+- **`our-bluetooth` install hook** — `bluetooth.service` ya se habilita automáticamente
+  cuando `network.bluetooth.enable: true` está en el config YAML de instalación. Esta feature
+  estaba implementada en `configure_network()` desde fases anteriores; v0.5.7 la documenta
+  formalmente y la incluye en el milestone de Phase 5.
+
+### Tests
+
+- 580 tests passing (sin cambios en suite — el GPG signing es CI-only).
+
 ## [0.5.6] - 2026-05-10
 
 ### Security / Fixed (Judgment Day review)
