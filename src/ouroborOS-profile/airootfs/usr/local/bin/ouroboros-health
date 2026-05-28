@@ -126,7 +126,7 @@ check_root_ro() {
     fi
 
     local ro_val
-    ro_val=$(btrfs property get / ro 2>/dev/null | awk '{print $NF}' || true)
+    ro_val=$(btrfs property get / ro 2>/dev/null | awk -F= '{print $NF}' || true)
 
     if [[ "$ro_val" == "true" ]]; then
         CHECK_STATUS[$name]="PASS"

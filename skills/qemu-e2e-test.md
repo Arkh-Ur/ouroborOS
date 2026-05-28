@@ -418,6 +418,25 @@ $SSH 'grep -c "username:" /etc/ouroboros/system.yaml' | grep -q "2" \
     && echo "✓ 2 users in system.yaml" || echo "✗"
 ```
 
+### v0.5.5 — homed luks + TPM2/FIDO2
+
+> **QEMU constraint**: `homed_storage: luks` requires a real LUKS-capable kernel path that fails in QEMU userspace. E2E config always uses `classic`. These checks verify the binaries and services are present; full luks/TPM2/FIDO2 flow requires real hardware.
+
+```bash
+# systemd-homed service is active
+$SSH 'systemctl is-active systemd-homed' | grep -q "active" && echo "✓ systemd-homed active" || echo "✗"
+
+# homectl binary available
+$SSH 'test -x /usr/bin/homectl' && echo "✓ homectl present" || echo "✗"
+
+# home directory storage is classic (QEMU constraint acknowledged)
+$SSH 'echo testpass123 | sudo -S homectl inspect testuser 2>/dev/null | grep -i storage' \
+    | grep -qi "classic\|directory" && echo "✓ storage: classic (QEMU expected)" || echo "⚠ check storage type"
+
+# luks path available in kernel (module loaded, not necessarily used)
+$SSH 'echo testpass123 | sudo -S modprobe dm-crypt 2>/dev/null && echo "✓ dm-crypt available" || echo "⚠ dm-crypt not loaded (expected on minimal)"'
+```
+
 ### v0.5.6 — ouroboros-rebase + our-snapshot diff
 
 ```bash
@@ -427,6 +446,74 @@ $SSH 'echo testpass123 | sudo -S our-snapshot diff install phase5-test 2>&1' \
 
 # pending-verification created by our-pac (mock test)
 $SSH 'echo testpass123 | sudo -S our-pac --dry-run -Syu 2>/dev/null || true'
+```
+
+### v0.5.7 — GPG signing + bluetooth hook
+
+> **GPG**: signing happens in CI only (requires secrets). QEMU verifies the installed system has the tooling and that the bluetooth hook fires correctly.
+
+```bash
+# gpg available in installed system (for manual verification)
+$SSH 'test -x /usr/bin/gpg' && echo "✓ gpg present" || echo "✗ gpg missing"
+
+# bluetooth.service disabled when not configured (minimal-e2e.yaml has no bluetooth)
+$SSH 'systemctl is-enabled bluetooth 2>/dev/null' \
+    | grep -qE "disabled|masked|not-found" && echo "✓ bluetooth disabled (not configured)" || echo "✗ bluetooth unexpectedly enabled"
+
+# For bluetooth E2E: rebuild with a config that sets network.bluetooth.enable: true
+# then verify:
+#   $SSH 'systemctl is-enabled bluetooth' | grep -q "enabled" && echo "✓ bluetooth enabled" || echo "✗"
+#   $SSH 'systemctl is-active bluetooth' | grep -q "active" && echo "✓ bluetooth active" || echo "✗"
+
+# ouroboros-update binary and timer present (v0.5.2, validated alongside v0.5.7)
+$SSH 'test -x /usr/local/bin/ouroboros-update' && echo "✓ ouroboros-update present" || echo "✗"
+$SSH 'systemctl is-enabled ouroboros-update.timer 2>/dev/null' \
+    | grep -q "enabled" && echo "✓ ouroboros-update.timer enabled" || echo "✗"
+```
+
+### v0.5.8 — Documentation
+
+> v0.5.8 is documentation-only — no new binaries or services. All checks run on the **host** (repo working tree), not inside the QEMU guest. Run these before cutting the tag.
+
+```bash
+REPO=$(git -C . rev-parse --show-toplevel)
+
+# Required files exist
+for doc in \
+    docs/user-guide.md \
+    docs/architecture/our-aur.md \
+    docs/architecture/our-flat.md \
+    docs/architecture/snapshot-system.md \
+    docs/architecture/declarative-system.md \
+    docs/architecture/multi-user.md \
+    docs/architecture/systemd-integration.md; do
+    test -f "$REPO/$doc" \
+        && echo "✓ $doc" \
+        || echo "✗ $doc MISSING"
+done
+
+# user-guide.md covers Phase 5 features
+for term in homed "multi-user\|multi user\|usuarios" our-aur our-flat \
+            ouroboros-rebase ouroboros-health bluetooth GPG signing; do
+    grep -qiE "$term" "$REPO/docs/user-guide.md" \
+        && echo "✓ user-guide covers: $term" \
+        || echo "✗ user-guide missing: $term"
+done
+
+# Architecture docs are not empty stubs (≥ 30 lines each)
+for doc in our-aur our-flat snapshot-system declarative-system multi-user; do
+    LINES=$(wc -l < "$REPO/docs/architecture/$doc.md" 2>/dev/null || echo 0)
+    [[ "$LINES" -ge 30 ]] \
+        && echo "✓ docs/architecture/$doc.md ($LINES lines)" \
+        || echo "✗ docs/architecture/$doc.md too short or missing ($LINES lines)"
+done
+
+# PHASE_5_PLAN.md milestone table has no pending ❌ items (only Phase 6+ deferrals)
+PENDING=$(grep -c "| ❌ " "$REPO/docs/PHASE_5_PLAN.md" 2>/dev/null || echo 0)
+# ❌ entries for Phase 6+ are expected (5.17-5.20); anything else is a gap
+[[ "$PENDING" -le 4 ]] \
+    && echo "✓ PHASE_5_PLAN.md: no unexpected pending milestones ($PENDING ❌ = Phase 6+ deferrals)" \
+    || echo "✗ PHASE_5_PLAN.md has $PENDING ❌ entries — check for incomplete milestones"
 ```
 
 ## Pass/Fail Summary — Phase 5
@@ -443,4 +530,12 @@ $SSH 'echo testpass123 | sudo -S our-pac --dry-run -Syu 2>/dev/null || true'
 | v0.5.4 | 2+ users created and functional | ✓ |
 | v0.5.4 | Correct wheel membership per user | ✓ |
 | v0.5.4 | system.yaml lists all users | ✓ |
+| v0.5.5 | systemd-homed active + homectl present | ✓ |
+| v0.5.5 | homed_storage: classic in QEMU (luks: real hardware only) | ✓ |
 | v0.5.6 | our-snapshot diff runs without error | ✓ |
+| v0.5.7 | bluetooth disabled when not configured | ✓ |
+| v0.5.7 | ouroboros-update binary + timer enabled | ✓ |
+| v0.5.8 | All 7 doc files exist (host check) | ✓ |
+| v0.5.8 | user-guide.md covers Phase 5 features (host check) | ✓ |
+| v0.5.8 | Architecture docs ≥ 30 lines each (host check) | ✓ |
+| v0.5.8 | PHASE_5_PLAN.md has no unexpected pending milestones | ✓ |

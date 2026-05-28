@@ -1,4 +1,10 @@
-# CLAUDE.md — Instrucciones del Proyecto ouroborOS
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+<!-- Instrucciones de sesión: responder en español. Resumen final obligatorio al terminar. -->
 
 Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ouroborOS. Lee esto antes de trabajar en cualquier tarea.
 
@@ -27,7 +33,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
 - **Installer:** Python state machine + Rich TUI (primary) + Bash ops
-- **Status:** v0.5.2 — Phase 5 in progress. `ouroboros-health` and `ouroboros-reinstall` added in v0.5.3.
+- **Status:** v0.5.7 — Phase 5 nearly complete. See `docs/PHASE_5_PLAN.md` for milestone tracker.
 
 ---
 
@@ -135,7 +141,7 @@ ls -la .git/hooks/pre-push
 | Swap | zram-generator (no swap partition) |
 | Home dirs | systemd-homed (default from Phase 2) |
 | Containers | systemd-nspawn (via `our-container` wrapper) |
-| Installer logic | Python 3 |
+| Installer logic | Python ≥3.11 |
 | Installer TUI | Rich (primary) + whiptail (fallback) |
 | System ops | Bash |
 | ISO build | archiso (mkarchiso) |
@@ -198,9 +204,10 @@ build(archiso): add python-rich to packages.x86_64
 3. **No NetworkManager.** Use systemd-networkd + iwd.
 4. **systemd-boot only.** Boot entries are `.conf` files, not grub.cfg.
 5. **Btrfs for root.** No ext4 or XFS for the root partition.
-6. **Python for logic, Bash for ops.** No mixing of roles.
-7. **All scripts must pass `shellcheck`.** No exceptions.
+6. **Python for logic, Bash for ops.** No mixing of roles. Python ≥3.11 required.
+7. **All scripts must pass `shellcheck -S style`.** Every `.sh` must begin with `set -euo pipefail`. No exceptions.
 8. **UUID references only in fstab.** Never `/dev/sdX`.
+9. **`test_our_container_integration.py` is excluded from CI pytest** (`--ignore` flag). Run it separately in a container environment.
 
 ---
 
@@ -230,7 +237,30 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
 
 ### Running installer tests
 ```bash
-pytest src/installer/tests/ -v       # 347 tests, ≥93% coverage
+# Full suite (CI equivalent — coverage gate ≥70%)
+pytest src/installer/tests/ -v \
+  --cov=src/installer --cov-report=term-missing \
+  --ignore=src/installer/tests/test_our_container_integration.py
+
+# Single test file
+pytest src/installer/tests/test_config.py -v
+
+# Single test by name
+pytest src/installer/tests/test_config.py -v -k "test_load_yaml"
+```
+
+### Linting (local)
+```bash
+# Python — same ruleset as CI (E,W,F,I,UP,ANN001,ANN201,E722; line-length 120)
+ruff check --select "E,W,F,I,UP,ANN001,ANN201,E722" --line-length 120 src/installer/
+
+# Shell scripts — must pass -S style; every .sh must have set -euo pipefail
+shellcheck -S style src/scripts/*.sh src/installer/ops/*.sh
+
+# Run the exact CI scripts locally (WORKSPACE must point to repo root)
+WORKSPACE=$(pwd) bash tests/scripts/lint-python.sh
+WORKSPACE=$(pwd) bash tests/scripts/test-shellcheck.sh
+WORKSPACE=$(pwd) bash tests/scripts/run-pytest.sh
 ```
 
 ---
@@ -239,18 +269,7 @@ pytest src/installer/tests/ -v       # 347 tests, ≥93% coverage
 
 See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
-**Phases 1-4 complete.** Release v0.4.0 published at https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.4.0
-
-**Current phase:** Phase 5 in progress — `system.yaml` declarative manifest, multi-usuario, OTA. See [docs/PHASE_5_PLAN.md](./docs/PHASE_5_PLAN.md).
-
-### Dual-Repo Architecture
-
-| Repository | Visibility | Purpose |
-|------------|-----------|---------|
-| `Arkh-Ur/ouroborOS-dev` | Private | Development, CI runs on `dev`, release job merges tag → `main` |
-| `Arkh-Ur/ouroborOS` | Public | Mirror of private `main`, GitHub Releases |
-
-When a tag `v*` is pushed to `ouroborOS-dev`, the release job builds the ISO, creates a prerelease in the private repo, merges the tag to `origin/main`, then mirrors to the public repo.
+**Phases 1-4 complete.** Phase 5 (v0.5.x) nearly complete — `system.yaml` declarative manifest, multi-user, OTA, homed, TPM2/FIDO2, GPG-signed ISOs. See [docs/PHASE_5_PLAN.md](./docs/PHASE_5_PLAN.md) for the milestone tracker. Phase 6 will introduce GUI installer and image-based OTA.
 
 ---
 
@@ -276,8 +295,12 @@ When a tag `v*` is pushed to `ouroborOS-dev`, the release job builds the ISO, cr
 | `docs/architecture/systemd-integration.md` | systemd integration design |
 | `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
 | `IMPLEMENTATION_PLAN.md` | Phased roadmap with milestones |
+| `src/installer/i18n.py` | Internationalization via gettext; `init_i18n(lang)` called once after language selection |
 | `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-health` | System health diagnostics (12 checks, --doctor, --yaml, --json) |
 | `src/ouroborOS-profile/airootfs/usr/local/bin/ouroboros-reinstall` | Reinstall from live ISO preserving @home/@etc/@var |
+| `channels/stable.yaml` | OTA channel definition — version, ISO URL, signature |
+| `tests/scripts/` | CI scripts runnable locally via `WORKSPACE=$(pwd) bash tests/scripts/<name>.sh` |
+| `tests/qemu/` | Per-profile QEMU E2E test configs (minimal, gnome, kde, hyprland, offline) |
 | `.github/workflows/build.yml` | ISO build + release pipeline (dual-repo) |
 
 ---
