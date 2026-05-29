@@ -4,14 +4,16 @@
 # Full Phase 4 flow on an installed immutable system:
 #   1. Verify ≥ 2 GB free on Btrfs pool (abort if insufficient)
 #   2. Create timestamped snapshot + metadata JSON (pre-upgrade baseline)
-#   3. Unlock @ via subvolid=5 mount (avoids circular deadlock)
-#   4. Remount / read-write
-#   5. Run pacman with all arguments forwarded
-#   6. Lock @ (Btrfs ro=true) and remount /  ro
-#   7. [if sbctl active] sbctl sign-all (post-upgrade EFI re-signing)
-#   8. Sync systemd-boot entries for all snapshots
-#   9. Write JSON upgrade log to /var/log/our-pac/
-#  10. Auto-prune snapshots if count > 10
+#   3. Unmerge systemd-sysext if active (overlayfs on /usr blocks pacman writes)
+#   4. Unlock @ via subvolid=5 mount (avoids circular deadlock)
+#   5. Remount / read-write
+#   6. Run pacman with all arguments forwarded
+#   7. Lock @ (Btrfs ro=true) and remount / ro
+#   7b. Re-merge systemd-sysext if it was active before the operation
+#   8. [if sbctl active] sbctl sign-all (post-upgrade EFI re-signing)
+#   9. Sync systemd-boot entries for all snapshots
+#  10. Write JSON upgrade log to /var/log/our-pac/
+#  11. Auto-prune snapshots if count > 10
 #
 # Why NOT exec pacman:
 #   Pacman hooks run alphabetically. Hooks from gtk4, dconf, glib write to
@@ -83,6 +85,29 @@ lock_root() {
     fi
     mount -o remount,ro / 2>/dev/null || \
         _msg "Root busy — Btrfs property protects immutability regardless"
+}
+
+# Sysext overlay management around pacman operations.
+# When systemd-sysext is active, /usr is an overlay mount (ro). Pacman cannot
+# write to it. We unmerge before the operation and re-merge after lock_root.
+_SYSEXT_WAS_ACTIVE=0
+
+_sysext_unmerge_if_needed() {
+    findmnt -n -o FSTYPE /usr 2>/dev/null | grep -q '^overlay$' || return 0
+    _msg "systemd-sysext active on /usr — unmerging before package operation..."
+    if systemd-sysext unmerge 2>/dev/null; then
+        _SYSEXT_WAS_ACTIVE=1
+        _msg "systemd-sysext unmerged (/usr is now the base filesystem)"
+    else
+        _warn "systemd-sysext unmerge failed — install may fail if /usr is still overlaid"
+    fi
+}
+
+_sysext_remerge_if_needed() {
+    [[ "$_SYSEXT_WAS_ACTIVE" -eq 1 ]] || return 0
+    _msg "Re-merging systemd-sysext extensions..."
+    systemd-sysext merge 2>/dev/null || \
+        _warn "systemd-sysext re-merge failed. Run: sudo systemd-sysext merge"
 }
 
 # Verify sufficient free space on the Btrfs pool (unallocated + free allocated).
@@ -287,18 +312,19 @@ if is_immutable_root; then
         _warn "Snapshot library not found at ${SNAPSHOT_LIB} — skipping snapshot"
     fi
 
-    # 3-4. Unlock and remount rw
+    # 3. Unmerge sysext if active (overlayfs on /usr blocks pacman writes)
+    _sysext_unmerge_if_needed
+
+    # 4. Unlock and remount rw
     unlock_root
 
-    # Guarantee root is re-locked on ANY exit path (success, error, SIGINT, SIGTERM).
-    # Without this, `set -e` aborts mid-flow if pacman returns non-zero (e.g. user
-    # cancels with "n") and root stays writable until next reboot.
-    # _pac_cleanup_done=1 is set after the explicit lock+sync below so the trap
-    # skips the redundant second call on the success path.
+    # Guarantee root is re-locked and sysext is re-merged on ANY exit path
+    # (success, error, SIGINT, SIGTERM).
     _pac_cleanup_done=0
     trap '
         if [[ "$_pac_cleanup_done" -eq 0 ]]; then
             lock_root 2>/dev/null || true
+            _sysext_remerge_if_needed 2>/dev/null || true
             sync_boot_entries 2>/dev/null || true
         fi
     ' EXIT
@@ -339,6 +365,9 @@ if is_immutable_root; then
     # 7. Lock root (trap also runs on exit, but explicit call keeps the order
     #    deterministic for the steps below)
     lock_root
+
+    # 7b. Re-merge sysext if it was active before the operation
+    _sysext_remerge_if_needed
 
     # 8. sbctl sign-all (if Secure Boot active)
     sign_after_upgrade

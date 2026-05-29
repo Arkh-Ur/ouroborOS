@@ -261,6 +261,12 @@ cmd_promote() {
     cleanup() {
         local exit_code=$?
         btrfs property set "${toplevel}/@snapshots/${name}" ro true 2>/dev/null || true
+        # If @ was renamed to @.del but @_new → @ rename failed, restore @.del → @.
+        if [[ $exit_code -ne 0 && -d "${toplevel}/@.del" && ! -d "${toplevel}/@" ]]; then
+            _warn "Partial rename detected — restoring @.del → @..."
+            mv "${toplevel}/@.del" "${toplevel}/@" 2>/dev/null || \
+                _err "RECOVERY FAILED: @.del exists but could not be renamed to @. Manual fix required."
+        fi
         umount "$toplevel" 2>/dev/null || true
         rmdir "$toplevel" 2>/dev/null || true
         if [[ $exit_code -ne 0 ]]; then
@@ -284,13 +290,21 @@ cmd_promote() {
     btrfs property set "$tl_snap" ro true 2>/dev/null || true
     btrfs property set "$tl_new" ro false 2>/dev/null || true
 
-    # Step 4: Atomically replace @ with @_new
+    # Step 4: Replace @ with @_new via rename-then-delete.
+    # NEVER delete @ before the rename succeeds: the running kernel mounts @ by
+    # subvolume ID, but deleting it invalidates dcache entries under it, which
+    # can cause /usr/bin/* lookups to fail on the running system.
     _info "Replacing @ with copy of '${name}'..."
     btrfs property set "$tl_root" ro false 2>/dev/null || true
-    btrfs subvolume delete "$tl_root" || _die "Could not delete old @."
+    local tl_del="${toplevel}/@.del"
+    mv "$tl_root" "$tl_del" || _die "Could not move @ to @.del."
     mv "$tl_new" "$tl_root" || _die "Could not rename @_new to @."
     btrfs property set "$tl_root" ro true 2>/dev/null || true
     _ok "New @ is read-only."
+    # @.del is the old running root — deleting it HERE invalidates the live dcache
+    # and breaks subsequent commands (umount, etc.). Leave it for post-reboot cleanup.
+    # A cleanup unit or the user can delete it after verifying the new system works.
+    _warn "@.del (old root) left on disk. Safe to delete after reboot: btrfs subvolume delete @.del on top-level mount."
 
     umount "$toplevel"
     rmdir "$toplevel"
@@ -344,13 +358,20 @@ cmd_undo() {
     _info "Making @.old read-write for restore..."
     btrfs property set "${tl_old}" ro false 2>/dev/null || true
 
-    _info "Deleting current @..."
-    btrfs subvolume delete "${tl_root}"
+    # Rename @ out of the way before rename-in, same as cmd_promote:
+    # never delete the mounted @ before the replacement is in place.
+    local tl_del="${toplevel}/@.del"
+    _info "Moving current @ aside as @.del..."
+    btrfs property set "${tl_root}" ro false 2>/dev/null || true
+    mv "${tl_root}" "${tl_del}" || _die "Could not move @ to @.del."
 
     _info "Restoring @.old → @..."
-    mv "${tl_old}" "${tl_root}"
+    mv "${tl_old}" "${tl_root}" || _die "Could not rename @.old to @."
 
     btrfs property set "${tl_root}" ro true
+    # Same constraint as cmd_promote: @.del is the live running root.
+    # Deleting it here invalidates the running system's dcache. Leave for post-reboot cleanup.
+    _warn "@.del (old root) left on disk. Safe to delete after reboot: btrfs subvolume delete @.del on top-level mount."
     _ok "Root restored from @.old."
 
     umount "$toplevel"; rmdir "$toplevel"; trap - EXIT

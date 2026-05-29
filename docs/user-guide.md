@@ -240,16 +240,14 @@ The connection persists across reboots — `iwd` saves known networks to `/var/l
 
 ## 8. Install software
 
-ouroborOS uses `pacman` for package management. Because the root filesystem is **read-only**, you must use the `our-pac` wrapper instead of calling `pacman` directly. The wrapper:
+ouroborOS has three package managers for different sources: **`our-pac`** (official repos via pacman), **`our-aur`** (AUR packages), and **`our-flat`** (Flatpak apps). Because the root filesystem is read-only, you must use these wrappers — never call `pacman` directly.
 
-1. Creates a timestamped Btrfs snapshot (pre-upgrade state)
-2. Generates a boot entry for that snapshot
-3. Remounts the root read-write
-4. Calls `pacman` with your arguments
-5. Remounts root read-only after the operation completes
+### 8.1 Official packages — `our-pac`
+
+`our-pac` wraps `pacman` with automatic snapshot creation and root unlock/relock:
 
 ```bash
-# Search for a package (search does not write — pacman directly is fine)
+# Search for a package
 pacman -Ss neovim
 
 # Install a package
@@ -262,50 +260,178 @@ sudo our-pac -Syu
 sudo our-pac -Rns packagename
 ```
 
-> **Do not use `sudo pacman -S/R/U` directly** — it will fail because the root
-> filesystem is mounted read-only. `our-pac` is the correct entry point
-> for any write operation on the root filesystem.
+Before every `our-pac` write operation, a timestamped Btrfs snapshot is created and a systemd-boot entry is added. If the upgrade breaks something, roll back (see section 9).
 
-> **Snapshot created automatically:** before every `our-pac` invocation,
-> a snapshot is saved and a boot entry is added. If the upgrade breaks something,
-> you can roll back (see next section).
+> If `systemd-sysext` extensions (AUR packages) are active when you run `our-pac`, they are automatically unmerged before pacman runs and re-merged afterward. This is transparent.
+
+### 8.2 AUR packages — `our-aur`
+
+`our-aur` installs AUR packages as read-only `systemd-sysext` extensions. No AUR helper (paru, yay) is required.
+
+```bash
+# Install an AUR package
+sudo our-aur -S hyprcaffeine
+
+# List installed AUR packages
+our-aur -Q
+
+# Remove an AUR package
+sudo our-aur -R hyprcaffeine
+
+# Update all AUR packages
+sudo our-aur -Su
+```
+
+AUR packages are installed as sysext extensions in `/var/lib/extensions/our-aur-<pkg>/` and are immediately available after installation. They overlay `/usr` without touching the immutable root.
+
+### 8.3 Flatpak apps — `our-flat`
+
+Flatpak is not installed by default. Install it first, then enable Flathub:
+
+```bash
+# Install flatpak via our-pac
+sudo our-pac -S flatpak
+
+# Add Flathub remote (explicit opt-in required)
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Install an app
+sudo our-flat -S org.videolan.VLC
+
+# List installed apps
+our-flat -Q
+
+# Update all apps
+sudo our-flat -Su
+
+# Remove an app
+sudo our-flat -R org.videolan.VLC
+```
+
+Flatpak apps are installed system-wide in `/var/lib/flatpak/` and never touch the immutable root.
 
 ---
 
 ## 9. Roll back to a previous snapshot
 
-### From the running system
-
-List available snapshots:
+### List snapshots
 
 ```bash
-ls /.snapshots/
+sudo our-snapshot list
 ```
 
+Output:
 ```
-install          ← baseline from installation
-2026-03-26T143012
-2026-03-27T091500
+    NAME                            TYPE        SIZE
+    ----                            ----        ----
+    install                         ro          1.2 GiB   ← installation baseline
+    2026-03-26T143012               ro          840 MiB
+  * 2026-03-27T091500               ro          220 MiB   ← currently running
 ```
 
-To boot into a snapshot, reboot and select it from the systemd-boot menu.
+### Boot once from a snapshot (safe — non-destructive)
+
+```bash
+sudo our-rollback try 2026-03-26T143012
+# → reboot and the system boots from that snapshot once
+# → next reboot returns to the default automatically
+```
+
+### Make a snapshot permanent (promote)
+
+```bash
+sudo our-rollback promote 2026-03-26T143012
+# → replaces @ with the snapshot; original snapshot is preserved as a restore point
+# → reboot required for the change to take effect
+```
 
 ### From the boot menu
 
 1. Restart the machine.
-2. At the systemd-boot menu, press **↑/↓** to select:
+2. At the systemd-boot menu, press **↑/↓** to select a snapshot:
    ```
    ouroborOS snapshot (2026-03-26T143012)
    ```
 3. Press **Enter** to boot into that snapshot.
 
-The snapshot is mounted read-only. From there you can:
-- Investigate what went wrong
-- Promote the snapshot to the active root (advanced — see architecture docs)
+### Undo the last promote
+
+```bash
+sudo our-rollback undo
+```
 
 ---
 
-## 10. Useful commands reference
+## 10. System health and diagnostics
+
+```bash
+# Check system health (12 checks: root RO, failed units, disk space, etc.)
+sudo ouroboros-health
+
+# Run in doctor mode — detect and optionally fix issues
+sudo ouroboros-health --doctor
+
+# Output as YAML or JSON (for scripts)
+sudo ouroboros-health --yaml
+sudo ouroboros-health --json
+```
+
+### Check the system manifest
+
+The declarative manifest is at `/etc/ouroboros/system.yaml`. It records the installed packages, users, and configuration at install time, and is updated when you install/remove packages via `our-pac`.
+
+```bash
+cat /etc/ouroboros/system.yaml
+```
+
+### Check for OTA updates
+
+```bash
+sudo ouroboros-rebase --dry-run
+```
+
+---
+
+## 11. Multi-user management
+
+Users are declared in the install config. After installation, manage them with standard tools:
+
+```bash
+# List users
+cat /etc/passwd | grep -v nologin
+
+# Add a user (write to / temporarily — use our-pac's approach)
+# Use useradd directly — but first unlock root via our-pac or our-snapshot
+
+# Check homed status
+systemctl status systemd-homed
+homectl list
+```
+
+For homed-managed users (`homed_storage: directory` or `luks`):
+```bash
+homectl inspect <username>
+homectl passwd <username>
+```
+
+> **Note:** `homed_storage: subvolume` is known to fail when `/home` is a Btrfs subvolume (`@home`). Use `classic` or `directory` for reliable operation.
+
+---
+
+## 12. Bluetooth
+
+Bluetooth is disabled by default. To enable it:
+
+```bash
+sudo our-pac -S bluez bluez-utils
+sudo systemctl enable --now bluetooth.service
+```
+
+If `bluetooth: enable: true` was set in the install config, `bluetooth.service` is enabled automatically on first boot.
+
+---
+
+## 13. Useful commands reference
 
 ```bash
 # Network status
@@ -318,8 +444,25 @@ btrfs subvolume list /
 btrfs filesystem show /
 
 # Snapshots
-ls /.snapshots/
-btrfs subvolume list /.snapshots
+sudo our-snapshot list
+sudo our-snapshot create --name my-backup
+sudo our-snapshot delete 2026-03-26T143012
+
+# Rollback
+sudo our-rollback list
+sudo our-rollback try <snapshot>      # one-shot boot
+sudo our-rollback promote <snapshot>  # permanent
+sudo our-rollback undo                # revert promote
+
+# AUR packages
+sudo our-aur -S <pkg>
+our-aur -Q
+sudo our-aur -R <pkg>
+
+# Flatpak
+sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+sudo our-flat -S <app-id>
+our-flat -Q
 
 # Boot entries
 bootctl status
@@ -330,19 +473,23 @@ journalctl -b                   # current boot
 journalctl -b -1                # previous boot
 journalctl -u systemd-networkd  # specific unit
 
-# Installer log (after installation)
-cat /tmp/ouroborOS-install.log
+# System manifest
+cat /etc/ouroboros/system.yaml
+
+# Health check
+sudo ouroboros-health
 ```
 
 ---
 
-## 11. Known limitations (v0.1)
+## 14. Known limitations (v0.5.x)
 
 | Limitation | Notes |
 |-----------|-------|
 | UEFI only | Legacy BIOS boot is not supported |
-| English only | Installer UI is English only |
-| No GUI | Terminal/TUI installer only |
-| No AUR | No AUR helper included; use `makepkg` manually |
-| No Secure Boot | TPM2/MOK not configured in v0.1 |
-| No ARM support | x86_64 only |
+| No GUI installer | Rich TUI only; GUI planned for Phase 6 |
+| homed subvolume backend | Fails when `/home` is `@home` subvolume — use `classic` or `directory` |
+| No ARM support | x86_64 only; ARM planned for Phase 6 |
+| AUR interactive PKGBUILDs | Packages with interactive prompts during build will fail |
+| Flatpak not pre-installed | Must install via `our-pac -S flatpak` first |
+| OTA image-based updates | casync-based OTA planned for Phase 6; current rebase is source-based |

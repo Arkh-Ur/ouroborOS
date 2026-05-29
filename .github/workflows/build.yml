@@ -191,6 +191,24 @@ jobs:
           done
           echo "All ISO sizes OK."
 
+      - name: Sign ISO (GPG)
+        if: ${{ secrets.GPG_KEY_ID != '' }}
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${GPG_KEY_ID:-}" ]]; then
+            echo "GPG_KEY_ID not set — skipping ISO signature"
+            exit 0
+          fi
+          echo "Importing GPG key..."
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "Signing ISO..."
+          gpg --batch --yes --detach-sign --armor \
+              --local-user "$GPG_KEY_ID" \
+              out/ouroborOS-*.iso
+          echo "Signature written: $(ls out/ouroborOS-*.iso.asc)"
+
       - name: Create prerelease in private repo
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -199,6 +217,8 @@ jobs:
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+          SIGNATURE=""
+          [[ -f "${ISO}.asc" ]] && SIGNATURE="${ISO}.asc"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Prerelease $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
@@ -208,7 +228,8 @@ jobs:
             --prerelease \
             --notes "Pre-release build from tag ${TAG}. Mirror to public repo follows." \
             "$ISO" \
-            "$CHECKSUM"
+            "$CHECKSUM" \
+            ${SIGNATURE:+"$SIGNATURE"}
 
       - name: Merge tag to origin/main (private)
         run: |
@@ -303,6 +324,8 @@ jobs:
           TAG="${{ github.ref_name }}"
           ISO=$(ls out/ouroborOS-*.iso | head -n 1)
           CHECKSUM="out/ouroborOS-SHA256SUMS.txt"
+          SIGNATURE=""
+          [[ -f "${ISO}.asc" ]] && SIGNATURE="${ISO}.asc"
 
           if gh release view "$TAG" --repo Arkh-Ur/ouroborOS >/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
@@ -317,7 +340,8 @@ jobs:
             --prerelease \
             --notes "$RELEASE_NOTES" \
             "$ISO" \
-            "$CHECKSUM"
+            "$CHECKSUM" \
+            ${SIGNATURE:+"$SIGNATURE"}
 
       - name: Write build summary
         if: always()

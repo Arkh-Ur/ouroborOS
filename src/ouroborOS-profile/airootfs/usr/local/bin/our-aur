@@ -25,8 +25,7 @@ readonly BUILD_ROOT="/var/tmp/our-aur/containers"
 readonly DATA_DIR="/var/lib/our-aur"
 readonly EXTENSIONS_DIR="/var/lib/extensions"
 readonly SYSEXT_PREFIX="our-aur"
-readonly PARU_RELEASE_URL="https://github.com/Morganamilo/paru/releases/latest/download/paru-x86_64.pkg.tar.zst"
-readonly PARU_CACHE="${DATA_DIR}/paru-bin.pkg.tar.zst"
+readonly AUR_GIT_BASE="https://aur.archlinux.org"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -163,11 +162,26 @@ _create_build_container() {
     local name="$1"
     local container="${BUILD_ROOT}/${name}"
 
-    mkdir -p "${BUILD_ROOT}"
+    mkdir -p "${container}"
     _msg "Creando contenedor de build: ${name}"
     _msg "Esto puede tardar unos minutos (pacstrap base + base-devel)..."
 
-    if ! pacstrap -c "${container}" base base-devel git sudo --noconfirm -q 2>/dev/null; then
+    # Build a temporary pacman.conf that points HookDir only to the system
+    # hooks directory. Without this, pacstrap inherits /etc/pacman.conf whose
+    # HookDir includes /etc/pacman.d/hooks/ — causing zzz-post-upgrade.hook to
+    # fire inside the empty chroot where ouroboros-post-upgrade doesn't exist.
+    local tmp_pacman_conf
+    tmp_pacman_conf=$(mktemp --suffix=.conf)
+    grep -v '^HookDir' /etc/pacman.conf > "${tmp_pacman_conf}"
+    echo "HookDir = /usr/share/libalpm/hooks/" >> "${tmp_pacman_conf}"
+
+    local pacstrap_ok=0
+    pacstrap -c -C "${tmp_pacman_conf}" "${container}" base base-devel git sudo --noconfirm -q \
+        2>/tmp/our-aur-pacstrap-err.log || pacstrap_ok=$?
+    rm -f "${tmp_pacman_conf}"
+
+    if [[ ${pacstrap_ok} -ne 0 ]]; then
+        cat /tmp/our-aur-pacstrap-err.log >&2 2>/dev/null || true
         _die "Falló pacstrap al crear el contenedor. ¿Hay conexión a Internet y espejos configurados?"
     fi
 
@@ -185,30 +199,9 @@ _create_build_container() {
 }
 
 _bootstrap_paru() {
-    local container="${BUILD_ROOT}/$1"
-
-    # Descargar paru-bin si no está cacheado
-    if [[ ! -f "${PARU_CACHE}" ]]; then
-        _msg "Descargando paru-bin desde GitHub releases..."
-        mkdir -p "${DATA_DIR}"
-        if ! curl --silent --fail --location --max-time 120 \
-            --output "${PARU_CACHE}" "${PARU_RELEASE_URL}"; then
-            rm -f "${PARU_CACHE}"
-            _die "No se pudo descargar paru-bin. ¿Hay conexión a Internet?"
-        fi
-        _msg "paru-bin descargado y cacheado en ${PARU_CACHE}"
-    else
-        _msg "paru-bin encontrado en cache: ${PARU_CACHE}"
-    fi
-
-    # Copiar al contenedor y instalar
-    cp "${PARU_CACHE}" "${container}/tmp/paru-bin.pkg.tar.zst"
-    systemd-nspawn -D "${container}" --pipe -- \
-        pacman --noconfirm -U /tmp/paru-bin.pkg.tar.zst 2>/dev/null || \
-        _die "Falló la instalación de paru-bin en el contenedor"
-
-    rm -f "${container}/tmp/paru-bin.pkg.tar.zst"
-    _msg "paru-bin instalado en el contenedor"
+    # No-op: we build AUR packages directly with makepkg (no AUR helper needed).
+    # Kept as a hook point in case future callers expect it.
+    :
 }
 
 _build_in_container() {
@@ -216,19 +209,22 @@ _build_in_container() {
     local pkg="$2"
     local container="${BUILD_ROOT}/${name}"
 
-    _msg "Ejecutando build: paru -S ${pkg} (como aurbuild)"
+    _msg "Ejecutando build: makepkg -si ${pkg} (como aurbuild)"
 
-    # paru necesita HOME y XDG dirs del usuario
+    # Clone the PKGBUILD from AUR and build+install with makepkg.
+    # aurbuild has NOPASSWD sudo for pacman so `makepkg -s` can pull deps.
     systemd-nspawn -D "${container}" \
         --user=aurbuild \
         --setenv="HOME=/home/aurbuild" \
-        --setenv="XDG_CACHE_HOME=/home/aurbuild/.cache" \
-        --setenv="XDG_CONFIG_HOME=/home/aurbuild/.config" \
-        --setenv="PARU_CONF=/home/aurbuild/.config/paru/paru.conf" \
+        --setenv="MAKEFLAGS=-j$(nproc)" \
         -- \
-        paru --noconfirm --noprogressbar --nocleanmenu \
-             --nodiffmenu --noeditmenu --removemake \
-             -S "${pkg}" || \
+        bash -c "
+            set -e
+            build_dir=\"/home/aurbuild/aur-build-${pkg}\"
+            git clone --depth=1 '${AUR_GIT_BASE}/${pkg}.git' \"\${build_dir}\"
+            cd \"\${build_dir}\"
+            makepkg --noconfirm --noprogressbar -si
+        " || \
         _die "Falló el build de '${pkg}' en el contenedor. Revisá los logs de arriba."
 
     _msg "Build de '${pkg}' completado"
@@ -260,24 +256,27 @@ _create_sysext() {
 
     _msg "Creando extensión sysext: ${sysext_name}"
 
-    # Extraer archivos /usr/* de cada paquete nuevo
+    # Extract /usr/* files for each new package.
+    # pacman --root="${container}" -Ql returns FULL host paths (root-prefixed), not
+    # container-relative paths. Strip the container prefix before checking /usr/*.
     for p in "${new_pkgs[@]}"; do
         _msg "  Extrayendo archivos de: ${p}"
-        while IFS= read -r filepath; do
-            # Solo archivos (no directorios vacíos, no links rotos)
-            if [[ "${filepath}" == /usr/* && -e "${container}${filepath}" ]]; then
+        while IFS= read -r full_path; do
+            local rel_path="${full_path#${container}}"
+            if [[ "${rel_path}" == /usr/* ]] && [[ -f "${full_path}" || -L "${full_path}" ]]; then
                 local dest_dir
-                dest_dir="${staging}$(dirname "${filepath}")"
+                dest_dir="${staging}$(dirname "${rel_path}")"
                 mkdir -p "${dest_dir}"
-                cp -a "${container}${filepath}" "${dest_dir}/" 2>/dev/null || true
+                cp -a "${full_path}" "${dest_dir}/" 2>/dev/null || true
             fi
         done < <(pacman --root="${container}" -Ql "${p}" 2>/dev/null | awk '{print $2}')
     done
 
-    # Inyectar extension-release metadata (obligatorio para systemd-sysext)
+    # Inject extension-release metadata required by systemd-sysext.
+    # ID=_any is the systemd wildcard — works regardless of the host OS ID.
     local release_dir="${staging}/usr/lib/extension-release.d"
     mkdir -p "${release_dir}"
-    printf 'ID=arch\nSYSEXT_LEVEL=1\n' > "${release_dir}/extension-release.${sysext_name}"
+    printf 'ID=_any\n' > "${release_dir}/extension-release.${sysext_name}"
 
     # Remover sysext anterior si existía
     if [[ -d "${sysext_dir}" ]]; then
@@ -579,10 +578,7 @@ _cmd_clean() {
         fi
     fi
 
-    # Cache de paru-bin (opcional — redownload automático)
-    if [[ -f "${PARU_CACHE}" ]]; then
-        _msg "Cache de paru-bin: ${PARU_CACHE} (conservado — borrar manualmente si lo querés actualizar)"
-    fi
+    :  # no paru binary cache to report
 
     # Stagings huérfanos
     if compgen -G "/var/tmp/our-aur/staging-*" &>/dev/null; then

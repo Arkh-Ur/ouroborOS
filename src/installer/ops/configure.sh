@@ -946,6 +946,8 @@ STUB
         ouroboros-secureboot
         ouroboros-rebase
         ouroboros-verify-update
+        ouroboros-health
+        ouroboros-reinstall
     )
     for _tool in "${_p3_tools[@]}"; do
         local _src="/usr/local/bin/${_tool}"
@@ -1381,6 +1383,11 @@ GREETD_EOF
     # by default (no Include directive in the default config).
     echo "UseDNS no" >> "${TARGET}/etc/ssh/sshd_config"
     log_ok "sshd_config: UseDNS no (appended to sshd_config)."
+    # Force TCP listener on all interfaces. systemd-ssh-generator (openssh 9.8+)
+    # creates AF_UNIX socket units that coexist with sshd.service but do not open
+    # a TCP port. Without this, SLIRP hostfwd to port 22 has nothing to forward to.
+    echo "ListenAddress 0.0.0.0" >> "${TARGET}/etc/ssh/sshd_config"
+    log_ok "sshd_config: ListenAddress 0.0.0.0 (TCP listener forced for SLIRP)."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets
