@@ -54,31 +54,32 @@ ls -lh out/ouroborOS-*.iso
 ### 2.1 Prepare disk and launch QEMU
 
 ```bash
-# Kill any zombie QEMU holding port 2222
-fuser -k 2222/tcp 2>/dev/null || true
+# Kill any zombie QEMU holding port 2223
+fuser -k 2223/tcp 2>/dev/null || true
 
 # Clean previous test artifacts
 rm -f /home/ouroboros-test.qcow2 /tmp/ouroboros-serial-install.log
 
 # Create virtual disk on /home (NOT /tmp — tmpfs ~4 GB fills during pacstrap)
-qemu-img create -f qcow2 /home/ouroboros-test.qcow2 20G
+# Use 40G for Hyprland/GNOME/KDE profiles; 20G is enough for minimal
+qemu-img create -f qcow2 /home/ouroboros-test.qcow2 40G
 
-# Launch QEMU — headless, VNC on :1 (localhost:5901), SSH forwarded to 2222
+# Launch QEMU — headless, VNC on :1 (localhost:5901), SSH forwarded to 2223
 # Use setsid so QEMU survives tool/shell timeouts
 setsid qemu-system-x86_64 \
   -enable-kvm \
   -cpu host \
   -smp 2 \
-  -m 2048 \
+  -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
   -drive file=/home/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
   -cdrom out/ouroborOS-*.iso \
   -boot d \
-  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -netdev user,id=net0,hostfwd=tcp::2223-:22 \
   -device e1000,netdev=net0 \
   -rtc base=utc,clock=host \
   -serial file:/tmp/ouroboros-serial-install.log \
-  -vga virtio \
+  -vga std \
   -display none \
   -vnc :1 \
   >/dev/null 2>&1 &
@@ -91,7 +92,7 @@ echo "QEMU PID: $QEMU_PID"
 
 > **VNC**: Connect to `localhost:5901` with any VNC client to watch visually.
 > **IMPORTANT**: Use `-device e1000` — virtio-net hangs under sustained pacstrap load.
-> **IMPORTANT**: Use `-display none -vga virtio` — never `-nographic` (disables VGA for VNC).
+> **IMPORTANT**: Use `-vga std -display none` — never `-nographic` (disables VGA for VNC). Do NOT use `-vga virtio` (not supported in headless mode).
 > **IMPORTANT**: Use `setsid` — bash tool kills child processes on timeout.
 
 ### 2.2 Monitor install via serial log
@@ -145,17 +146,15 @@ grep "Critical /etc files written" /tmp/ouroboros-serial-install.log && echo "�
 ### 3.1 Boot installed system (no ISO)
 
 ```bash
-# Kill any leftover QEMU
-pkill -f qemu 2>/dev/null || true
-sleep 2
+# Kill any leftover QEMU — must kill process, not just close terminal
+# WARNING: `systemctl reboot` inside QEMU does NOT guarantee a full UEFI cold boot.
+# For our-rollback promote to take effect (new @ subvolume), kill the QEMU process
+# entirely and restart it fresh — that is the only reliable "cold reboot" in QEMU.
+pkill -f "qemu.*ouroboros-test" 2>/dev/null || true
+sleep 3
 
 rm -f /tmp/ouroboros-serial-boot.log
 
-# virtio-vga-gl + egl-headless: exposes /dev/dri in guest so Hyprland/Wayland
-# compositors can use virgl GPU acceleration instead of crashing with SIGSEGV.
-# Requires virglrenderer on host: pacman -S virglrenderer
-# The user must be in the render group OR launch without setsid wrapper (group
-# membership is only effective after re-login; use a bare setsid call here).
 setsid qemu-system-x86_64 \
   -enable-kvm \
   -cpu host \
@@ -163,21 +162,21 @@ setsid qemu-system-x86_64 \
   -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
   -drive file=/home/ouroboros-test.qcow2,format=qcow2,if=virtio,cache=writeback \
-  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -netdev user,id=net0,hostfwd=tcp::2223-:22 \
   -device e1000,netdev=net0 \
   -rtc base=utc,clock=host \
   -serial file:/tmp/ouroboros-serial-boot.log \
-  -device virtio-vga-gl \
-  -display egl-headless,gl=on \
+  -vga std \
+  -display none \
   -vnc :1 \
-  2>/tmp/qemu-boot-err.log &
+  >/dev/null 2>&1 &
 
 sleep 4
-QEMU_PID=$(pgrep qemu | head -1)
+QEMU_PID=$(pgrep -f "qemu.*ouroboros-test" | head -1)
 echo "QEMU PID: $QEMU_PID"
 
-# Verify QEMU bound port 2222 (hostfwd active)
-ss -tln | grep -q 2222 && echo "✓ port 2222 bound" || echo "✗ QEMU failed — check /tmp/qemu-boot-err.log"
+# Verify QEMU bound port 2223 (hostfwd active)
+ss -tln | grep -q 2223 && echo "✓ port 2223 bound" || echo "✗ QEMU failed — check serial log"
 
 # Wait for login prompt (up to 90s)
 timeout 90 bash -c 'until grep -q "login:" /tmp/ouroboros-serial-boot.log 2>/dev/null; do sleep 2; done'
@@ -209,14 +208,14 @@ grep -q "snapshot (install)" /tmp/ouroboros-serial-boot.log && echo "✓ Snapsho
 # SSH forwarded to localhost:2222
 
 # Clear stale host key from previous runs
-ssh-keygen -R "[localhost]:2222" 2>/dev/null || true
+ssh-keygen -R "[localhost]:2223" 2>/dev/null || true
 
 # Wait for SSH to be available (up to 90s)
-timeout 90 bash -c 'until sshpass -p "testpass123" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p 2222 testuser@localhost true 2>/dev/null; do sleep 3; done'
+timeout 90 bash -c 'until sshpass -p "testpass123" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p 2223 testuser@localhost true 2>/dev/null; do sleep 3; done'
 echo "SSH ready"
 
 # Helper alias
-SSH="sshpass -p testpass123 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 testuser@localhost"
+SSH="sshpass -p testpass123 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2223 testuser@localhost"
 ```
 
 ### 3.4 System verification commands
@@ -271,7 +270,36 @@ $SSH 'test -f /boot/EFI/systemd/systemd-bootx64.efi' && echo "✓ EFI binary pre
 $SSH 'cat /etc/systemd/resolved.conf' | grep "DNSOverTLS" && echo "✓ resolved.conf OK" || echo "✗ resolved.conf missing"
 ```
 
-### 3.5 Launch Hyprland (optional — requires virgl boot from 3.1)
+### 3.5 our-pac / our-aur over SSH — use nohup (SSH drops during mkinitcpio)
+
+`our-pac -S <pkg>` runs `mkinitcpio` as a pacman hook. This hook can interrupt the SSH connection mid-command, leaving the operation hanging. Always use `nohup` and poll the log:
+
+```bash
+# Install a package via our-pac without risking SSH drop
+$SSH 'nohup bash -c "echo ouroboros | sudo -S our-pac -S <pkg> --noconfirm" > /tmp/our-pac.log 2>&1 &'
+
+# Poll until done
+until $SSH 'grep -qE "boot entries|ERROR|exit" /tmp/our-pac.log 2>/dev/null'; do sleep 5; done
+$SSH 'cat /tmp/our-pac.log'
+```
+
+Same pattern for `our-aur -S <pkg>` (nspawn container build can also drop SSH).
+
+### 3.6 our-rollback promote — use --force for non-interactive use
+
+`our-rollback promote` requires typing `yes` interactively. In automated E2E use `--force` / `-y`:
+
+```bash
+$SSH 'echo ouroboros | sudo -S our-rollback promote <snapshot-name> --force'
+
+# After promote, a FULL cold reboot is required for the new @ to take effect.
+# systemctl reboot alone is not sufficient in QEMU (doesn't always cycle UEFI).
+# Kill the QEMU process and restart it (see Phase 3.1 boot command above).
+pkill -f "qemu.*ouroboros-test"
+# → restart QEMU process fresh
+```
+
+### 3.7 Launch Hyprland (optional)
 
 ```bash
 # Launch Hyprland via SSH — compositor runs in guest, visible on VNC :1 (localhost:5901)
@@ -279,14 +307,9 @@ $SSH 'WLR_RENDERER=gles2 Hyprland > /tmp/hyprland.log 2>&1 &'
 sleep 3
 $SSH 'cat /tmp/hyprland.log | head -20'
 
-# Open kitty from Hyprland (bind super+return in hyprland.conf, or run directly):
-$SSH 'WAYLAND_DISPLAY=wayland-1 kitty &'
 ```
 
-> Connect to `localhost:5901` with a VNC client to see the graphical session.
-> virgl must be active (verify with `ls /dev/dri/` in guest).
-
-### 3.6 Teardown
+### 3.8 Teardown
 
 ```bash
 pkill qemu 2>/dev/null || true
@@ -326,15 +349,19 @@ echo "Teardown complete"
 | Constraint | Reason |
 |-----------|--------|
 | Host must have KVM (`/dev/kvm`) | `-enable-kvm` is required for acceptable performance |
-| Host RAM ≥ 8 GB for `-m 2048` | Smaller allocation triggers OOM during pacstrap |
+| Host RAM ≥ 8 GB for `-m 4096` | 4096 MB allocated to VM; Hyprland profile needs ≥ 4 GB inside guest |
+| Disk image: 40G on `/home` | `/tmp` is tmpfs (~4 GB); Hyprland profile + build artifacts need 6-8 GB; 20G too small |
 | Use `-device e1000` | virtio-net hangs under sustained download load in QEMU userspace |
-| Use `-display none -vga virtio` | `-nographic` disables VGA device — VNC shows blank screen |
+| Use `-vga std -display none` | `-vga virtio` is NOT supported in headless mode (exits with error). `-nographic` disables VGA entirely. `-vga std` is the correct headless choice. |
 | Use `setsid` to launch QEMU | bash tool kills child processes on timeout; setsid detaches QEMU |
-| Use `fuser -k 2222/tcp` before launch | Zombie QEMU from prior run blocks port 2222 |
-| Build workdir + disk image on `/home` | `/tmp` is tmpfs (~4 GB), ISO build + qcow2 need 6-8 GB |
+| Use `fuser -k 2223/tcp` before launch | Zombie QEMU from prior run blocks port 2223 |
+| Build workdir on `/home` | `/tmp` is tmpfs (~4 GB), ISO build + qcow2 need 6-8 GB |
 | `sshpass` required | Automated SSH with password; install via `pacman -S sshpass` |
-| `ssh-keygen -R "[localhost]:2222"` before SSH | known_hosts persists between runs, breaking auth |
+| `ssh-keygen -R "[localhost]:2223"` before SSH | known_hosts persists between runs, breaking auth |
 | Use `echo testpass123 \| sudo -S <cmd>` for privileged cmds | `sudo` in installed system is non-interactive over SSH |
+| Use `nohup` for `our-pac`/`our-aur` over SSH | mkinitcpio hook can drop the SSH connection; use nohup + poll log |
+| Kill+restart QEMU for cold reboot after promote | `systemctl reboot` in QEMU doesn't guarantee full UEFI cycle; kill the process and relaunch |
+| Use `our-rollback promote --force` | Without `--force`, promote waits for interactive `yes` input — hangs over SSH |
 
 ## Known Issues
 

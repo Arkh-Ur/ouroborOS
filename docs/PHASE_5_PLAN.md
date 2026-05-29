@@ -42,8 +42,8 @@ health       →  verifica que el estado real = manifiesto
 | 5.12 | `ouroboros-health` + `--doctor` | ✅ | v0.5.3 |
 | 5.13 | Actualizar `user-guide.md` | ✅ | v0.5.8 |
 | 5.14 | `docs/architecture/our-aur.md` + `our-flat.md` | ✅ | v0.5.8 |
-| 5.15 | `docs/architecture/snapshot-system.md` | ✅ | v0.5.8 |
-| 5.16 | `docs/PHASE_5_PLAN.md` | ✅ | v0.5.8 |
+| 5.15 | `docs/architecture/snapshot-system.md` + `declarative-system.md` + `multi-user.md` | ✅ | v0.5.8 |
+| 5.16 | `docs/PHASE_5_PLAN.md` + `agents/qa-tester.md` + `skills/qemu-e2e-test.md` | ✅ | v0.5.8 |
 | 5.17 | GUI Installer | ❌ Phase 6+ | — |
 | 5.18 | OTA casync image-based | ❌ Phase 6+ | — |
 | 5.19 | ARM / aarch64 | ❌ Sin hardware | — |
@@ -338,14 +338,16 @@ our-snapshot diff <SNAP_A> <SNAP_B>
 
 ## v0.5.8 — Documentación
 
-| Archivo | Acción |
-|---------|--------|
-| `docs/user-guide.md` | Actualizar — quitar limitaciones resueltas, agregar Phase 5 features |
-| `docs/architecture/systemd-integration.md` | Actualizar estado (systemd-repart: still deferred) |
-| `docs/architecture/our-aur.md` | NUEVO |
-| `docs/architecture/snapshot-system.md` | NUEVO |
-| `docs/architecture/declarative-system.md` | NUEVO |
-| `docs/architecture/multi-user.md` | NUEVO |
+| Archivo | Acción | Estado |
+|---------|--------|--------|
+| `docs/user-guide.md` | Actualizar — Phase 5 features (our-aur, our-flat, rollback, health, homed, bluetooth) | ✅ |
+| `docs/architecture/our-aur.md` | NUEVO — arquitectura AUR via sysext | ✅ |
+| `docs/architecture/our-flat.md` | NUEVO — Flatpak wrapper | ✅ |
+| `docs/architecture/snapshot-system.md` | NUEVO — Btrfs snapshots + rollback | ✅ |
+| `docs/architecture/declarative-system.md` | NUEVO — system.yaml manifiesto | ✅ |
+| `docs/architecture/multi-user.md` | NUEVO — multi-usuario + homed migration | ✅ |
+| `agents/qa-tester.md` | Actualizar — patrones E2E para our-pac/our-aur/our-flat | ✅ |
+| `skills/qemu-e2e-test.md` | Actualizar — constraintss QEMU aprendidos en E2E | ✅ |
 
 ---
 

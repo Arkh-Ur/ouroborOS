@@ -153,6 +153,96 @@ After all suites complete:
 
 ---
 
+---
+
+## Phase 5 — QEMU E2E Test Patterns
+
+These tests require a running QEMU guest with SSH access on port 2223. See `skills/qemu-e2e-test.md` for the full setup procedure.
+
+### SSH helper
+
+```bash
+SSH="sshpass -p ouroboros ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2223 ouroboros@localhost"
+```
+
+### our-pac cycle (install + rollback + reinstall)
+
+```bash
+# Install flatpak via our-pac (background — SSH can drop during mkinitcpio)
+$SSH 'nohup bash -c "echo ouroboros | sudo -S our-pac -S flatpak --noconfirm" > /tmp/ourpac.log 2>&1 &'
+until $SSH 'grep -qE "sync.*boot entries|ERROR" /tmp/ourpac.log 2>/dev/null'; do sleep 5; done
+$SSH 'test -x /usr/bin/flatpak' && echo "✓ our-pac install" || echo "✗ our-pac install FAIL"
+
+# Rollback: promote the pre-install snapshot
+SNAP=$($SSH 'echo ouroboros | sudo -S our-snapshot list 2>/dev/null | grep -v install | tail -2 | head -1 | awk "{print \$2}"')
+$SSH "echo ouroboros | sudo -S our-rollback promote $SNAP --force"
+# Cold reboot (kill + restart QEMU, then wait for SSH)
+pkill -f "qemu.*ouroboros-test"; sleep 3; # restart QEMU...
+$SSH 'test -x /usr/bin/flatpak' && echo "✗ rollback FAIL (flatpak still present)" || echo "✓ rollback OK"
+
+# Reinstall
+$SSH 'nohup bash -c "echo ouroboros | sudo -S our-pac -S flatpak --noconfirm" > /tmp/ourpac2.log 2>&1 &'
+until $SSH 'grep -qE "sync.*boot entries|ERROR" /tmp/ourpac2.log 2>/dev/null'; do sleep 5; done
+$SSH 'test -x /usr/bin/flatpak' && echo "✓ our-pac reinstall" || echo "✗ our-pac reinstall FAIL"
+```
+
+**Pass criteria:** install ✓ → rollback ✓ (package absent after rollback) → reinstall ✓
+
+### our-aur cycle (install + uninstall + reinstall)
+
+```bash
+# our-aur needs flatpak (base-devel for makepkg) — install it first
+# Install an AUR package (e.g. hyprcaffeine)
+$SSH 'nohup bash -c "echo ouroboros | sudo -S our-aur -S hyprcaffeine" > /tmp/ouraur.log 2>&1 &'
+until $SSH 'grep -qE "Done|ERROR|failed" /tmp/ouraur.log 2>/dev/null'; do sleep 10; done
+$SSH 'test -x /usr/bin/hyprcaffeine' && echo "✓ our-aur install" || echo "✗ our-aur install FAIL"
+
+# Verify sysext is active
+$SSH 'systemd-sysext status 2>/dev/null | grep -q our-aur-hyprcaffeine' && echo "✓ sysext merged" || echo "✗ sysext missing"
+
+# Remove
+$SSH 'echo ouroboros | sudo -S our-aur -R hyprcaffeine'
+$SSH 'test -x /usr/bin/hyprcaffeine' && echo "✗ uninstall FAIL" || echo "✓ our-aur uninstall"
+
+# Reinstall
+$SSH 'nohup bash -c "echo ouroboros | sudo -S our-aur -S hyprcaffeine" > /tmp/ouraur2.log 2>&1 &'
+until $SSH 'grep -qE "Done|ERROR|failed" /tmp/ouraur2.log 2>/dev/null'; do sleep 10; done
+$SSH 'test -x /usr/bin/hyprcaffeine' && echo "✓ our-aur reinstall" || echo "✗ our-aur reinstall FAIL"
+```
+
+**Pass criteria:** install ✓ → sysext merged ✓ → uninstall ✓ → reinstall ✓
+
+### our-flat cycle (add remote + install + uninstall + reinstall)
+
+```bash
+# Add Flathub remote
+$SSH 'echo ouroboros | sudo -S our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo'
+
+# Install an app
+$SSH 'echo ouroboros | sudo -S our-flat -S org.videolan.VLC' && echo "✓ our-flat install" || echo "✗ our-flat install FAIL"
+$SSH 'our-flat -Q | grep -q VLC' && echo "✓ VLC listed" || echo "✗ VLC not in list"
+
+# Remove
+$SSH 'echo ouroboros | sudo -S our-flat -R org.videolan.VLC' && echo "✓ our-flat remove" || echo "✗ our-flat remove FAIL"
+
+# Reinstall
+$SSH 'echo ouroboros | sudo -S our-flat -S org.videolan.VLC' && echo "✓ our-flat reinstall" || echo "✓ our-flat reinstall FAIL"
+```
+
+**Pass criteria:** remote add ✓ → install ✓ → listed in -Q ✓ → remove ✓ → reinstall ✓
+
+### Key E2E constraints
+
+| Constraint | Detail |
+|-----------|--------|
+| Port 2223 | SSH forwarded to 2223 (not 2222) |
+| nohup for our-pac/our-aur | mkinitcpio hook drops SSH connection — always background + poll log |
+| our-rollback promote --force | Omitting `--force` hangs waiting for interactive `yes` |
+| Cold reboot after promote | Kill QEMU process + restart; `systemctl reboot` alone unreliable |
+| our-pac -S flatpak + sysext | If sysext is active on /usr, our-pac auto-unmerges/remerges (v0.5.7+) |
+
+---
+
 ## What NOT to Do
 
 - Do not attempt to fix the code yourself — report and route back
@@ -160,3 +250,4 @@ After all suites complete:
 - Do not ignore `set -euo pipefail` violations — they are as serious as shellcheck errors
 - Do not run tests outside the container (host environment is not the test environment)
 - Do not run `docker compose up -d` — always use `run --rm` for test execution (no daemon)
+- Do not use `systemctl reboot` as the cold-reboot mechanism in QEMU E2E tests
