@@ -21,6 +21,7 @@ file_permissions=(
   ["/etc/gshadow"]="0:0:400"
   ["/usr/local/bin/ouroborOS-installer"]="0:0:755"
   ["/usr/local/bin/sshd-hostkeys"]="0:0:755"
+  ["/usr/local/bin/our-app"]="0:0:755"
   ["/usr/local/bin/our-aur"]="0:0:755"
   ["/usr/local/bin/our-bluetooth"]="0:0:755"
   ["/usr/local/bin/our-container"]="0:0:755"

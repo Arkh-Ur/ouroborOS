@@ -1,0 +1,469 @@
+#!/usr/bin/env bash
+# our-app — AppImage manager for ouroborOS
+#
+# Instala AppImages como aplicaciones system-wide sin tocar el root inmutable.
+# Todo vive en /var/lib/ouroboros/appimages/ (subvolumen @var, escribible).
+# La integración de escritorio se resuelve vía XDG_DATA_DIRS (ver
+# /etc/profile.d/ouroboros-appimages.sh) — nunca se escribe en /usr.
+#
+# Flags compatibles con pacman:
+#   -S  <url|path> [name]  Instalar un AppImage (desde URL o archivo local)
+#   -R  <name>             Remover un AppImage instalado
+#   -Q                     Listar AppImages instalados
+#   -Qs <query>            Buscar en AppImages instalados
+#   -Si <name>             Info de un AppImage instalado
+#   -Su                    Actualizar todos (re-descarga desde la source URL)
+#
+# Nota: -Syu NO está soportado aquí — usar sudo our-pac -Syu para el sistema base.
+#
+# Los AppImage se escriben solo en @var, por lo que NO quedan capturados por los
+# snapshots del root (@) — igual que Flatpak. No se crea snapshot pre-write.
+set -euo pipefail
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+readonly PROGRAM_NAME="our-app"
+readonly APPIMAGE_DIR="/var/lib/ouroboros/appimages"
+readonly APPS_DIR="${APPIMAGE_DIR}/share/applications"
+readonly ICONS_DIR="${APPIMAGE_DIR}/share/icons"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+_msg()  { echo "[${PROGRAM_NAME}] $*"; }
+_warn() { echo "[${PROGRAM_NAME}] WARNING: $*" >&2; }
+_err()  { echo "[${PROGRAM_NAME}] ERROR: $*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+_require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        exec sudo "/usr/local/bin/${PROGRAM_NAME}" "$@"
+    fi
+}
+
+# ── Cleanup / trap ──────────────────────────────────────────────────────────────
+
+_CLEANUP_EXTRACT=""
+
+_cleanup() {
+    if [[ -n "${_CLEANUP_EXTRACT}" && -d "${_CLEANUP_EXTRACT}" ]]; then
+        rm -rf "${_CLEANUP_EXTRACT}" 2>/dev/null || true
+    fi
+}
+
+trap '_cleanup' EXIT
+
+# ── system.yaml manifest ────────────────────────────────────────────────────────
+
+# Update appimage_packages list in /etc/ouroboros/system.yaml.
+# Called after explicit -S (install) or -R (remove). Mirrors our-pac /
+# our-aur, which track user_packages / aur_packages respectively.
+update_system_yaml_packages() {
+    local operation="$1"   # "add" or "remove"
+    shift
+    local pkgs=("$@")
+    local yaml_file="/etc/ouroboros/system.yaml"
+
+    [[ -f "$yaml_file" ]] || return 0
+    [[ ${#pkgs[@]} -eq 0 ]] && return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+
+    python3 - "$yaml_file" "$operation" "${pkgs[@]}" << 'PYEOF'
+import sys, yaml, os
+
+yaml_path = sys.argv[1]
+operation = sys.argv[2]
+pkgs = sys.argv[3:]
+
+try:
+    with open(yaml_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+except Exception:
+    sys.exit(0)
+
+app_pkgs = data.get("appimage_packages", [])
+if not isinstance(app_pkgs, list):
+    app_pkgs = []
+
+if operation == "add":
+    for p in pkgs:
+        if p not in app_pkgs:
+            app_pkgs.append(p)
+elif operation == "remove":
+    app_pkgs = [p for p in app_pkgs if p not in pkgs]
+
+data["appimage_packages"] = sorted(app_pkgs)
+
+tmp = yaml_path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+os.replace(tmp, yaml_path)
+PYEOF
+}
+
+# ── Helpers ─────────────────────────────────────────────────────────────────────
+
+# Derive a sanitized package name from a URL or file path.
+_derive_name() {
+    local src="$1" base
+    base=$(basename "${src}")
+    base="${base%.AppImage}"
+    base="${base%.appimage}"
+    base=$(echo "${base}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')
+    base="${base#-}"
+    base="${base%-}"
+    echo "${base}"
+}
+
+# Download (URL) or copy (local path) the AppImage to dest, then chmod +x.
+_fetch_appimage() {
+    local src="$1" dest="$2"
+    if [[ "${src}" =~ ^https?:// ]]; then
+        _msg "Descargando AppImage desde ${src}..."
+        curl --silent --show-error --fail --location --max-time 600 \
+            -o "${dest}" "${src}" \
+            || _die "Falló la descarga de ${src}"
+    else
+        [[ -f "${src}" ]] || _die "Archivo no encontrado: ${src}"
+        _msg "Copiando AppImage local: ${src}"
+        cp -f "${src}" "${dest}"
+    fi
+    chmod +x "${dest}"
+}
+
+# Write a minimal .desktop when extraction fails or the AppImage has none.
+_write_minimal_desktop() {
+    local name="$1" app_dir="$2" appimage="$3"
+    cat > "${app_dir}/${name}.desktop" << EOF
+[Desktop Entry]
+Type=Application
+Name=${name}
+Exec="${appimage}" %U
+Terminal=false
+Categories=Utility;
+EOF
+}
+
+# Rewrite a source .desktop: Exec → stored AppImage path, Icon → stored icon.
+_rewrite_desktop() {
+    local src="$1" dest="$2" appimage="$3" icon="$4"
+    awk -v exec_path="${appimage}" -v icon_path="${icon}" '
+        /^Exec=/ { print "Exec=\"" exec_path "\" %U"; next }
+        /^Icon=/ { if (icon_path != "") { print "Icon=" icon_path; next } else { print; next } }
+        { print }
+    ' "${src}" > "${dest}"
+}
+
+# Extract the AppImage and build a desktop entry + icon in app_dir.
+_integrate_desktop() {
+    local name="$1" app_dir="$2" appimage="$3"
+    local extract_dir
+    extract_dir=$(mktemp -d "/var/tmp/our-app-extract-XXXXXX")
+    _CLEANUP_EXTRACT="${extract_dir}"
+
+    # --appimage-extract dumps squashfs-root into the current directory and does
+    # not require FUSE. Run from the temp dir to keep the workspace contained.
+    if ! ( cd "${extract_dir}" && "${appimage}" --appimage-extract >/dev/null 2>&1 ); then
+        _warn "No se pudo extraer metadata del AppImage. Integración mínima."
+        _write_minimal_desktop "${name}" "${app_dir}" "${appimage}"
+        rm -rf "${extract_dir}"; _CLEANUP_EXTRACT=""
+        return 0
+    fi
+
+    local squashfs="${extract_dir}/squashfs-root"
+    local src_desktop
+    src_desktop=$(find "${squashfs}" -maxdepth 1 -name '*.desktop' 2>/dev/null | head -1 || true)
+    [[ -n "${src_desktop}" ]] || src_desktop=$(find "${squashfs}" -name '*.desktop' 2>/dev/null | head -1 || true)
+
+    if [[ -z "${src_desktop}" ]]; then
+        _warn "El AppImage no incluye .desktop. Integración mínima."
+        _write_minimal_desktop "${name}" "${app_dir}" "${appimage}"
+        rm -rf "${extract_dir}"; _CLEANUP_EXTRACT=""
+        return 0
+    fi
+
+    # Resolve icon: from Icon= key, then .DirIcon, then any top-level image.
+    local icon_name icon_src="" icon_dest="" icon_ext
+    icon_name=$(grep -m1 '^Icon=' "${src_desktop}" 2>/dev/null | cut -d= -f2- || true)
+    if [[ -n "${icon_name}" ]]; then
+        icon_src=$(find "${squashfs}" \( -name "${icon_name}.png" -o -name "${icon_name}.svg" \) 2>/dev/null | head -1 || true)
+    fi
+    [[ -z "${icon_src}" && -f "${squashfs}/.DirIcon" ]] && icon_src="${squashfs}/.DirIcon"
+    [[ -z "${icon_src}" ]] && icon_src=$(find "${squashfs}" -maxdepth 1 \( -name '*.png' -o -name '*.svg' \) 2>/dev/null | head -1 || true)
+
+    if [[ -n "${icon_src}" && -f "${icon_src}" ]]; then
+        icon_ext="${icon_src##*.}"
+        [[ "${icon_ext}" == "DirIcon" ]] && icon_ext="png"
+        icon_dest="${app_dir}/icon.${icon_ext}"
+        cp -f "${icon_src}" "${icon_dest}"
+    fi
+
+    _rewrite_desktop "${src_desktop}" "${app_dir}/${name}.desktop" "${appimage}" "${icon_dest}"
+
+    rm -rf "${extract_dir}"; _CLEANUP_EXTRACT=""
+}
+
+# Create XDG symlinks (.desktop + icon) and refresh the desktop database.
+_link_xdg() {
+    local name="$1" app_dir="$2"
+    mkdir -p "${APPS_DIR}" "${ICONS_DIR}"
+    ln -sf "${app_dir}/${name}.desktop" "${APPS_DIR}/${name}.desktop"
+
+    local icon
+    icon=$(find "${app_dir}" -maxdepth 1 -name 'icon.*' 2>/dev/null | head -1 || true)
+    if [[ -n "${icon}" ]]; then
+        ln -sf "${icon}" "${ICONS_DIR}/${name}.${icon##*.}"
+    fi
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "${APPS_DIR}" 2>/dev/null || true
+    fi
+}
+
+# Persist metadata for -Q / -Si / -Su.
+_save_meta() {
+    local app_dir="$1" name="$2" version="$3" source="$4"
+    python3 - "${app_dir}/.app.yaml" "${name}" "${version}" "${source}" << 'PYEOF'
+import sys, datetime
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+path, name, version, source = sys.argv[1:5]
+data = {
+    "name": name,
+    "version": version,
+    "source": source,
+    "installed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+}
+with open(path, "w", encoding="utf-8") as f:
+    if yaml:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    else:
+        for k, v in data.items():
+            f.write(f"{k}: {v}\n")
+PYEOF
+}
+
+# Print one tabular line for an installed AppImage.
+_read_meta_line() {
+    local meta="$1" name="$2"
+    if [[ -f "${meta}" ]]; then
+        python3 - "${meta}" "${name}" << 'PYEOF'
+import sys
+try:
+    import yaml
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception:
+    d = {}
+name = sys.argv[2]
+print(f"{d.get('name', name):<30} {str(d.get('version', '?')):<15} {d.get('installed_at', '?')}")
+PYEOF
+    else
+        printf "%-30s %-15s %s\n" "${name}" "?" "?"
+    fi
+}
+
+# Iterate installed AppImage directories (skips the shared XDG dir).
+_each_app() {
+    local d name
+    for d in "${APPIMAGE_DIR}"/*/; do
+        [[ -d "${d}" ]] || continue
+        name=$(basename "${d}")
+        [[ "${name}" == "share" ]] && continue
+        echo "${name}"
+    done
+}
+
+_has_apps() {
+    [[ -d "${APPIMAGE_DIR}" ]] && [[ -n "$(_each_app)" ]]
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+_cmd_install() {
+    local src="${1:-}"
+    [[ -n "${src}" ]] || _die "Especificá una URL o ruta: our-app -S <url|archivo> [nombre]"
+    local name="${2:-}"
+    [[ -n "${name}" ]] || name=$(_derive_name "${src}")
+    [[ -n "${name}" ]] || _die "No pude derivar un nombre. Pasalo explícito: our-app -S <url> <nombre>"
+
+    local app_dir="${APPIMAGE_DIR}/${name}"
+    local appimage="${app_dir}/${name}.AppImage"
+
+    if [[ -d "${app_dir}" ]]; then
+        _msg "'${name}' ya existe — reinstalando/actualizando."
+    fi
+    mkdir -p "${app_dir}"
+
+    _fetch_appimage "${src}" "${appimage}"
+    _integrate_desktop "${name}" "${app_dir}" "${appimage}"
+    _link_xdg "${name}" "${app_dir}"
+    _save_meta "${app_dir}" "${name}" "unknown" "${src}"
+    update_system_yaml_packages "add" "${name}"
+
+    _msg "=== '${name}' instalado en ${app_dir} ==="
+    _msg "Lanzá con: ${appimage}  (o desde el menú de aplicaciones)"
+}
+
+_cmd_remove() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "Especificá un AppImage: our-app -R <nombre>"
+    local app_dir="${APPIMAGE_DIR}/${name}"
+    [[ -d "${app_dir}" ]] || _die "'${name}' no está instalado."
+
+    _msg "=== Removiendo '${name}' ==="
+    rm -f "${APPS_DIR}/${name}.desktop"
+    find "${ICONS_DIR}" -maxdepth 1 -name "${name}.*" -delete 2>/dev/null || true
+    rm -rf "${app_dir}"
+    update_system_yaml_packages "remove" "${name}"
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "${APPS_DIR}" 2>/dev/null || true
+    fi
+    _msg "'${name}' removido correctamente."
+}
+
+_cmd_list() {
+    if ! _has_apps; then
+        _msg "No hay AppImages instalados."
+        return 0
+    fi
+    printf "%-30s %-15s %s\n" "Nombre" "Versión" "Instalado"
+    printf "%s\n" "$(printf '%0.s-' {1..70})"
+    local name
+    while IFS= read -r name; do
+        [[ -n "${name}" ]] || continue
+        _read_meta_line "${APPIMAGE_DIR}/${name}/.app.yaml" "${name}"
+    done < <(_each_app)
+}
+
+_cmd_list_search() {
+    local query="${1:-}"
+    [[ -n "${query}" ]] || _die "Especificá un término: our-app -Qs <query>"
+    local name found=0
+    while IFS= read -r name; do
+        [[ -n "${name}" ]] || continue
+        if [[ "${name}" == *"${query}"* ]]; then
+            _read_meta_line "${APPIMAGE_DIR}/${name}/.app.yaml" "${name}"
+            found=1
+        fi
+    done < <(_each_app)
+    [[ ${found} -eq 0 ]] && _msg "No se encontró '${query}' en AppImages instalados."
+    return 0
+}
+
+_cmd_info() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "Especificá un AppImage: our-app -Si <nombre>"
+    local app_dir="${APPIMAGE_DIR}/${name}"
+    [[ -d "${app_dir}" ]] || _die "'${name}' no está instalado."
+
+    echo "Nombre        : ${name}"
+    echo "AppImage      : ${app_dir}/${name}.AppImage"
+    echo "Desktop       : ${app_dir}/${name}.desktop"
+    local meta="${app_dir}/.app.yaml"
+    if [[ -f "${meta}" ]]; then
+        python3 - "${meta}" << 'PYEOF'
+import sys
+try:
+    import yaml
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception:
+    d = {}
+print(f"Versión       : {d.get('version', '?')}")
+print(f"Origen        : {d.get('source', '?')}")
+print(f"Instalado     : {d.get('installed_at', '?')}")
+PYEOF
+    fi
+}
+
+_cmd_upgrade() {
+    if ! _has_apps; then
+        _msg "No hay AppImages instalados."
+        return 0
+    fi
+    _msg "=== Actualizando AppImages ==="
+    local name meta source upgraded=0
+    while IFS= read -r name; do
+        [[ -n "${name}" ]] || continue
+        meta="${APPIMAGE_DIR}/${name}/.app.yaml"
+        if [[ ! -f "${meta}" ]]; then
+            _warn "${name}: sin metadata, omitido"
+            continue
+        fi
+        source=$(python3 -c "import yaml,sys; print((yaml.safe_load(open(sys.argv[1])) or {}).get('source',''))" "${meta}" 2>/dev/null || echo "")
+        if [[ "${source}" =~ ^https?:// ]]; then
+            _msg "${name}: re-descargando desde ${source}"
+            _cmd_install "${source}" "${name}"
+            upgraded=$((upgraded + 1))
+        else
+            _msg "${name}: origen local (${source:-?}) — no se puede re-descargar, omitido"
+        fi
+    done < <(_each_app)
+    _msg "=== ${upgraded} AppImage(s) actualizado(s) ==="
+}
+
+_cmd_help() {
+    cat << EOF
+
+${PROGRAM_NAME} — gestor de AppImage para ouroborOS
+
+USO:
+  our-app -S  <url|archivo> [nombre]   Instalar un AppImage
+  our-app -R  <nombre>                 Remover un AppImage instalado
+  our-app -Q                           Listar AppImages instalados
+  our-app -Qs <búsqueda>               Buscar en AppImages instalados
+  our-app -Si <nombre>                 Ver información de un AppImage
+  our-app -Su                          Actualizar todos (re-descarga por URL)
+  our-app --help                       Mostrar esta ayuda
+
+NOTA:
+  Los AppImage se instalan en /var/lib/ouroboros/appimages/<nombre>/ y se
+  integran al menú vía XDG_DATA_DIRS (ver /etc/profile.d/ouroboros-appimages.sh),
+  sin modificar /usr (que permanece inmutable). Como solo escriben en @var, NO
+  quedan capturados por los snapshots del root.
+
+EJEMPLOS:
+  sudo our-app -S https://example.com/Foo-x86_64.AppImage foo
+  sudo our-app -S ./Bar.AppImage
+  our-app -Q
+  sudo our-app -R foo
+
+EOF
+}
+
+# ── Entry point ─────────────────────────────────────────────────────────────────
+
+main() {
+    local flag="${1:-}"
+
+    case "${flag}" in
+        -S|-R|-Su)
+            _require_root "$@"
+            ;;
+    esac
+
+    shift || true
+
+    case "${flag}" in
+        -S)           _cmd_install "$@" ;;
+        -R)           _cmd_remove "$@" ;;
+        -Su)          _cmd_upgrade ;;
+        -Syu|-Suy|-Syuu)
+                      _die "-Syu no soportado en our-app. Para actualizar el sistema: sudo our-pac -Syu" ;;
+        -Q)           _cmd_list ;;
+        -Qs)          _cmd_list_search "$@" ;;
+        -Si)          _cmd_info "$@" ;;
+        -Qs*)         _cmd_list_search "${flag#-Qs}" ;;
+        -Si*)         _cmd_info "${flag#-Si}" ;;
+        --help|-h|"") _cmd_help; exit 0 ;;
+        *)
+            _err "Flag desconocido: '${flag}'"
+            _cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

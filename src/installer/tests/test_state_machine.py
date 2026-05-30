@@ -1068,7 +1068,7 @@ class TestSystemYaml:
         data = cfg.to_system_yaml()
         for key in ("version", "channel", "channel_url", "installed",
                     "system", "base_packages", "user_packages", "aur_packages",
-                    "users", "security", "disk"):
+                    "appimage_packages", "users", "security", "disk"):
             assert key in data, f"Missing key: {key}"
 
     def test_to_system_yaml_base_packages_sorted(self) -> None:
@@ -1082,6 +1082,7 @@ class TestSystemYaml:
         data = cfg.to_system_yaml()
         assert data["user_packages"] == []
         assert data["aur_packages"] == []
+        assert data["appimage_packages"] == []
 
     def test_to_system_yaml_users_list(self) -> None:
         cfg = self._make_config()
