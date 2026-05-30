@@ -6,6 +6,8 @@
 
 > **v0.4.12 released 2026-04-17.** Phase 4 complete. This document defines Phase 5.
 
+> **CLOSED at v0.5.8.** All in-scope Phase 5 milestones (5.1–5.16) shipped; 5.17 (GUI installer) and 5.18 (OTA image-based) were always Phase 6+. A short bridge — **v0.5.9/v0.5.10** — was added afterward as a *preface to Phase 6* (the `our-app` AppImage manager, `aur_packages` wiring, and QEMU E2E in CI). That bridge and the full Phase 6 scope are tracked in **[docs/PHASE_6_PLAN.md](./PHASE_6_PLAN.md)**.
+
 ---
 
 ## Arquitectura central

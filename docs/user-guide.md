@@ -240,7 +240,7 @@ The connection persists across reboots — `iwd` saves known networks to `/var/l
 
 ## 8. Install software
 
-ouroborOS has three package managers for different sources: **`our-pac`** (official repos via pacman), **`our-aur`** (AUR packages), and **`our-flat`** (Flatpak apps). Because the root filesystem is read-only, you must use these wrappers — never call `pacman` directly.
+ouroborOS has four package managers for different sources: **`our-pac`** (official repos via pacman), **`our-aur`** (AUR packages), **`our-flat`** (Flatpak apps), and **`our-app`** (AppImages). Because the root filesystem is read-only, you must use these wrappers — never call `pacman` directly.
 
 ### 8.1 Official packages — `our-pac`
 
@@ -309,6 +309,34 @@ sudo our-flat -R org.videolan.VLC
 ```
 
 Flatpak apps are installed system-wide in `/var/lib/flatpak/` and never touch the immutable root.
+
+### 8.4 AppImages — `our-app`
+
+`our-app` manages AppImages with the same pacman-style interface. An AppImage is a single self-contained executable, so — unlike AUR packages — it needs no `systemd-sysext` overlay. Everything lives in `/var/lib/ouroboros/appimages/` on the always-writable `@var` subvolume.
+
+```bash
+# Install from a URL (name derived from the filename if omitted)
+sudo our-app -S https://example.com/Foo-x86_64.AppImage foo
+
+# Install from a local file
+sudo our-app -S ./Bar.AppImage
+
+# List installed AppImages
+our-app -Q
+
+# Show info for one (version, source, install date)
+our-app -Si foo
+
+# Update all (re-downloads from each stored source URL)
+sudo our-app -Su
+
+# Remove an AppImage
+sudo our-app -R foo
+```
+
+On install, `our-app` extracts the bundled `.desktop` entry and icon (`--appimage-extract`, no FUSE required), rewrites `Exec=` to the stored path, and links both into `/var/lib/ouroboros/appimages/share/`. A login snippet (`/etc/profile.d/ouroboros-appimages.sh`) adds that directory to `XDG_DATA_DIRS`, so launchers discover the entry without writing to the immutable `/usr`. New entries appear after a re-login.
+
+> Because AppImages live only in `@var`, they are **not** captured by root snapshots — exactly like Flatpak apps. Rolling back `@` via `our-rollback` does **not** remove installed AppImages. Also, `-Su` can only update AppImages whose source was an `http(s)` URL; locally-installed files are skipped. See `docs/architecture/our-app.md` for the full design.
 
 ---
 
@@ -464,6 +492,11 @@ sudo our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 sudo our-flat -S <app-id>
 our-flat -Q
 
+# AppImages
+sudo our-app -S <url|path> [name]
+our-app -Q
+sudo our-app -R <name>
+
 # Boot entries
 bootctl status
 ls /boot/loader/entries/
@@ -492,4 +525,6 @@ sudo ouroboros-health
 | No ARM support | x86_64 only; ARM planned for Phase 6 |
 | AUR interactive PKGBUILDs | Packages with interactive prompts during build will fail |
 | Flatpak not pre-installed | Must install via `our-pac -S flatpak` first |
+| AppImage `-Su` needs a URL source | AppImages installed from a local file cannot be auto-updated (nothing to re-fetch) |
+| AppImage entries need re-login | `XDG_DATA_DIRS` is set at login; already-running sessions pick up new entries after re-login |
 | OTA image-based updates | casync-based OTA planned for Phase 6; current rebase is source-based |
