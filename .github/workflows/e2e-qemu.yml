@@ -33,7 +33,10 @@ env:
   SSH_USER: testuser
   SSH_PASS: testpass123
   SSH_PORT: "2223"
-  QCOW: /home/ouroboros-e2e.qcow2
+  # On disk (runner.temp lives under the runner _work tree), NOT tmpfs — a 40G
+  # sparse qcow must not land on /tmp. The runner user owns this path; /home
+  # itself is root-owned and not writable by the unprivileged runner user.
+  QCOW: ${{ runner.temp }}/ouroboros-e2e.qcow2
   OVMF: /usr/share/edk2/x64/OVMF_CODE.4m.fd
   SERIAL_INSTALL: /tmp/ouroboros-e2e-install.log
   SERIAL_BOOT: /tmp/ouroboros-e2e-boot.log
