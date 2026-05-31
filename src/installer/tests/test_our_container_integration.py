@@ -145,6 +145,94 @@ class TestCommandValidation:
         assert "unsupported" in result.stderr.lower() or "unsupported" in result.stdout.lower()
 
 
+class TestMultiEngine:
+
+    def test_help_lists_engine_subcommands(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "--help"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        assert "engine show" in result.stdout
+        assert "engine set" in result.stdout
+
+    def test_help_lists_repo_subcommands(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "--help"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        assert "repo add" in result.stdout
+        assert "repo list" in result.stdout
+        assert "repo remove" in result.stdout
+
+    def test_help_lists_image_query_subcommands(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "--help"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        assert "image available" in result.stdout
+        assert "image info" in result.stdout
+
+    def test_help_documents_engine_flag(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "--help"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        assert "--engine" in result.stdout
+
+    def test_engine_show_lists_all_engines(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "engine", "show"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0
+        out = result.stdout.lower()
+        assert "nspawn" in out
+        assert "podman" in out
+        assert "docker" in out
+
+    def test_engine_set_invalid_errors(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "engine", "set", "bogus"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+        assert "invalid engine" in result.stderr.lower() or "invalid engine" in result.stdout.lower()
+
+    def test_repo_add_invalid_name_errors(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "repo", "add", "bad name", "http://example.com"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+        assert "invalid repo name" in result.stderr.lower() or "invalid repo name" in result.stdout.lower()
+
+    def test_repo_add_invalid_url_errors(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "repo", "add", "good", "ftp://example.com", "index"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+
+    def test_repo_unknown_subcommand_errors(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "repo", "frobnicate"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+
+    def test_image_info_without_arg_errors(self, our_container_script: Path) -> None:
+        result = subprocess.run(
+            ["bash", str(our_container_script), "image", "info"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+        assert "usage" in result.stderr.lower() or "usage" in result.stdout.lower()
+
+
 class TestErrorHandling:
 
     @requires_sudo

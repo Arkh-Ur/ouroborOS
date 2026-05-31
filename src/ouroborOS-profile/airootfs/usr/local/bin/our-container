@@ -23,6 +23,9 @@ set -euo pipefail
 readonly MACHINES_ROOT="/var/lib/machines"
 readonly SNAPSHOTS_ROOT="/var/lib/machines/.snapshots"
 readonly IMAGES_ROOT="/var/lib/machines/.images"
+readonly REPOS_CONF="/etc/ouroboros/container-repos.conf"
+readonly CONTAINER_CONF="/etc/ouroboros/container.conf"
+readonly CONTAINERS_META_DIR="/etc/ouroboros/containers.d"
 readonly PROGRAM_NAME="our-container"
 
 # --- Logging ---
@@ -97,8 +100,155 @@ _nspawn_file() {
     echo "/etc/systemd/nspawn/${name}.nspawn"
 }
 
-# --- Command: create ---
+# --- Container repositories (hybrid: index repos + direct URLs) ---
+# Detect repo type from a URL/reference:
+#   oci    -> an OCI registry (docker://..., or a bare host like docker.io)
+#   direct -> a single image file (.tar.xz / .raw.xz / ...)
+#   index  -> an http(s) base exposing a list.txt (nspawn-hub style)
+_repo_url_type() {
+    local url="$1"
+    case "$url" in
+        docker://*) echo "oci" ;;
+        *.raw.xz|*.tar.xz|*.tar.gz|*.tar.zst|*.raw|*.tar) echo "direct" ;;
+        http://*|https://*) echo "index" ;;
+        *) echo "oci" ;;
+    esac
+}
+
+# Create the repository registry with the default nspawn index if it is absent.
+# Only call from a root context (it writes under /etc).
+_repos_conf_ensure() {
+    [[ -f "$REPOS_CONF" ]] && return 0
+    mkdir -p "$(dirname "$REPOS_CONF")"
+    {
+        echo "# our-container repositories"
+        echo "# Format: <name><TAB><type><TAB><url>"
+        echo "#   type=index   base URL exposing a list.txt (nspawn-hub style)"
+        echo "#   type=direct  URL points straight at one image (.tar.xz / .raw.xz)"
+        echo "#   type=oci     OCI registry for podman/docker (Docker Hub, quay, ghcr)"
+        printf 'nspawn\tindex\thttps://hub.nspawn.org/storage\n'
+        printf 'docker.io\toci\tdocker.io\n'
+    } > "$REPOS_CONF"
+    log_info "Created default repository registry: ${REPOS_CONF}"
+}
+
+# Emit a single repo record as TAB-separated "name<TAB>type<TAB>url".
+# Returns 0 if found, 1 otherwise.
+_repo_get() {
+    local name="$1"
+    [[ -f "$REPOS_CONF" ]] || return 1
+    awk -F'\t' -v n="$name" '
+        /^[[:space:]]*#/ {next}
+        NF>=3 && $1==n {print; found=1; exit}
+        END {exit !found}
+    ' "$REPOS_CONF"
+}
+
+# --- Container engines (backends: nspawn | podman | docker) ---
+# nspawn  : system containers, OS-centric, Btrfs snapshots, systemd boot.
+# podman  : daemonless OCI runtime, pulls straight from OCI registries (Docker Hub).
+# docker  : daemon-based OCI runtime.
+readonly VALID_ENGINES="nspawn podman docker"
+
+_engine_is_valid() {
+    local e="$1"
+    case " ${VALID_ENGINES} " in *" ${e} "*) return 0 ;; *) return 1 ;; esac
+}
+
+# Return 0 if the given engine is usable on this host.
+_engine_available() {
+    local e="$1"
+    case "$e" in
+        nspawn) command -v machinectl >/dev/null 2>&1 ;;
+        podman) command -v podman >/dev/null 2>&1 ;;
+        docker) command -v docker >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Read the global default engine from CONTAINER_CONF (falls back to nspawn).
+_engine_default() {
+    local e="nspawn"
+    if [[ -f "$CONTAINER_CONF" ]]; then
+        local v
+        v="$(awk -F= '/^[[:space:]]*ENGINE[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$CONTAINER_CONF" 2>/dev/null || true)"
+        [[ -n "$v" ]] && _engine_is_valid "$v" && e="$v"
+    fi
+    echo "$e"
+}
+
+_engine_meta_file() {
+    echo "${CONTAINERS_META_DIR}/${1}.conf"
+}
+
+# Persist a container's engine + distro to its metadata file (root context).
+_engine_set_meta() {
+    local name="$1" engine="$2" distro="${3:-}"
+    mkdir -p "$CONTAINERS_META_DIR"
+    {
+        echo "ENGINE=${engine}"
+        [[ -n "$distro" ]] && echo "DISTRO=${distro}"
+        echo "CREATED=$(date '+%Y-%m-%dT%H:%M:%S')"
+    } > "$(_engine_meta_file "$name")"
+}
+
+_engine_clear_meta() {
+    rm -f "$(_engine_meta_file "$1")" 2>/dev/null || true
+}
+
+# Resolve which engine owns an existing container. Reads its metadata; if absent
+# but the container exists under MACHINES_ROOT, assume nspawn (legacy); otherwise
+# fall back to the global default.
+_engine_for_container() {
+    local name="$1" meta
+    meta="$(_engine_meta_file "$name")"
+    if [[ -f "$meta" ]]; then
+        local v
+        v="$(awk -F= '/^[[:space:]]*ENGINE[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$meta" 2>/dev/null || true)"
+        if [[ -n "$v" ]] && _engine_is_valid "$v"; then echo "$v"; return 0; fi
+    fi
+    if [[ -e "${MACHINES_ROOT}/${name}" ]]; then echo "nspawn"; return 0; fi
+    _engine_default
+}
+
+# --- Command: create (router) ---
+# Resolves the target engine (--engine flag or global default) and dispatches to
+# the matching backend. Records the container's engine in its metadata on success.
 cmd_create() {
+    local orig=("$@")
+    local engine="" args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --engine)   engine="${2:-}"; shift 2 2>/dev/null || die "--engine requires a value" ;;
+            --engine=*) engine="${1#*=}"; shift ;;
+            *)          args+=("$1"); shift ;;
+        esac
+    done
+
+    [[ -n "$engine" ]] || engine="$(_engine_default)"
+    _engine_is_valid "$engine" || die "invalid engine '${engine}' (valid: ${VALID_ENGINES})"
+
+    local name="${args[0]:-}"
+    [[ -n "$name" ]] || die "usage: our-container create <name> [distro|image] [--engine ENGINE] [--isolated]"
+    [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] \
+        || die "invalid container name '${name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
+
+    require_root "create" "${orig[@]}"
+
+    _engine_available "$engine" \
+        || die "engine '${engine}' is not installed -- see: our-container engine show"
+
+    case "$engine" in
+        nspawn)        _nspawn_create "${args[@]}" ;;
+        podman|docker) _oci_create "$engine" "${args[@]}" ;;
+    esac
+
+    _engine_set_meta "$name" "$engine" "${args[1]:-}"
+    log_info "Container '${name}' registered with engine '${engine}'"
+}
+
+# --- Backend: nspawn create ---
+_nspawn_create() {
     local name="${1:-}"
     local distro="${2:-arch}"
     local opt_isolated=false
@@ -111,10 +261,6 @@ cmd_create() {
             *) die "unknown option: $1 (valid: --isolated)" ;;
         esac
     done
-
-    [[ -n "$name" ]] || die "usage: our-container create <name> [distro] [--isolated]"
-    [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || die "invalid container name '${name}' -- only alphanumeric, dots, hyphens, and underscores allowed"
-    require_root "create" "$name" "$distro"
 
     _require_container_not_running "$name" "create"
 
@@ -169,8 +315,19 @@ EOF
     log_info "Container '${name}' ready. Enter with: our-container enter ${name}"
 }
 
-# --- Command: enter ---
+# --- Command: enter (router) ---
 cmd_enter() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container enter <name> [--isolated] [--wayland] [--gpu] [--audio] [--gui]"
+    local engine; engine="$(_engine_for_container "$name")"
+    case "$engine" in
+        nspawn)        _nspawn_enter "$@" ;;
+        podman|docker) _oci_enter "$engine" "$@" ;;
+    esac
+}
+
+# --- Backend: nspawn enter ---
+_nspawn_enter() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: our-container enter <name> [--isolated] [--wayland] [--gpu] [--audio] [--gui]"
     shift
@@ -268,8 +425,19 @@ cmd_enter() {
     exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
 }
 
-# --- Command: start ---
+# --- Command: start (router) ---
 cmd_start() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container start <name>"
+    local engine; engine="$(_engine_for_container "$name")"
+    case "$engine" in
+        nspawn)        _nspawn_start "$@" ;;
+        podman|docker) _oci_start "$engine" "$@" ;;
+    esac
+}
+
+# --- Backend: nspawn start ---
+_nspawn_start() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: our-container start <name>"
     require_root "start" "$name"
@@ -311,8 +479,19 @@ cmd_start() {
     log_warn "Container '${name}' start command succeeded but state is '${state}' -- it may still be booting"
 }
 
-# --- Command: stop ---
+# --- Command: stop (router) ---
 cmd_stop() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container stop <name>"
+    local engine; engine="$(_engine_for_container "$name")"
+    case "$engine" in
+        nspawn)        _nspawn_stop "$@" ;;
+        podman|docker) _oci_stop "$engine" "$@" ;;
+    esac
+}
+
+# --- Backend: nspawn stop ---
+_nspawn_stop() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: our-container stop <name>"
     require_root "stop" "$name"
@@ -352,8 +531,20 @@ cmd_stop() {
     log_info "You may need to force-terminate: machinectl terminate ${name}"
 }
 
-# --- Command: list ---
+# --- Command: list (router) ---
+# Aggregates containers across every available engine.
 cmd_list() {
+    _nspawn_list
+    local e
+    for e in podman docker; do
+        if _engine_available "$e"; then
+            _oci_list "$e"
+        fi
+    done
+}
+
+# --- Backend: nspawn list ---
+_nspawn_list() {
     log_info "Listing all containers..."
 
     if [[ ! -d "$MACHINES_ROOT" ]]; then
@@ -395,8 +586,20 @@ cmd_list() {
     fi
 }
 
-# --- Command: remove ---
+# --- Command: remove (router) ---
 cmd_remove() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container remove <name>"
+    local engine; engine="$(_engine_for_container "$name")"
+    case "$engine" in
+        nspawn)        _nspawn_remove "$@" ;;
+        podman|docker) _oci_remove "$engine" "$@" ;;
+    esac
+    _engine_clear_meta "$name"
+}
+
+# --- Backend: nspawn remove ---
+_nspawn_remove() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: our-container remove <name>"
     require_root "remove" "$name"
@@ -461,6 +664,134 @@ cmd_remove() {
     fi
 
     log_info "Container '${name}' removed successfully"
+}
+
+# =============================================================================
+# OCI backends (podman / docker)
+# =============================================================================
+# OCI containers are app-centric: we keep them alive with `sleep infinity` so the
+# container can be entered and packages installed, mirroring the nspawn workflow.
+# Engine-managed storage means snapshot/storage subcommands do not apply here.
+
+_oci_exists() {
+    local eng="$1" name="$2"
+    "$eng" inspect "$name" >/dev/null 2>&1
+}
+
+_oci_create() {
+    local eng="$1"; shift
+    local name="${1:-}" image="${2:-}"
+    [[ -n "$image" ]] \
+        || die "engine '${eng}' needs an image (e.g. docker.io/library/ubuntu) -- usage: our-container create ${name:-NAME} IMAGE --engine ${eng}"
+    shift 2 2>/dev/null || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --isolated) log_warn "--isolated is nspawn-only -- ignored for ${eng}"; shift ;;
+            *) die "unknown option for ${eng} create: $1" ;;
+        esac
+    done
+
+    if _oci_exists "$eng" "$name"; then
+        die "container '${name}' already exists for engine '${eng}'"
+    fi
+
+    log_info "Pulling image '${image}' via ${eng}..."
+    "$eng" pull "$image" || die "failed to pull image '${image}' with ${eng}"
+
+    log_info "Creating ${eng} container '${name}' (keepalive: sleep infinity)..."
+    "$eng" create -it --name "$name" "$image" sleep infinity >/dev/null \
+        || die "failed to create ${eng} container '${name}'"
+    log_info "Container '${name}' created. Start it: our-container start ${name}"
+}
+
+_oci_enter() {
+    local eng="$1"; shift
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container enter <name>"
+    require_root "enter" "$name"
+    _oci_exists "$eng" "$name" || die "container '${name}' not found for engine '${eng}'"
+
+    local running
+    running="$("$eng" inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)"
+    if [[ "$running" != "true" ]]; then
+        log_info "Starting ${eng} container '${name}'..."
+        "$eng" start "$name" >/dev/null || die "failed to start '${name}' with ${eng}"
+    fi
+
+    if "$eng" exec "$name" sh -c 'command -v bash >/dev/null 2>&1' 2>/dev/null; then
+        exec "$eng" exec -it "$name" bash
+    fi
+    exec "$eng" exec -it "$name" sh
+}
+
+_oci_start() {
+    local eng="$1"; shift
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container start <name>"
+    require_root "start" "$name"
+    _oci_exists "$eng" "$name" || die "container '${name}' not found for engine '${eng}'"
+    log_info "Starting ${eng} container '${name}'..."
+    "$eng" start "$name" >/dev/null || die "failed to start '${name}' with ${eng}"
+    log_info "Container '${name}' is now running"
+}
+
+_oci_stop() {
+    local eng="$1"; shift
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container stop <name>"
+    require_root "stop" "$name"
+    _oci_exists "$eng" "$name" || die "container '${name}' not found for engine '${eng}'"
+    log_info "Stopping ${eng} container '${name}'..."
+    "$eng" stop "$name" >/dev/null || die "failed to stop '${name}' with ${eng}"
+    log_info "Container '${name}' stopped successfully"
+}
+
+_oci_remove() {
+    local eng="$1"; shift
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container remove <name>"
+    require_root "remove" "$name"
+    _oci_exists "$eng" "$name" || die "container '${name}' not found for engine '${eng}'"
+    log_info "Removing ${eng} container '${name}'..."
+    "$eng" rm -f "$name" >/dev/null || die "failed to remove '${name}' with ${eng}"
+    log_info "Container '${name}' removed successfully"
+}
+
+_oci_list() {
+    local eng="$1"
+    echo ""
+    echo "=== ${eng} containers ==="
+    local out
+    out="$("$eng" ps -a --format '  {{.Names}}  [{{.State}}]  ({{.Image}})' 2>/dev/null || true)"
+    if [[ -n "$out" ]]; then
+        echo "$out"
+    else
+        echo "  (no ${eng} containers)"
+    fi
+}
+
+_oci_logs() {
+    local eng="$1"; shift
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container logs <name> [--follow] [--lines N]"
+    require_root "logs" "$name"
+    shift
+    local follow=false lines=100
+    while (( $# > 0 )); do
+        case "$1" in
+            -f|--follow) follow=true; shift ;;
+            -n|--lines)
+                lines="${2:-100}"
+                [[ "$lines" =~ ^[0-9]+$ ]] || die "invalid --lines value '${lines}' -- must be a positive integer"
+                shift 2
+                ;;
+            *) die "unknown flag for logs: '${1}' -- valid flags: --follow, --lines N" ;;
+        esac
+    done
+    if $follow; then
+        exec "$eng" logs --tail "$lines" -f "$name"
+    fi
+    "$eng" logs --tail "$lines" "$name"
 }
 
 # =============================================================================
@@ -978,10 +1309,173 @@ cmd_disk_usage() {
 }
 
 # =============================================================================
+# Container repositories
+# =============================================================================
+
+cmd_repo_add() {
+    local name="${1:-}" url="${2:-}" rtype="${3:-}"
+    [[ -n "$name" && -n "$url" ]] || die "usage: our-container repo add NAME URL [index|direct|oci]"
+
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || die "invalid repo name '${name}' (use letters, digits, '.', '-', '_')"
+
+    if [[ -z "$rtype" ]]; then
+        rtype="$(_repo_url_type "$url")"
+        log_info "Auto-detected repo type: ${rtype}"
+    fi
+    case "$rtype" in
+        index|direct)
+            [[ "$url" =~ ^https?:// ]] \
+                || die "invalid url '${url}' for ${rtype} repo (must start with http:// or https://)"
+            ;;
+        oci)
+            [[ "$url" =~ ^(docker://)?[A-Za-z0-9.-]+(/[A-Za-z0-9._/-]*)?$ ]] \
+                || die "invalid registry '${url}' for oci repo (e.g. docker.io, quay.io, ghcr.io/org)"
+            ;;
+        *) die "invalid repo type '${rtype}' (must be 'index', 'direct' or 'oci')" ;;
+    esac
+
+    require_root "repo" "add" "$name" "$url" "$rtype"
+    _repos_conf_ensure
+
+    if _repo_get "$name" >/dev/null; then
+        die "repo '${name}' already exists -- remove it first: our-container repo remove ${name}"
+    fi
+
+    printf '%s\t%s\t%s\n' "$name" "$rtype" "$url" >> "$REPOS_CONF"
+    log_info "Added ${rtype} repo '${name}' -> ${url}"
+}
+
+cmd_repo_list() {
+    if [[ ! -f "$REPOS_CONF" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            _repos_conf_ensure
+        else
+            echo ""
+            echo "  (no repository registry yet -- add one with: our-container repo add NAME URL)"
+            echo ""
+            return 0
+        fi
+    fi
+
+    echo ""
+    echo "=== Container repositories ==="
+    printf "  %-15s  %-8s  %s\n" "NAME" "TYPE" "URL"
+    echo "  -------------------------------------------------------------"
+    local count=0 name rtype url
+    while IFS=$'\t' read -r name rtype url; do
+        [[ -z "$name" || "$name" == \#* ]] && continue
+        printf "  %-15s  %-8s  %s\n" "$name" "$rtype" "$url"
+        (( count++ )) || true
+    done < "$REPOS_CONF"
+
+    if (( count == 0 )); then
+        echo "  (no repositories -- add one with: our-container repo add NAME URL)"
+    else
+        echo ""
+        echo "Total: ${count} repo(s)"
+    fi
+    echo ""
+}
+
+cmd_repo_remove() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container repo remove NAME"
+    require_root "repo" "remove" "$name"
+    [[ -f "$REPOS_CONF" ]] || die "no repository registry found at ${REPOS_CONF}"
+
+    if ! _repo_get "$name" >/dev/null; then
+        die "repo '${name}' not found -- list them with: our-container repo list"
+    fi
+
+    local tmp
+    tmp="$(mktemp "${REPOS_CONF}.XXXXXX")"
+    awk -F'\t' -v n="$name" '
+        /^[[:space:]]*#/ {print; next}
+        NF>=3 && $1==n {next}
+        {print}
+    ' "$REPOS_CONF" > "$tmp"
+    mv "$tmp" "$REPOS_CONF"
+    log_info "Removed repo '${name}'"
+}
+
+# =============================================================================
+# Container engines
+# =============================================================================
+
+cmd_engine_show() {
+    local def avail
+    def="$(_engine_default)"
+    echo ""
+    echo "=== Container engines ==="
+    printf "  %-10s  %-12s  %s\n" "ENGINE" "AVAILABLE" "DEFAULT"
+    echo "  -------------------------------------------"
+    local e
+    for e in $VALID_ENGINES; do
+        if _engine_available "$e"; then avail="yes"; else avail="no"; fi
+        local mark=""
+        [[ "$e" == "$def" ]] && mark="*"
+        printf "  %-10s  %-12s  %s\n" "$e" "$avail" "$mark"
+    done
+    echo ""
+    echo "Default engine: ${def}"
+    echo "Change it with: our-container engine set ENGINE"
+    echo ""
+}
+
+cmd_engine_list() { cmd_engine_show; }
+
+cmd_engine_set() {
+    local engine="${1:-}"
+    [[ -n "$engine" ]] || die "usage: our-container engine set {nspawn|podman|docker}"
+    _engine_is_valid "$engine" \
+        || die "invalid engine '${engine}' (valid: ${VALID_ENGINES})"
+    require_root "engine" "set" "$engine"
+
+    if ! _engine_available "$engine"; then
+        log_warn "engine '${engine}' is not installed on this host yet"
+        case "$engine" in
+            podman) log_info "install it with: sudo our-pac -S podman" ;;
+            docker) log_info "install it with: sudo our-pac -S docker" ;;
+        esac
+        log_warn "setting it as default anyway -- install it before creating containers"
+    fi
+
+    mkdir -p "$(dirname "$CONTAINER_CONF")"
+    local tmp
+    tmp="$(mktemp "${CONTAINER_CONF}.XXXXXX")"
+    if [[ -f "$CONTAINER_CONF" ]]; then
+        grep -v '^[[:space:]]*ENGINE[[:space:]]*=' "$CONTAINER_CONF" > "$tmp" 2>/dev/null || true
+    fi
+    echo "ENGINE=${engine}" >> "$tmp"
+    mv "$tmp" "$CONTAINER_CONF"
+    log_info "Default container engine set to '${engine}'"
+}
+
+# =============================================================================
 # Image management
 # =============================================================================
 
+# --- Command: image pull (router) ---
+# For nspawn: bootstrap/cache a base image. For podman/docker: pull an OCI image
+# into the engine's store so later `create` is offline-fast.
 cmd_image_pull() {
+    local ref="${1:-}"
+    [[ -n "$ref" ]] || die "usage: our-container image pull DISTRO|IMAGE"
+    local eng; eng="$(_engine_default)"
+    case "$eng" in
+        nspawn) _nspawn_image_pull "$@" ;;
+        podman|docker)
+            require_root "image" "pull" "$ref"
+            _engine_available "$eng" || die "engine '${eng}' is not installed -- see: our-container engine show"
+            log_info "Pulling '${ref}' into ${eng} image store..."
+            "$eng" pull "$ref" || die "failed to pull '${ref}' with ${eng}"
+            log_info "Image '${ref}' cached in ${eng} store"
+            ;;
+    esac
+}
+
+_nspawn_image_pull() {
     local distro="${1:-}"
     [[ -n "$distro" ]] || die "usage: our-container image pull DISTRO"
     require_root "image" "pull" "$distro"
@@ -1133,6 +1627,127 @@ cmd_image_remove() {
     fi
 
     log_info "Base image '${distro}' removed successfully"
+}
+
+# --- Command: image available ---
+# List images installable from configured repositories.
+#   index  -> fetch and (optionally) filter the repo's list.txt
+#   direct -> print the single image URL
+#   oci    -> search the registry via podman/docker (needs a TERM)
+cmd_image_available() {
+    local term="${1:-}"
+    if [[ ! -f "$REPOS_CONF" ]]; then
+        echo ""
+        echo "  (no repositories configured -- add one: our-container repo add NAME URL)"
+        echo ""
+        return 0
+    fi
+
+    echo ""
+    echo "=== Available images by repository ==="
+    local name rtype url
+    while IFS=$'\t' read -r name rtype url; do
+        [[ -z "$name" || "$name" == \#* ]] && continue
+        echo ""
+        echo "--- [${rtype}] ${name} (${url}) ---"
+        case "$rtype" in
+            index)
+                local list_url="${url%/}/list.txt" body
+                if ! command -v curl >/dev/null 2>&1; then
+                    echo "  (curl not available -- cannot fetch ${list_url})"
+                    continue
+                fi
+                body="$(curl -fsSL --max-time 15 "$list_url" 2>/dev/null || true)"
+                if [[ -z "$body" ]]; then
+                    echo "  (could not fetch ${list_url})"
+                elif [[ -n "$term" ]]; then
+                    echo "$body" | grep -i -- "$term" | head -40 \
+                        || echo "  (no matches for '${term}')"
+                else
+                    echo "$body" | head -40
+                    echo "  ... (filter with: our-container image available TERM)"
+                fi
+                ;;
+            direct)
+                echo "  pull with: our-container image pull ${url}"
+                ;;
+            oci)
+                local eng="" e
+                for e in "$(_engine_default)" podman docker; do
+                    if [[ "$e" == podman || "$e" == docker ]] && _engine_available "$e"; then
+                        eng="$e"; break
+                    fi
+                done
+                if [[ -z "$eng" ]]; then
+                    echo "  (install podman/docker to search this registry)"
+                elif [[ -n "$term" ]]; then
+                    "$eng" search "$term" 2>/dev/null | head -25 || echo "  (search failed)"
+                else
+                    echo "  searchable -- run: our-container image available TERM"
+                fi
+                ;;
+            *)
+                echo "  (unknown repo type '${rtype}')"
+                ;;
+        esac
+    done < "$REPOS_CONF"
+    echo ""
+}
+
+# --- Command: image info ---
+# Show details/README for an image: local nspawn base image marker, engine
+# inspect for a pulled OCI image, and the Docker Hub README when applicable.
+cmd_image_info() {
+    local ref="${1:-}"
+    [[ -n "$ref" ]] || die "usage: our-container image info IMAGE"
+
+    if [[ -d "${IMAGES_ROOT}/${ref}" && -f "${IMAGES_ROOT}/${ref}/.our-container-image" ]]; then
+        echo ""
+        echo "=== nspawn base image: ${ref} ==="
+        grep -v '^#' "${IMAGES_ROOT}/${ref}/.our-container-image" 2>/dev/null || true
+        echo ""
+        return 0
+    fi
+
+    echo ""
+    echo "=== image info: ${ref} ==="
+
+    local eng=""
+    _engine_available podman && eng="podman"
+    [[ -z "$eng" ]] && _engine_available docker && eng="docker"
+    if [[ -n "$eng" ]] && "$eng" image inspect "$ref" >/dev/null 2>&1; then
+        echo "--- ${eng} (local) ---"
+        "$eng" image inspect -f 'Id:      {{.Id}}
+Created: {{.Created}}' "$ref" 2>/dev/null || true
+        echo ""
+    fi
+
+    local hubref="${ref#docker://}"
+    hubref="${hubref#docker.io/}"
+    local ns repo
+    case "$hubref" in
+        */*) ns="${hubref%%/*}"; repo="${hubref#*/}" ;;
+        *)   ns="library"; repo="$hubref" ;;
+    esac
+    repo="${repo%%:*}"
+
+    if command -v curl >/dev/null 2>&1; then
+        local api="https://hub.docker.com/v2/repositories/${ns}/${repo}/" json
+        json="$(curl -fsSL --max-time 15 "$api" 2>/dev/null || true)"
+        if [[ -n "$json" ]]; then
+            echo "--- Docker Hub: ${ns}/${repo} ---"
+            if command -v python3 >/dev/null 2>&1; then
+                printf '%s' "$json" | python3 -c 'import sys,json
+d=json.load(sys.stdin)
+print(d.get("description") or "")
+print()
+print((d.get("full_description") or "")[:2000])' 2>/dev/null || echo "  (could not parse Docker Hub response)"
+            else
+                echo "  (install python3 to render the README)"
+            fi
+        fi
+    fi
+    echo ""
 }
 
 # =============================================================================
@@ -1504,9 +2119,20 @@ cmd_stats() {
     fi
 }
 
-# --- Command: logs ---
-# Shows journal logs for a container via journalctl --machine.
+# --- Command: logs (router) ---
 cmd_logs() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: our-container logs <name> [--follow] [--lines N]"
+    local engine; engine="$(_engine_for_container "$name")"
+    case "$engine" in
+        nspawn)        _nspawn_logs "$@" ;;
+        podman|docker) _oci_logs "$engine" "$@" ;;
+    esac
+}
+
+# --- Backend: nspawn logs ---
+# Shows journal logs for a container via journalctl --machine.
+_nspawn_logs() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: our-container logs <name> [--follow] [--lines N]"
     require_root "logs" "$name"
@@ -1730,12 +2356,19 @@ usage() {
 our-container - systemd-nspawn container wrapper for ouroborOS
 
 USAGE
-    our-container create <name> [distro]          Bootstrap a new container (default: arch)
+    our-container create <name> [distro|image] [--engine E]   Create a container (default engine: nspawn)
     our-container enter <name>                    Open a shell in the container
-    our-container start <name>                    Boot the container as a machine
-    our-container stop <name>                     Stop a running machine
-    our-container list                            List all containers
-    our-container remove <name>                   Delete a container and its subvolume
+    our-container start <name>                    Boot/start the container
+    our-container stop <name>                     Stop a running container
+    our-container list                            List containers across all engines
+    our-container remove <name>                   Delete a container
+
+    our-container engine show                     Show engines and the active default
+    our-container engine set <engine>             Set default engine (nspawn|podman|docker)
+
+    our-container repo add <name> <url> [type]    Add a container repository (index|direct|oci)
+    our-container repo list                       List configured repositories
+    our-container repo remove <name>              Remove a repository
 
     our-container snapshot create <ctr> <name>    Create a read-only Btrfs snapshot
     our-container snapshot list <ctr>             List snapshots for a container
@@ -1753,13 +2386,33 @@ USAGE
     our-container logs <name> [-f] [-n N]         Show container journal logs
     our-container check                           Verify filesystem and config integrity
 
-    our-container image pull <distro>             Pre-bootstrap a base image
-    our-container image list                      List available base images
+    our-container image pull <distro|image>       Bootstrap (nspawn) or pull (oci) an image
+    our-container image list                      List cached base images
+    our-container image available [term]          List installable images from repositories
+    our-container image info <image>              Show details/README for an image
     our-container image remove <distro>           Remove a cached base image
 
+ENGINES
+    nspawn   System containers (default). OS-centric, boots with systemd,
+             Btrfs snapshots, storage under /var/lib/machines.
+    podman   Daemonless OCI runtime. Pulls straight from OCI registries
+             (Docker Hub, quay, ghcr). App-centric; kept alive for entry.
+    docker   Daemon-based OCI runtime. Same workflow as podman.
+
+    The default engine lives in /etc/ouroboros/container.conf; each container
+    records its engine in /etc/ouroboros/containers.d/<name>.conf. snapshot and
+    storage subcommands apply to nspawn containers only.
+
+REPOSITORIES
+    index   Base URL exposing a list.txt (nspawn hub style).
+    direct  URL pointing straight at one image (.tar.xz / .raw.xz).
+    oci     An OCI registry searched via podman/docker (Docker Hub, quay, ghcr).
+    Registry lives at /etc/ouroboros/container-repos.conf.
+
 CONTAINERS
-    Live under /var/lib/machines/ and use Btrfs subvolumes when available,
-    so each one can be snapshotted independently of the host.
+    nspawn containers live under /var/lib/machines/ and use Btrfs subvolumes
+    when available, so each can be snapshotted independently of the host.
+    OCI containers are managed by their engine's own storage.
 
 SNAPSHOTS
     Stored under /var/lib/machines/.snapshots/<container>/<snapshot-name>.
@@ -1799,7 +2452,12 @@ SUPPORTED DISTROS (for create and image pull)
     ubuntu    Ubuntu (uses debootstrap)
 
 EXAMPLES
-    our-container create mydev arch              Create an Arch container
+    our-container create mydev arch              Create an Arch (nspawn) container
+    our-container create ub docker.io/library/ubuntu --engine podman   OCI container from Docker Hub
+    our-container engine set podman              Make podman the default engine
+    our-container image available alpine         Search repositories for 'alpine'
+    our-container image info ubuntu              Show the Docker Hub README for ubuntu
+    our-container repo add ghcr ghcr.io oci      Register the GitHub container registry
     our-container snapshot create mydev v1.0     Snapshot it
     our-container snapshot list mydev            List snapshots
     our-container snapshot restore mydev v1.0    Restore to v1.0
@@ -1862,14 +2520,41 @@ case "${1:-}" in
     stats)       shift; cmd_stats "$@" ;;
     logs)        shift; cmd_logs "$@" ;;
     check)       cmd_check ;;
+    engine)
+        shift
+        case "${1:-}" in
+            set)         shift; cmd_engine_set "$@" ;;
+            list|ls)     cmd_engine_list ;;
+            show|""|-h|--help|help) cmd_engine_show ;;
+            *)
+                die "unknown engine command: '${1}' -- run 'our-container help' for usage"
+                ;;
+        esac
+        ;;
+    repo)
+        shift
+        case "${1:-}" in
+            add)       shift; cmd_repo_add "$@" ;;
+            list|ls)   cmd_repo_list ;;
+            remove|rm) shift; cmd_repo_remove "$@" ;;
+            ""|-h|--help|help)
+                echo "Usage: our-container repo {add|list|remove} [args...]"
+                ;;
+            *)
+                die "unknown repo command: '${1}' -- run 'our-container help' for usage"
+                ;;
+        esac
+        ;;
     image)
         shift
         case "${1:-}" in
-            pull)   shift; cmd_image_pull "$@" ;;
-            list|ls) cmd_image_list ;;
+            pull)      shift; cmd_image_pull "$@" ;;
+            list|ls)   cmd_image_list ;;
+            available) shift; cmd_image_available "$@" ;;
+            info)      shift; cmd_image_info "$@" ;;
             remove|rm) shift; cmd_image_remove "$@" ;;
             ""|-h|--help|help)
-                echo "Usage: our-container image {pull|list|remove} [args...]"
+                echo "Usage: our-container image {pull|list|available|info|remove} [args...]"
                 ;;
             *)
                 die "unknown image command: '${1}' -- run 'our-container help' for usage"

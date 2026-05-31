@@ -1,6 +1,8 @@
 # our-container — Architecture
 
-`our-container` is a single-file Bash wrapper around `systemd-nspawn` and `machinectl` that provides Btrfs-aware container management on ouroborOS. It is the primary tool for running development environments, services, and multi-distro workloads inside the host system.
+`our-container` is a single-file Bash wrapper that provides Btrfs-aware container management on ouroborOS. It is the primary tool for running development environments, services, and multi-distro workloads inside the host system.
+
+Since **v0.5.11** it is multi-engine: `nspawn` (the default, `systemd-nspawn` + `machinectl`) for system containers, plus `podman` and `docker` for app-centric OCI containers (Docker Hub and other registries). Sections 1–8 below describe the `nspawn` backend, which is unchanged. Section 9 documents the engine abstraction layered on top.
 
 ---
 
@@ -112,7 +114,7 @@ src/ouroborOS-profile/airootfs/usr/local/bin/our-container   # Source (ships in 
 /usr/local/bin/our-container                                   # Installed on target
 ```
 
-1786 lines of Bash. Single file, no external dependencies beyond systemd and Btrfs tools.
+~2570 lines of Bash. Single file, no external dependencies beyond systemd, Btrfs tools, and (for OCI engines) `podman`/`docker`. The line ranges in the structure map below describe the original nspawn-only layout; the v0.5.11 engine routers and OCI backend (section 9) are layered in around the lifecycle commands.
 
 ### Internal Structure
 
@@ -404,7 +406,7 @@ Every destructive operation checks container state first:
 
 ```
   src/ouroborOS-profile/airootfs/
-  └── usr/local/bin/our-container          ← Full 1786-line script
+  └── usr/local/bin/our-container          ← Full ~2570-line script
          │
          │  archiso build (mkarchiso)
          ▼
@@ -547,12 +549,78 @@ All communication happens via **SSH** (`sshpass` + `ssh`) into the QEMU VM. Seri
 | **arch-install-scripts optional** | Arch containers unavailable if not installed | `sudo our-pac -S arch-install-scripts` |
 | **No container networking isolation** | Containers share host network by default | Configure via `.nspawn` files manually |
 | **No resource limits** | No CPU/memory/disk limits on containers | Not implemented; could use systemd resource controls |
-| **No container registry** | Images are local-only, no push/pull from remote | Manual file transfer or rebuild |
+| **nspawn images are local-only** | No push/pull from remote for the nspawn engine | Use the `podman`/`docker` engines for OCI registries (Docker Hub, quay.io, ghcr.io) |
+| **Windows / non-Linux images unsupported** | Containers share the host Linux kernel | Out of scope — use a VM for Windows |
 | **No automatic image updates** | Base images are static after `image pull` | Remove and re-pull to update |
 | **Single-host only** | No cluster or multi-node support | By design — use for local development |
 | **Root required** | All operations need root (auto-escalated via sudo) | Necessary for container management |
 | **No container autostart** | Containers don't start on boot | Create systemd unit manually |
 | **E2E tests require KVM** | Cannot run in CI containers | Run locally with QEMU |
+
+---
+
+## 9. Multi-Engine Architecture (v0.5.11+)
+
+### Motivation
+
+`nspawn` containers are OS-centric: a full booted Arch (or Debian/Ubuntu) userland on a Btrfs subvolume, snapshot-able, managed by `systemd-machined`. They cannot consume OCI images from Docker Hub — those are layered image manifests, not nspawn rootfs tarballs. To pull and run app-centric images (`docker.io/library/ubuntu`, `quay.io/...`, `ghcr.io/...`) without bolting an OCI-to-rootfs converter onto the nspawn path, `our-container` gained a thin engine abstraction that delegates to `podman` or `docker` for OCI work while keeping `nspawn` as the default for system containers.
+
+### Engine Model
+
+| Engine | Kind | Storage | Snapshots | Boots systemd | Source of images |
+|--------|------|---------|-----------|---------------|------------------|
+| `nspawn` (default) | System container | `/var/lib/machines` (Btrfs subvol) | Yes (Btrfs `-r`) | Yes | nspawn index / direct tarballs |
+| `podman` | OCI, daemonless | podman's own graph storage | No (engine-managed) | No (keepalive `sleep infinity`) | OCI registries |
+| `docker` | OCI, daemon | docker's own graph storage | No (engine-managed) | No (keepalive `sleep infinity`) | OCI registries |
+
+### Configuration & Routing
+
+```
+/etc/ouroboros/container.conf              # ENGINE=<default>   (global default; fallback nspawn)
+/etc/ouroboros/containers.d/<name>.conf    # per-container engine + distro metadata
+/etc/ouroboros/container-repos.conf        # repository registry (TAB-separated: name url type)
+```
+
+Every lifecycle subcommand became a **router**:
+
+```
+  our-container <verb> <name> ...
+         │
+         ▼
+  ┌──────────────────────┐
+  │  resolve engine       │   create:  --engine flag  →  global default
+  │                       │   others:  containers.d/<name>.conf
+  │                       │            └ if absent but under /var/lib/machines → nspawn
+  └──────────┬───────────┘            └ else → global default
+             │
+     ┌───────┴────────┐
+     ▼                ▼
+  _nspawn_<verb>   _oci_<verb> <engine>
+  (sections 1-8)   (podman/docker delegation)
+```
+
+- `create` records the chosen engine in `containers.d/<name>.conf`; `remove` clears it.
+- `list` aggregates: it runs `_nspawn_list` then `_oci_list` for each available OCI engine, so a single command shows containers across all engines.
+- The OCI backend keeps a created-but-idle container alive with `create -it --name <name> <image> sleep infinity`, so `enter` can `exec` a shell (`bash`, falling back to `sh`) and the user installs packages with the image's own package manager.
+
+### Repository Types
+
+| Type | URL shape | `image available` | `image pull` |
+|------|-----------|-------------------|--------------|
+| `index` | `http(s)://…` base with `list.txt` | `curl` the list (grep filter) | nspawn image pull |
+| `direct` | `…/*.tar.xz`, `…/*.raw.xz` | show the pull URL | nspawn image pull |
+| `oci` | `docker://…`, registry host | `<engine> search <term>` | `<engine> pull <ref>` |
+
+The type is autodetected from the URL (`repo add` accepts an explicit type override). `image info` shows the engine's local `image inspect` for OCI refs, or fetches the Docker Hub README via `https://hub.docker.com/v2/repositories/<ns>/<repo>/` (`ns=library` for official images).
+
+### Scope Boundaries
+
+- **Windows ISOs (microsoft.com, bobpony.com) are out of scope.** A container shares the host's Linux kernel; Windows requires a virtual machine, not a container. This is a hard architectural boundary, not a missing feature.
+- **OCI containers are not Btrfs-snapshotted by `our-container`.** Only `nspawn` containers live on `@var`-backed subvolumes and integrate with the snapshot/restore machinery (sections 4–5). OCI containers are managed by their engine's own storage; use the engine's native tooling for OCI image/layer management.
+
+### Tests
+
+`TestMultiEngine` in `test_our_container_integration.py` covers the engine/repo/image surface without root: help advertises the `engine`/`repo`/`image available|info` subcommands and the `--engine` flag; `engine show` lists all three engines; and invalid `engine set`, malformed `repo add` (bad name/URL), unknown `repo` subcommand, and arg-less `image info` all fail with clear errors.
 
 ---
 
