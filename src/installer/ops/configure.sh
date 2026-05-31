@@ -943,6 +943,7 @@ STUB
         our-fido2
         our-flat
         our-aur
+        our-app
         ouroboros-secureboot
         ouroboros-rebase
         ouroboros-verify-update
@@ -960,6 +961,20 @@ STUB
         fi
     done
     unset _p3_tools _tool _src
+
+    # our-app XDG integration snippet — prepends the @var AppImage share dir to
+    # XDG_DATA_DIRS so installed .desktop files / icons are visible without
+    # touching read-only /usr. Lives in /etc (writable) and must be copied
+    # explicitly, like the our-* binaries above.
+    local _appimg_xdg_src="/etc/profile.d/ouroboros-appimages.sh"
+    if [[ -f "${_appimg_xdg_src}" ]]; then
+        mkdir -p "${TARGET}/etc/profile.d"
+        cp "${_appimg_xdg_src}" "${TARGET}/etc/profile.d/ouroboros-appimages.sh"
+        chmod 0644 "${TARGET}/etc/profile.d/ouroboros-appimages.sh"
+        log_ok "our-app XDG integration snippet installed."
+    else
+        log_warn "ouroboros-appimages.sh not found on live ISO — our-app .desktop entries won't appear in menus."
+    fi
 
     # Phase 3 Bluetooth/FIDO2 config files — copy from live ISO.
     # /etc/bluetooth/main.conf: BLE LE tuning (MTU, AdvMon scan duration).

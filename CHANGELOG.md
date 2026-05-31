@@ -23,6 +23,21 @@ Segunda mitad del puente hacia Phase 6: infraestructura de testing E2E. Ver
   no fatales). Codifica las constraints QEMU aprendidas (`setsid`, `fuser -k`,
   `-device e1000`, `-vga std -display none`, OVMF `OVMF_CODE.4m.fd`, `nohup`+poll).
 
+### Fixed
+
+- **`our-container create` abortaba en silencio (exit 1, sin salida)** — `_container_state`
+  hacía `return 1` para el estado "unknown"; bajo `set -euo pipefail`, la asignación
+  `state="$(_container_state ...)"` propagaba ese código y mataba el script ANTES del
+  `if`. Crear un contenedor nuevo (estado legítimamente "unknown") siempre fallaba.
+  Ahora `_container_state` devuelve 0 (los callers ya inspeccionan el valor `$state`).
+- **`our-container remove` fallaba con "Directory not empty"** — todo contenedor anida
+  subvolúmenes Btrfs creados por systemd-tmpfiles (`var/lib/portables`, `var/lib/machines`),
+  así que `btrfs subvolume delete` sin recursión fallaba. Se agrega `--recursive` en los
+  tres borrados de subvolumen-contenedor completo (remove, restore, image).
+- **`our-app` no se instalaba en el sistema (regresión v0.5.9)** — `configure.sh` nunca
+  copiaba el binario `our-app` ni el snippet `ouroboros-appimages.sh` al target. Ambos
+  ahora se copian durante CONFIGURE.
+
 ### Docs
 
 - Patrón E2E de los ciclos `our-app` y `our-container` documentado en
