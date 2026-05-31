@@ -192,7 +192,6 @@ jobs:
           echo "All ISO sizes OK."
 
       - name: Sign ISO (GPG)
-        if: ${{ secrets.GPG_KEY_ID != '' }}
         env:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}

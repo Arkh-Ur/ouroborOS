@@ -194,6 +194,7 @@ class InstallerConfig:
             "base_packages": sorted(self.installed_packages),
             "user_packages": [],
             "aur_packages": [],
+            "appimage_packages": [],
             "users": [
                 {
                     "username": u.username,

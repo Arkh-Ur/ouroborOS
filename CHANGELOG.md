@@ -5,6 +5,46 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-05-30
+
+Puente hacia Phase 6: features autocontenidas + saneamiento del CI. Ver
+[docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md).
+
+### Added
+
+- **`our-app` — gestor de AppImage** — cuarto gestor de la familia `our-*`, con
+  interfaz pacman-style (`-S`, `-R`, `-Q`, `-Qs`, `-Si`, `-Su`; `-Syu` rechazado).
+  Un AppImage es autocontenido, así que **no** usa `systemd-sysext` (a diferencia de
+  `our-aur`): todo vive en `/var/lib/ouroboros/appimages/` sobre `@var`. La integración
+  de escritorio no toca `/usr` — `--appimage-extract` saca `.desktop` + icono, se
+  reescribe `Exec=`, se symlinkea bajo `share/`, y `/etc/profile.d/ouroboros-appimages.sh`
+  antepone ese dir a `XDG_DATA_DIRS`. Registro declarativo vía la clave nueva
+  `appimage_packages` en `system.yaml`. Diseño: [docs/architecture/our-app.md](docs/architecture/our-app.md).
+- **Wiring de `aur_packages`** — `our-aur` ahora actualiza `system.yaml:aur_packages`
+  tras `-S` (add) y `-R` (remove), igual que `our-pac` con `user_packages` (escritura
+  atómica `tmp` + `os.replace`). Antes era un stub que nunca se escribía.
+
+### Fixed
+
+- **CI `build.yml` no instanciaba** — el step "Sign ISO (GPG)" usaba el contexto
+  `secrets` dentro de un `if:`, que GitHub rechaza en tiempo de parseo: el workflow
+  entero fallaba sin crear jobs ni logs ("workflow file issue"), bloqueando todo build
+  de validación y todo release. El `run` ya chequea el secret vacío internamente, así
+  que se eliminó el `if:` redundante.
+- **CI test de build dry-run colgaba en el runner** — `test-build-dry-run.sh` invocaba
+  `build-iso.sh` con `sudo env PATH=... bash`, que no matchea el allowlist NOPASSWD del
+  runner (tiene `bash`, no `env`) y pedía contraseña en CI no-interactivo. Reemplazado por
+  un helper `sudo bash -c` que re-exporta `PATH` adentro.
+- **CI lint marcaba `profile.d/*.sh`** — el sweep de shellcheck de `lint.yml` no excluía
+  los snippets sourced de login, que (correctamente) no llevan shebang ni `set -euo pipefail`.
+  Agregada la exclusión, igual que ya hacía `tests/scripts/test-shellcheck.sh`.
+
+### Docs
+
+- `docs/architecture/our-app.md` (nuevo) — diseño completo de `our-app`.
+- `docs/PHASE_6_PLAN.md` (nuevo) — cierre de Phase 5 en v0.5.8 y staging del puente v0.5.9/v0.5.10.
+- `docs/user-guide.md` — sección 8.4 (`our-app`) y referencia de comandos actualizada a "cuatro gestores".
+
 ## [0.5.7] - 2026-05-11
 
 ### Added

@@ -34,8 +34,11 @@ log_section "Discovering shell scripts"
 
 mapfile -t SCRIPTS < <(
     {
-        # Production shell scripts (src/ only — avoids build-tmp/ artefacts)
-        find "$WORKSPACE/src" -name "*.sh" -type f 2>/dev/null || true
+        # Production shell scripts (src/ only — avoids build-tmp/ artefacts).
+        # profile.d/*.sh are sourced login snippets, not standalone programs:
+        # they must NOT carry `set -euo pipefail` (it would leak into the login
+        # shell), so they are excluded from the guard/shellcheck sweep.
+        find "$WORKSPACE/src" -name "*.sh" -type f -not -path "*/profile.d/*" 2>/dev/null || true
 
         # E2E test scripts
         find "$WORKSPACE/tests/scripts" -maxdepth 1 -name "*.sh" -type f \
@@ -44,7 +47,7 @@ mapfile -t SCRIPTS < <(
         # Phase 3/4 user-facing tools (bash, no .sh extension)
         for tool in our-snapshot our-rollback our-wifi our-bluetooth our-fido2 \
                     ouroboros-secureboot ouroboros-firstboot our-pac our-container \
-                    our-aur our-flat; do
+                    our-aur our-flat our-app; do
             local_path="$WORKSPACE/src/ouroborOS-profile/airootfs/usr/local/bin/${tool}"
             [[ -f "$local_path" ]] && echo "$local_path"
         done
