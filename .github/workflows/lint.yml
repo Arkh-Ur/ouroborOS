@@ -28,10 +28,15 @@ jobs:
           FAILURES=0
           SCRIPTS=()
 
+          # profile.d/*.sh are sourced login snippets, not standalone
+          # programs: they must NOT carry a shebang (SC2148) or
+          # `set -euo pipefail` (it would leak into the login shell), so
+          # they are excluded — mirrors tests/scripts/test-shellcheck.sh.
           while IFS= read -r -d '' f; do
             SCRIPTS+=("$f")
           done < <(find "$WORKSPACE" \
             -not -path "$WORKSPACE/.git/*" \
+            -not -path "*/profile.d/*" \
             -name "*.sh" \
             -type f \
             -print0 | sort -z)
