@@ -1,0 +1,273 @@
+name: E2E QEMU
+
+# Full-lifecycle end-to-end test on the self-hosted runner (KVM + OVMF):
+# build ISO -> unattended install in QEMU -> boot installed system -> SSH ->
+# exercise the our-* tool family (our-pac, our-container, and optionally the
+# network-dependent our-flat / our-aur / our-app).
+#
+# Trigger: manual (workflow_dispatch) by default. Tag triggers are intentionally
+# left commented out — this suite depends on the self-hosted runner being online
+# and is slow/heavy; run it deliberately, not on every release.
+#
+# Hard gates (always fail the job on error): build, install, boot, our-pac, our-container.
+# Network cycles (our-flat/our-aur/our-app) are opt-in via run_network_cycles and
+# report PASS/FAIL without failing the job — AUR builds and remote downloads are flaky.
+
+on:
+  workflow_dispatch:
+    inputs:
+      e2e_config:
+        description: "E2E install config (path under tests/qemu/)"
+        required: false
+        default: "tests/qemu/minimal-e2e.yaml"
+      run_network_cycles:
+        description: "Run network-dependent cycles (our-flat / our-aur / our-app)"
+        required: false
+        type: boolean
+        default: false
+  # Uncomment to also run on release tags (requires runner online):
+  # push:
+  #   tags: ["v*"]
+
+env:
+  SSH_USER: testuser
+  SSH_PASS: testpass123
+  SSH_PORT: "2223"
+  QCOW: /home/ouroboros-e2e.qcow2
+  OVMF: /usr/share/edk2/x64/OVMF_CODE.4m.fd
+  SERIAL_INSTALL: /tmp/ouroboros-e2e-install.log
+  SERIAL_BOOT: /tmp/ouroboros-e2e-boot.log
+
+jobs:
+  e2e:
+    name: Build + Install + Verify (QEMU)
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          clean: false
+
+      - name: Verify host prerequisites (KVM + OVMF + tools)
+        run: |
+          test -e /dev/kvm || { echo "::error::/dev/kvm missing — runner has no KVM"; exit 1; }
+          test -f "$OVMF" || { echo "::error::OVMF firmware not found at $OVMF"; exit 1; }
+          for tool in qemu-system-x86_64 qemu-img sshpass fuser ss; do
+            command -v "$tool" >/dev/null || { echo "::error::missing host tool: $tool"; exit 1; }
+          done
+          echo "Host prerequisites OK."
+
+      - name: Set up loop devices
+        run: |
+          for i in $(seq 0 7); do
+            sudo mknod -m 660 "/dev/loop${i}" b 7 "${i}" 2>/dev/null || true
+          done
+          sudo modprobe loop max_loop=8 2>/dev/null || true
+
+      - name: Patch mkarchiso (workaround archiso #88 pipefail bug)
+        run: |
+          MKARCHISO="$(command -v mkarchiso)"
+          awk '
+          /^_make_efibootimg\(\)/ { in_func=1 }
+          in_func && /^\}[[:space:]]*$/  { in_func=0 }
+          in_func && /^[[:space:]]+\)"[[:space:]]*$/ { sub(/\)"[[:space:]]*$/, ")\" || true"); in_func=0 }
+          { print }
+          ' "$MKARCHISO" > /tmp/mkarchiso.patched && sudo mv /tmp/mkarchiso.patched "$MKARCHISO" && sudo chmod +x "$MKARCHISO"
+          if ! grep -q '|| true' "$MKARCHISO"; then
+            echo "::error::mkarchiso patch failed — archiso may have changed _make_efibootimg() structure"
+            exit 1
+          fi
+
+      - name: Build ISO with E2E config injected
+        run: |
+          CFG="${{ github.event.inputs.e2e_config }}"
+          CFG="${CFG:-tests/qemu/minimal-e2e.yaml}"
+          test -f "$CFG" || { echo "::error::E2E config not found: $CFG"; exit 1; }
+          sudo bash src/scripts/build-iso.sh \
+            --clean \
+            --workdir /home/ouroborOS-build \
+            --output out/ \
+            --e2e-config="$CFG"
+
+      - name: Fix out/ ownership (built as root)
+        run: sudo chown -R "$(id -u):$(id -g)" out/
+
+      - name: Unattended install in QEMU
+        run: |
+          fuser -k "${SSH_PORT}/tcp" 2>/dev/null || true
+          pkill -f "qemu.*ouroboros-e2e" 2>/dev/null || true
+          sleep 2
+          rm -f "$QCOW" "$SERIAL_INSTALL"
+          qemu-img create -f qcow2 "$QCOW" 40G
+          ISO="$(ls out/ouroborOS-*.iso | head -n 1)"
+          echo "Booting installer from $ISO"
+          setsid qemu-system-x86_64 \
+            -enable-kvm -cpu host -smp 2 -m 4096 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF" \
+            -drive file="$QCOW",format=qcow2,if=virtio,cache=writeback \
+            -cdrom "$ISO" -boot d \
+            -netdev user,id=net0,hostfwd=tcp::"${SSH_PORT}"-:22 \
+            -device e1000,netdev=net0 \
+            -rtc base=utc,clock=host \
+            -serial file:"$SERIAL_INSTALL" \
+            -vga std -display none -vnc :1 \
+            >/dev/null 2>&1 &
+          sleep 3
+          QEMU_PID="$(pgrep -f 'qemu.*ouroboros-e2e' | head -1)"
+          echo "QEMU install PID: $QEMU_PID"
+          test -n "$QEMU_PID" || { echo "::error::QEMU failed to launch"; tail -50 "$SERIAL_INSTALL" || true; exit 1; }
+          # Installer powers off the VM on completion (post_install_action: shutdown).
+          echo "Waiting for unattended install to finish (timeout 30m)..."
+          if ! timeout 1800 bash -c "while kill -0 $QEMU_PID 2>/dev/null; do sleep 5; done"; then
+            echo "::error::install timed out after 30m"
+            tail -80 "$SERIAL_INSTALL" || true
+            pkill -f "qemu.*ouroboros-e2e" 2>/dev/null || true
+            exit 1
+          fi
+          echo "Install VM powered off."
+
+      - name: Verify install serial log
+        run: |
+          FAIL=0
+          for state in INIT PREFLIGHT LOCALE USER DESKTOP SECURE_BOOT PARTITION FORMAT INSTALL CONFIGURE SNAPSHOT FINISH; do
+            if grep -q "State completed: ${state}" "$SERIAL_INSTALL"; then
+              echo "✓ ${state}"
+            else
+              echo "✗ ${state} — MISSING"; FAIL=1
+            fi
+          done
+          if grep -qE "^\[.*FAILED\]|\[ERROR\]" "$SERIAL_INSTALL"; then
+            echo "::error::installer reported FAILED/ERROR lines"; FAIL=1
+          fi
+          [[ "$FAIL" -eq 0 ]] || { echo "::error::install verification failed"; exit 1; }
+          echo "Install log verification OK."
+
+      - name: Boot installed system
+        run: |
+          pkill -f "qemu.*ouroboros-e2e" 2>/dev/null || true
+          sleep 3
+          rm -f "$SERIAL_BOOT"
+          setsid qemu-system-x86_64 \
+            -enable-kvm -cpu host -smp 2 -m 4096 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF" \
+            -drive file="$QCOW",format=qcow2,if=virtio,cache=writeback \
+            -netdev user,id=net0,hostfwd=tcp::"${SSH_PORT}"-:22 \
+            -device e1000,netdev=net0 \
+            -rtc base=utc,clock=host \
+            -serial file:"$SERIAL_BOOT" \
+            -vga std -display none -vnc :1 \
+            >/dev/null 2>&1 &
+          sleep 4
+          QEMU_PID="$(pgrep -f 'qemu.*ouroboros-e2e' | head -1)"
+          echo "QEMU boot PID: $QEMU_PID"
+          ss -tln | grep -q ":${SSH_PORT}" && echo "✓ port ${SSH_PORT} bound" || { echo "::error::hostfwd not bound"; tail -50 "$SERIAL_BOOT" || true; exit 1; }
+          ssh-keygen -R "[localhost]:${SSH_PORT}" 2>/dev/null || true
+          echo "Waiting for SSH (timeout 3m)..."
+          if ! timeout 180 bash -c "until sshpass -p '$SSH_PASS' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -p '$SSH_PORT' '$SSH_USER'@localhost true 2>/dev/null; do sleep 3; done"; then
+            echo "::error::SSH never came up"
+            tail -80 "$SERIAL_BOOT" || true
+            exit 1
+          fi
+          echo "SSH ready."
+
+      - name: Verify base system + our-* binaries
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          FAIL=0
+          $SSH "echo $SSH_PASS | sudo -S btrfs property get / ro 2>/dev/null | grep -q 'ro=true'" && echo "✓ root RO" || { echo "✗ root not RO"; FAIL=1; }
+          NF=$($SSH 'systemctl --failed --no-legend | wc -l')
+          [[ "$NF" -eq 0 ]] && echo "✓ no failed units" || { echo "✗ $NF failed units"; FAIL=1; }
+          for bin in our-pac our-aur our-flat our-app our-container; do
+            $SSH "test -x /usr/local/bin/$bin" && echo "✓ $bin present" || { echo "✗ $bin missing"; FAIL=1; }
+          done
+          [[ "$FAIL" -eq 0 ]] || { echo "::error::base verification failed"; exit 1; }
+
+      - name: "Cycle: our-pac (install -> verify -> remove)"
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          PKG=tree
+          # our-pac runs mkinitcpio as a pacman hook which can drop SSH — background + poll.
+          $SSH "nohup bash -c 'echo $SSH_PASS | sudo -S our-pac -S $PKG --noconfirm' > /tmp/ourpac.log 2>&1 &"
+          timeout 600 bash -c "until $SSH 'grep -qiE \"boot entries|ERROR|error:\" /tmp/ourpac.log 2>/dev/null'; do sleep 5; done" || true
+          $SSH 'cat /tmp/ourpac.log' || true
+          $SSH "test -x /usr/bin/$PKG" && echo "✓ our-pac install" || { echo "::error::our-pac install failed"; exit 1; }
+          $SSH "nohup bash -c 'echo $SSH_PASS | sudo -S our-pac -R $PKG --noconfirm' > /tmp/ourpac-r.log 2>&1 &"
+          timeout 300 bash -c "until $SSH 'grep -qiE \"boot entries|ERROR|error:\" /tmp/ourpac-r.log 2>/dev/null'; do sleep 5; done" || true
+          $SSH "test -x /usr/bin/$PKG" && { echo "::error::our-pac remove failed"; exit 1; } || echo "✓ our-pac remove"
+
+      - name: "Cycle: our-container (create -> remove -> recreate)"
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          NAME="e2e-recreate"
+          $SSH "echo $SSH_PASS | sudo -S our-container create $NAME arch" || { echo "::error::create failed"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S sh -c 'test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd'" && echo "✓ create + active" || { echo "::error::container not active after create"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S our-container remove $NAME" || { echo "::error::remove failed"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S test ! -e /var/lib/machines/$NAME" && echo "✓ remove (absent)" || { echo "::error::residue after remove"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S our-container create $NAME arch" || { echo "::error::recreate failed"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S sh -c 'test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd'" && echo "✓ recreate + active" || { echo "::error::container not active after recreate"; exit 1; }
+          $SSH "echo $SSH_PASS | sudo -S sh -c 'machinectl terminate $NAME 2>/dev/null; our-container remove $NAME 2>/dev/null; rm -rf /var/lib/machines/$NAME'" || true
+
+      - name: "Cycle: our-flat (network, best-effort)"
+        if: ${{ github.event.inputs.run_network_cycles == 'true' }}
+        continue-on-error: true
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          APP=org.gnome.Calculator
+          $SSH "echo $SSH_PASS | sudo -S our-flat remote-add flathub https://dl.flathub.org/repo/flathub.flatpakrepo" || true
+          $SSH "echo $SSH_PASS | sudo -S our-flat -S $APP" && echo "✓ our-flat install" || echo "✗ our-flat install FAIL"
+          $SSH "our-flat -Q | grep -q Calculator" && echo "✓ listed" || echo "✗ not listed"
+          $SSH "echo $SSH_PASS | sudo -S our-flat -R $APP" && echo "✓ our-flat remove" || echo "✗ our-flat remove FAIL"
+
+      - name: "Cycle: our-aur (network, best-effort)"
+        if: ${{ github.event.inputs.run_network_cycles == 'true' }}
+        continue-on-error: true
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          PKG=hyprcaffeine
+          $SSH "nohup bash -c 'echo $SSH_PASS | sudo -S our-aur -S $PKG' > /tmp/ouraur.log 2>&1 &"
+          timeout 900 bash -c "until $SSH 'grep -qiE \"Done|ERROR|failed\" /tmp/ouraur.log 2>/dev/null'; do sleep 10; done" || true
+          $SSH 'cat /tmp/ouraur.log' || true
+          $SSH "test -x /usr/bin/$PKG" && echo "✓ our-aur install" || echo "✗ our-aur install FAIL"
+          $SSH "echo $SSH_PASS | sudo -S our-aur -R $PKG" && echo "✓ our-aur remove" || echo "✗ our-aur remove FAIL"
+
+      - name: "Cycle: our-app (network, best-effort)"
+        if: ${{ github.event.inputs.run_network_cycles == 'true' }}
+        continue-on-error: true
+        run: |
+          SSH="sshpass -p $SSH_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT $SSH_USER@localhost"
+          # Small known-good AppImage for smoke testing.
+          APP_URL="https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
+          $SSH "nohup bash -c 'echo $SSH_PASS | sudo -S our-app -S $APP_URL myapp' > /tmp/ourapp.log 2>&1 &"
+          timeout 300 bash -c "until $SSH 'grep -qiE \"installed|error|done\" /tmp/ourapp.log 2>/dev/null'; do sleep 3; done" || true
+          $SSH 'cat /tmp/ourapp.log' || true
+          $SSH 'test -f /var/lib/ouroboros/appimages/myapp/myapp.AppImage' && echo "✓ our-app install" || echo "✗ our-app install FAIL"
+          $SSH "echo $SSH_PASS | sudo -S our-app -Q | grep -q myapp" && echo "✓ -Q lists myapp" || echo "✗ not listed"
+          $SSH "echo $SSH_PASS | sudo -S our-app -R myapp" && echo "✓ our-app remove" || echo "✗ our-app remove FAIL"
+          $SSH 'test ! -e /var/lib/ouroboros/appimages/myapp' && echo "✓ removed cleanly" || echo "✗ residue lingers"
+
+      - name: Teardown QEMU
+        if: always()
+        run: |
+          pkill -f "qemu.*ouroboros-e2e" 2>/dev/null || true
+          fuser -k "${SSH_PORT}/tcp" 2>/dev/null || true
+          echo "Teardown complete."
+
+      - name: Write E2E summary
+        if: always()
+        run: |
+          {
+            echo "## ouroborOS E2E (QEMU)"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Ref | \`${{ github.ref_name }}\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Config | \`${{ github.event.inputs.e2e_config }}\` |"
+            echo "| Network cycles | \`${{ github.event.inputs.run_network_cycles }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
