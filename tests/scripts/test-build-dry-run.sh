@@ -78,6 +78,16 @@ chmod +x "$MOCK_DIR/xorriso"
 # Inject mocks into PATH
 export PATH="$MOCK_DIR:$PATH"
 
+# build-iso.sh requires root (EUID 0). Run it via `sudo bash -c` and re-export
+# PATH inside so the mock mkarchiso/mkfs.erofs/xorriso are found — sudo's
+# secure_path would otherwise strip $MOCK_DIR and the REAL tools would run.
+# This relies only on /usr/bin/bash being NOPASSWD on the CI runner; the older
+# `sudo env PATH=... bash` pattern needed /usr/bin/env allowlisted and hung
+# waiting for a password in non-interactive CI.
+run_build_as_root() {
+    sudo bash -c "export PATH=\"$MOCK_DIR:\$PATH\"; exec bash \"$BUILD_ISO\" \"\$@\"" _ "$@"
+}
+
 # ── Test 1: --help exits 0 with output ───────────────────────────────────────
 log_test "1. --help exits 0 and produces output"
 help_output=$(bash "$BUILD_ISO" --help 2>&1) && help_rc=0 || help_rc=$?
@@ -112,7 +122,7 @@ fi
 log_test "3. Arguments --output/--workdir/--profile passed to mkarchiso"
 mkdir -p "$FAKE_PROFILE"  # Profile must exist to pass preflight
 
-sudo env PATH="$PATH" bash "$BUILD_ISO" \
+run_build_as_root \
     --output "$FAKE_OUTPUT" \
     --workdir "$FAKE_WORK" \
     --profile "$FAKE_PROFILE" 2>/dev/null || true
@@ -138,7 +148,7 @@ mkdir -p "$FAKE_WORK/leftover-data"
 touch "$FAKE_WORK/leftover-data/old-file.txt"
 mkdir -p "$FAKE_PROFILE"
 
-sudo env PATH="$PATH" bash "$BUILD_ISO" \
+run_build_as_root \
     --clean \
     --output "$FAKE_OUTPUT" \
     --workdir "$FAKE_WORK" \
