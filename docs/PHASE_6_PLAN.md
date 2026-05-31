@@ -54,17 +54,19 @@ Diseño completo: **[docs/architecture/our-app.md](./architecture/our-app.md)**.
 
 ## v0.5.10 — Workstreams (dependientes del runner)
 
-### 3. Tests ciclo `our-container`
+### 3. Tests ciclo `our-container` — ✅ HECHO
 
-`test_our_container_integration.py` existe pero está excluido del pytest de CI (`--ignore`). Verificar/agregar el ciclo create → verify activo → `remove` → verify ausente → recreate → verify activo. Documentar el patrón E2E en `skills/qemu-e2e-test.md` y `agents/qa-tester.md`.
+`test_our_container_integration.py` existe pero está excluido del pytest de CI (`--ignore`). Se agregó `test_create_remove_recreate_cycle` a `TestFullLifecycle`, espejando el ciclo start/stop/remove existente y sumando la pierna recreate: create → verify activo → `remove` → verify ausente → recreate → verify activo. Gateado tras `sudo` + `systemd-machined` + `pacstrap`. El patrón E2E quedó documentado en `skills/qemu-e2e-test.md` (sección "Phase 6 Preface") y `agents/qa-tester.md` (ciclos our-app + our-container).
 
-### 4. QEMU E2E en CI
+### 4. QEMU E2E en CI — ✅ HECHO
 
-Nuevo `.github/workflows/e2e-qemu.yml` sobre el runner self-hosted `hbuddenberg-arch` (KVM + OVMF). Trigger `workflow_dispatch` (+ opcional en tag `v*`). Pasos: build/reuse ISO → boot QEMU → install unattended → SSH (puerto 2223) → ciclos our-pac/our-aur/our-flat/our-app/our-container → reporte. Aplica todas las constraints QEMU aprendidas (ver abajo).
+Nuevo `.github/workflows/e2e-qemu.yml` sobre el runner self-hosted `hbuddenberg-arch` (KVM + OVMF). Trigger `workflow_dispatch` (el trigger en tag `v*` quedó comentado: depende del runner online y la suite es lenta). Pasos: build ISO con `--e2e-config` → install unattended en QEMU → boot → SSH (puerto 2223) → ciclos our-pac/our-container (hard gates) + our-flat/our-aur/our-app (opt-in vía input `run_network_cycles`, no fatales). Aplica todas las constraints QEMU aprendidas (ver abajo): `setsid`, `fuser -k 2223/tcp`, `-device e1000`, `-vga std -display none`, workdir `/home`, OVMF `OVMF_CODE.4m.fd`, `nohup`+poll para our-pac.
 
 **Criterio de hecho (v0.5.10):**
-- Runner online → `e2e-qemu.yml` (`workflow_dispatch`) con 5 tools verdes.
+- Runner online → `e2e-qemu.yml` (`workflow_dispatch`) con los tools verdes.
 - Ciclo `our-container` create→remove→recreate verde en QEMU.
+
+> Estado: workflow + test creados y commiteados en `dev`. Falta el disparo manual de `e2e-qemu.yml` para validación end-to-end en el runner (verificación final del criterio de hecho).
 
 ---
 
