@@ -16,6 +16,7 @@ Architecture:
 from __future__ import annotations
 
 import os
+import queue
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -285,7 +286,7 @@ if HAS_TEXTUAL:
         }
         """
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -332,7 +333,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "LocalePane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -369,7 +370,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "HostnamePane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -396,7 +397,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "UsersPane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -472,7 +473,7 @@ if HAS_TEXTUAL:
             ("fish", "Fish — modern and user-friendly"),
         ]
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -514,7 +515,7 @@ if HAS_TEXTUAL:
             ("none", "TTY login"),
         ]
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -561,7 +562,7 @@ if HAS_TEXTUAL:
             ("none", "Skip — install manually"),
         ]
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -586,7 +587,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "DiskPane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -629,7 +630,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "EncryptionPane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -669,7 +670,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "SecurityPane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -715,7 +716,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "NetworkPane { padding: 1 2; }"
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -767,7 +768,7 @@ if HAS_TEXTUAL:
 
         DEFAULT_CSS = "PartitionPreviewPane { padding: 1 2; }"
 
-        def __init__(self, config: Any, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, config: Any, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._config = config
             self._q = response_queue
@@ -846,7 +847,7 @@ if HAS_TEXTUAL:
 
         BINDINGS = [Binding("escape", "app.quit", "Quit")]
 
-        def __init__(self, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._q = response_queue
 
@@ -897,7 +898,7 @@ if HAS_TEXTUAL:
             ("abort", "Abort"),
         ]
 
-        def __init__(self, buffer: TUIBuffer, response_queue: threading.Queue[Any], **kwargs: Any) -> None:
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = buffer
             self._q = response_queue
@@ -1011,8 +1012,8 @@ ProgressPane { padding: 1 2; }
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             self._buffer = TUIBuffer()
-            self._response_queue: threading.Queue[Any] = threading.Queue()
-            self._lang_queue: threading.Queue[Any] = threading.Queue()
+            self._response_queue: queue.Queue[Any] = queue.Queue()
+            self._lang_queue: queue.Queue[Any] = queue.Queue()
 
         def on_mount(self) -> None:
             self.push_screen(LanguageScreen(self._response_queue))
@@ -1059,7 +1060,7 @@ class TUI:
             from installer.tui import TUI as _RichTUI  # type: ignore[import]
             self._rich = _RichTUI(title=title)
             self._app: InstallerApp | None = None
-            self._q: threading.Queue[Any] | None = None
+            self._q: queue.Queue[Any] | None = None
             return
 
         self._rich = None
@@ -1072,8 +1073,29 @@ class TUI:
         self._app_thread.start()
 
     def _run_app(self) -> None:
-        """Run the Textual app in its own thread."""
-        self._app.run()  # type: ignore[union-attr]
+        """Run the Textual app in its own thread.
+
+        Python's signal.signal() only works on the main thread. Textual's
+        LinuxDriver sets SIGTSTP/SIGCONT handlers for Ctrl+Z support. Since
+        we run Textual in a background thread (main thread runs the FSM), we
+        patch signal.signal to silently skip those registrations. Ctrl+Z
+        suspend is irrelevant in an installer context.
+        """
+        import signal as _signal_mod
+
+        _orig_signal = _signal_mod.signal
+
+        def _thread_safe_signal(sig: Any, handler: Any) -> Any:
+            try:
+                return _orig_signal(sig, handler)
+            except ValueError:
+                return None  # not in main thread — skip
+
+        _signal_mod.signal = _thread_safe_signal  # type: ignore[assignment]
+        try:
+            self._app.run()  # type: ignore[union-attr]
+        finally:
+            _signal_mod.signal = _orig_signal  # type: ignore[assignment]
 
     def _get(self) -> Any:
         """Block until a value is available on the response queue."""

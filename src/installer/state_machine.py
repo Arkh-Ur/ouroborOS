@@ -37,7 +37,11 @@ from installer.desktop_profiles import (
     shell_path,
 )
 from installer.i18n import _, init_i18n
-from installer.tui import TUI
+
+try:
+    from installer.tui_textual import TUI  # type: ignore[import]
+except ImportError:
+    from installer.tui import TUI  # type: ignore[import]  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Logging
