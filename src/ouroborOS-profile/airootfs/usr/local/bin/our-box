@@ -579,7 +579,7 @@ cmd_engine() {
 cmd_help() {
     cat <<'EOF'
 
-Usage: our-box <command> [options]
+USAGE: our-box <command> [options]
 
 Commands:
   create <name> <image>             Create a new box
