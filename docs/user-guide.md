@@ -338,6 +338,54 @@ On install, `our-app` extracts the bundled `.desktop` entry and icon (`--appimag
 
 > Because AppImages live only in `@var`, they are **not** captured by root snapshots — exactly like Flatpak apps. Rolling back `@` via `our-rollback` does **not** remove installed AppImages. Also, `-Su` can only update AppImages whose source was an `http(s)` URL; locally-installed files are skipped. See `docs/architecture/our-app.md` for the full design.
 
+### 8.5 Containers — `our-container`
+
+`our-container` manages containers across three engines:
+
+| Engine | Kind | Use it for |
+|--------|------|-----------|
+| `nspawn` (default) | System container (`systemd-nspawn`) | OS-centric containers, Btrfs snapshots, a full booted Arch userland |
+| `podman` | OCI, daemonless | App-centric containers from Docker Hub / OCI registries |
+| `docker` | OCI, daemon | Same as podman, on a Docker daemon |
+
+The default engine lives in `/etc/ouroboros/container.conf`; each container records its own engine in `/etc/ouroboros/containers.d/<name>.conf`, so every subcommand routes automatically.
+
+```bash
+# See available engines and the active default
+our-container engine show
+
+# Make podman the default engine (must be installed)
+sudo our-container engine set podman
+
+# Create a system container (nspawn — the default)
+sudo our-container create devbox arch
+
+# Create an OCI container from Docker Hub (per-create override)
+sudo our-container create ub docker.io/library/ubuntu --engine podman
+
+# Enter, list (across all engines), stop, remove
+sudo our-container enter ub
+our-container list
+sudo our-container stop ub
+sudo our-container remove ub
+```
+
+Repositories make images easy to discover and install. The registry lives at `/etc/ouroboros/container-repos.conf` and ships with the nspawn index plus `docker.io`.
+
+```bash
+# Register a registry (type autodetected, or pass it: index|direct|oci)
+sudo our-container repo add ghcr ghcr.io oci
+our-container repo list
+
+# Search installable images across configured repos
+our-container image available alpine
+
+# Show details / the Docker Hub README for an image
+our-container image info ubuntu
+```
+
+> **Windows ISOs are out of scope.** A container shares the host's Linux kernel, so Windows needs a virtual machine, not a container. OCI images (Docker Hub) are served through the `podman`/`docker` engines — they are not converted into `nspawn` rootfs tarballs. Only `nspawn` containers live on `@var`-backed Btrfs subvolumes and can be snapshotted independently; OCI containers are managed by their engine's own storage.
+
 ---
 
 ## 9. Roll back to a previous snapshot

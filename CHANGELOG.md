@@ -5,6 +5,56 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] - 2026-05-31
+
+Multi-engine para `our-container`: el wrapper deja de estar atado a
+`systemd-nspawn` y suma backends OCI (`podman`/`docker`) con integración nativa
+de Docker Hub. Puente hacia Phase 6. Ver [docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md).
+
+### Added
+
+- **Abstracción de motor (`nspawn` | `podman` | `docker`)** — `our-container`
+  pasa a ser un router: `create` acepta `--engine E` (default `nspawn`); el resto
+  de subcomandos (`enter`/`start`/`stop`/`list`/`remove`/`logs`) resuelven el motor
+  por contenedor. El default global vive en `/etc/ouroboros/container.conf`
+  (`ENGINE=`) y cada contenedor registra el suyo en
+  `/etc/ouroboros/containers.d/<name>.conf`. `nspawn` sigue siendo el backend de
+  sistema (OS-céntrico, snapshots Btrfs, boot systemd); `podman`/`docker` son
+  app-céntricos sobre imágenes OCI.
+- **Subcomando `engine` (`show` | `list` | `set`)** — `engine show` lista los
+  motores, cuáles están instalados y cuál es el default activo; `engine set ENGINE`
+  fija el default global (valida y avisa si el motor no está instalado).
+- **Sistema de repositorios (`repo add` | `list` | `remove`)** — registro en
+  `/etc/ouroboros/container-repos.conf` con tres tipos: `index` (lista estilo hub
+  nspawn), `direct` (imagen única `.tar.xz`/`.raw.xz`) y `oci` (registries OCI:
+  `docker.io`, `quay.io`, `ghcr.io`). El tipo se autodetecta por la URL o se indica
+  explícito. Registry por defecto: índice nspawn + `docker.io` (oci).
+- **Consulta de imágenes (`image available` | `info`)** — `image available [term]`
+  lista/busca imágenes instalables a través de los repos configurados (índice vía
+  `list.txt`, oci vía `<engine> search`); `image info <ref>` muestra el inspect
+  local o el README de Docker Hub (API `hub.docker.com/v2/repositories/...`).
+- **Pull multi-motor (`image pull`)** — `nspawn` mantiene el pull de imágenes
+  nspawn; `podman`/`docker` hacen `pull` nativo desde el registry OCI.
+- **Contenedores desde Docker Hub** — `create <name> docker.io/library/ubuntu
+  --engine podman` levanta un contenedor OCI (patrón keepalive `sleep infinity`)
+  listo para `enter` e instalar paquetes con el gestor de la imagen.
+
+### Tests
+
+- **`TestMultiEngine`** en `test_our_container_integration.py` — 10 tests no-root:
+  help menciona los subcomandos `engine`/`repo`/`image available|info` y el flag
+  `--engine`; `engine show` lista los tres motores; rechazo de `engine set` inválido,
+  `repo add` con nombre/URL inválidos, subcomando `repo` desconocido e `image info`
+  sin argumento.
+
+### Out of scope
+
+- **ISOs de Windows (microsoft.com / bobpony.com)** quedan fuera de `our-container`:
+  un contenedor comparte el kernel Linux del host, así que Windows necesita una VM,
+  no un contenedor. Las imágenes OCI tampoco son tarballs compatibles con `nspawn`;
+  por eso Docker Hub se sirve vía los motores `podman`/`docker`, no convirtiendo a
+  rootfs nspawn.
+
 ## [0.5.10] - 2026-05-30
 
 Segunda mitad del puente hacia Phase 6: infraestructura de testing E2E. Ver

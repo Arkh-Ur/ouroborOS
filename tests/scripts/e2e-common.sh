@@ -77,7 +77,7 @@ ssh_root() {
     safe_password=$(printf '%q' "$password")
     # shellcheck disable=SC2059
     printf -v safe_cmd '%q' "$*"
-    ssh_cmd "echo ${safe_password} | sudo -S bash -c '${safe_cmd}'"
+    ssh_cmd "echo ${safe_password} | sudo -S bash -c ${safe_cmd}"
 }
 
 ssh_out() {
@@ -232,7 +232,7 @@ launch_qemu() {
         -device "e1000,netdev=net0"
         -rtc base=utc,clock=host
         -serial "file:${serial}"
-        -vga virtio
+        -vga std
         -display none
         -vnc ":${vnc_display}"
     )
