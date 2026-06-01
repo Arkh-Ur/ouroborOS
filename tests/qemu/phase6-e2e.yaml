@@ -9,6 +9,7 @@
 #   secure_boot: false      — sbctl requires real UEFI Setup Mode (OVMF limitation)
 #   wifi: omitted           — iwd not used in QEMU SLIRP network
 #   thunderbolt: none       — no Thunderbolt hardware in QEMU → bolt must NOT be installed
+#   post_install_action: shutdown — QEMU must power off after install so wait_qemu_exit() returns
 
 disk:
   device: /dev/vda
@@ -50,6 +51,8 @@ security:
   secure_boot: false
   sbctl_include_ms_keys: false
   fido2_pam: false
+
+post_install_action: shutdown
 
 extra_packages:
   - openssh
