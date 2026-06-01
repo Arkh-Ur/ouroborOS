@@ -1214,8 +1214,10 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
-    in_chroot systemctl enable firewalld.service
-    log_ok "firewalld enabled (default zone: public)."
+    if arch-chroot "${TARGET}" pacman -Q firewalld &>/dev/null; then
+        in_chroot systemctl enable firewalld.service
+        log_ok "firewalld enabled (default zone: public)."
+    fi
 
     # Display manager — enabled only for desktop profiles that ship one.
     # greetd (COSMIC) requires extra setup: cosmic-greeter config + greeter user.
