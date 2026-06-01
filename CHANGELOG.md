@@ -5,6 +5,44 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] - 2026-05-30
+
+Segunda mitad del puente hacia Phase 6: infraestructura de testing E2E. Ver
+[docs/PHASE_6_PLAN.md](docs/PHASE_6_PLAN.md).
+
+### Added
+
+- **Test de ciclo `our-container` create→remove→recreate** — `test_create_remove_recreate_cycle`
+  en `TestFullLifecycle`, que prueba que un contenedor se puede destruir y volver a
+  crear bajo el mismo nombre sin residuo. Gateado tras `sudo` + `systemd-machined` +
+  `pacstrap`; excluido del pytest de CI (`--ignore`), corre dentro del guest QEMU.
+- **Workflow E2E QEMU (`.github/workflows/e2e-qemu.yml`)** — sobre el runner self-hosted
+  `hbuddenberg-arch` (KVM + OVMF). `workflow_dispatch`: build ISO con `--e2e-config` →
+  install unattended en QEMU → boot → SSH (2223) → ciclos `our-pac` y `our-container`
+  (hard gates) + `our-flat`/`our-aur`/`our-app` (opt-in vía input `run_network_cycles`,
+  no fatales). Codifica las constraints QEMU aprendidas (`setsid`, `fuser -k`,
+  `-device e1000`, `-vga std -display none`, OVMF `OVMF_CODE.4m.fd`, `nohup`+poll).
+
+### Fixed
+
+- **`our-container create` abortaba en silencio (exit 1, sin salida)** — `_container_state`
+  hacía `return 1` para el estado "unknown"; bajo `set -euo pipefail`, la asignación
+  `state="$(_container_state ...)"` propagaba ese código y mataba el script ANTES del
+  `if`. Crear un contenedor nuevo (estado legítimamente "unknown") siempre fallaba.
+  Ahora `_container_state` devuelve 0 (los callers ya inspeccionan el valor `$state`).
+- **`our-container remove` fallaba con "Directory not empty"** — todo contenedor anida
+  subvolúmenes Btrfs creados por systemd-tmpfiles (`var/lib/portables`, `var/lib/machines`),
+  así que `btrfs subvolume delete` sin recursión fallaba. Se agrega `--recursive` en los
+  tres borrados de subvolumen-contenedor completo (remove, restore, image).
+- **`our-app` no se instalaba en el sistema (regresión v0.5.9)** — `configure.sh` nunca
+  copiaba el binario `our-app` ni el snippet `ouroboros-appimages.sh` al target. Ambos
+  ahora se copian durante CONFIGURE.
+
+### Docs
+
+- Patrón E2E de los ciclos `our-app` y `our-container` documentado en
+  `skills/qemu-e2e-test.md` (sección "Phase 6 Preface") y `agents/qa-tester.md`.
+
 ## [0.5.9] - 2026-05-30
 
 Puente hacia Phase 6: features autocontenidas + saneamiento del CI. Ver

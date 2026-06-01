@@ -566,3 +566,101 @@ PENDING=$(grep -c "| ❌ " "$REPO/docs/PHASE_5_PLAN.md" 2>/dev/null || echo 0)
 | v0.5.8 | user-guide.md covers Phase 5 features (host check) | ✓ |
 | v0.5.8 | Architecture docs ≥ 30 lines each (host check) | ✓ |
 | v0.5.8 | PHASE_5_PLAN.md has no unexpected pending milestones | ✓ |
+
+---
+
+## Phase 6 Preface — v0.5.9 / v0.5.10 Verifications
+
+Run these after the standard Phase 3 verifications on a booted system.
+
+### v0.5.9 — our-app (AppImage manager)
+
+> `our-app` writes ONLY to `@var` (`/var/lib/ouroboros/appimages/`). It needs NO sysext and creates NO root snapshot — AppImages are self-contained. The `.desktop`/icons become visible via `XDG_DATA_DIRS` prepend from `/etc/profile.d/ouroboros-appimages.sh`.
+
+```bash
+# Binary + profile.d hook present
+$SSH 'test -x /usr/local/bin/our-app' && echo "✓ our-app installed" || echo "✗ our-app missing"
+$SSH 'test -f /etc/profile.d/ouroboros-appimages.sh' && echo "✓ XDG hook present" || echo "✗ XDG hook missing"
+
+# Install an AppImage from a URL (use a small known-good one for E2E)
+APP_URL="https://github.com/<org>/<repo>/releases/download/<tag>/<App>.AppImage"
+$SSH "nohup bash -c 'echo testpass123 | sudo -S our-app -S $APP_URL myapp' > /tmp/our-app.log 2>&1 &"
+until $SSH 'grep -qiE "installed|error|done" /tmp/our-app.log 2>/dev/null'; do sleep 3; done
+$SSH 'cat /tmp/our-app.log'
+
+# Layout in @var
+$SSH 'test -f /var/lib/ouroboros/appimages/myapp/myapp.AppImage' && echo "✓ AppImage in @var" || echo "✗"
+$SSH 'test -f /var/lib/ouroboros/appimages/myapp/.app.yaml' && echo "✓ .app.yaml meta" || echo "✗"
+$SSH 'test -L /var/lib/ouroboros/appimages/share/applications/myapp.desktop' && echo "✓ .desktop symlinked (XDG)" || echo "✗"
+
+# system.yaml registers it under appimage_packages
+$SSH 'grep -A20 "appimage_packages:" /etc/ouroboros/system.yaml | grep -q "myapp"' \
+    && echo "✓ appimage_packages updated" || echo "✗"
+
+# -Q lists it
+$SSH 'echo testpass123 | sudo -S our-app -Q' | grep -q "myapp" && echo "✓ -Q lists myapp" || echo "✗"
+
+# -R removes everything (dir + symlinks + system.yaml entry)
+$SSH 'echo testpass123 | sudo -S our-app -R myapp'
+$SSH 'test ! -e /var/lib/ouroboros/appimages/myapp' && echo "✓ dir removed" || echo "✗ dir lingers"
+$SSH 'grep -A20 "appimage_packages:" /etc/ouroboros/system.yaml | grep -q "myapp"' \
+    && echo "✗ system.yaml still lists myapp" || echo "✓ system.yaml entry cleaned"
+```
+
+### v0.5.9 — aur_packages wiring (our-aur ↔ system.yaml)
+
+> Until v0.5.9 `aur_packages` was a stub in system.yaml that `our-aur` never updated. Now `-S` adds and `-R` removes the entry (NOT `-Su`), mirroring how `our-pac` maintains `user_packages`.
+
+```bash
+# -S adds the package to aur_packages
+$SSH "nohup bash -c 'echo testpass123 | sudo -S our-aur -S <pkg> --noconfirm' > /tmp/our-aur.log 2>&1 &"
+until $SSH 'grep -qiE "installed|sysext|error" /tmp/our-aur.log 2>/dev/null'; do sleep 5; done
+$SSH 'grep -A20 "aur_packages:" /etc/ouroboros/system.yaml | grep -q "<pkg>"' \
+    && echo "✓ aur_packages updated on -S" || echo "✗"
+
+# -R removes it
+$SSH 'echo testpass123 | sudo -S our-aur -R <pkg>'
+$SSH 'grep -A20 "aur_packages:" /etc/ouroboros/system.yaml | grep -q "<pkg>"' \
+    && echo "✗ aur_packages still lists <pkg>" || echo "✓ aur_packages cleaned on -R"
+```
+
+### v0.5.10 — our-container lifecycle (create → remove → recreate)
+
+> Mirrors `test_create_remove_recreate_cycle` in `src/installer/tests/test_our_container_integration.py`. That integration test is excluded from CI pytest (`--ignore`) because it needs real `sudo` + `systemd-machined` + `pacstrap`; run it inside the QEMU guest (or a container host) where those are available. The cycle proves a container can be fully torn down and stood up again under the same name without residue.
+
+```bash
+# Integration test path (run the suite that CI skips, inside the guest)
+$SSH 'cd /path/to/checkout && echo testpass123 | sudo -S pytest \
+    src/installer/tests/test_our_container_integration.py \
+    -v -k "recreate_cycle or start_stop_remove"'
+
+# Or exercise the cycle directly via the binary:
+NAME="e2e-recreate-$$"
+$SSH "echo testpass123 | sudo -S our-container create $NAME arch"
+$SSH "echo testpass123 | sudo -S test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd" \
+    && echo "✓ created + active" || echo "✗ create failed"
+
+$SSH "echo testpass123 | sudo -S our-container remove $NAME"
+$SSH "echo testpass123 | sudo -S test ! -e /var/lib/machines/$NAME" \
+    && echo "✓ removed (absent)" || echo "✗ remove left residue"
+
+$SSH "echo testpass123 | sudo -S our-container create $NAME arch"
+$SSH "echo testpass123 | sudo -S test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd" \
+    && echo "✓ recreated + active" || echo "✗ recreate failed"
+
+# Teardown
+$SSH "echo testpass123 | sudo -S machinectl terminate $NAME 2>/dev/null; echo testpass123 | sudo -S our-container remove $NAME"
+```
+
+## Pass/Fail Summary — Phase 6 Preface
+
+| Tag | Check | Expected |
+|-----|-------|----------|
+| v0.5.9 | our-app binary + /etc/profile.d XDG hook present | ✓ |
+| v0.5.9 | -S installs AppImage into @var with .app.yaml + symlinked .desktop | ✓ |
+| v0.5.9 | system.yaml appimage_packages updated on -S, cleaned on -R | ✓ |
+| v0.5.9 | -Q lists installed, -R removes dir + symlinks + entry | ✓ |
+| v0.5.9 | our-aur -S adds to aur_packages, -R removes it | ✓ |
+| v0.5.10 | our-container create → active (dir + etc/passwd) | ✓ |
+| v0.5.10 | our-container remove → absent (no residue) | ✓ |
+| v0.5.10 | our-container recreate same name → active again | ✓ |

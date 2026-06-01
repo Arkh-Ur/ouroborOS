@@ -231,6 +231,56 @@ $SSH 'echo ouroboros | sudo -S our-flat -S org.videolan.VLC' && echo "✓ our-fl
 
 **Pass criteria:** remote add ✓ → install ✓ → listed in -Q ✓ → remove ✓ → reinstall ✓
 
+### our-app cycle (install AppImage + list + uninstall)
+
+```bash
+# AppImage lives only in @var — no sysext, no root snapshot
+APP_URL="https://github.com/<org>/<repo>/releases/download/<tag>/<App>.AppImage"
+$SSH "nohup bash -c 'echo ouroboros | sudo -S our-app -S $APP_URL myapp' > /tmp/ourapp.log 2>&1 &"
+until $SSH 'grep -qiE "installed|error|done" /tmp/ourapp.log 2>/dev/null'; do sleep 3; done
+$SSH 'test -f /var/lib/ouroboros/appimages/myapp/myapp.AppImage' && echo "✓ our-app install" || echo "✗ our-app install FAIL"
+$SSH 'test -L /var/lib/ouroboros/appimages/share/applications/myapp.desktop' && echo "✓ .desktop symlinked" || echo "✗"
+$SSH 'grep -A20 "appimage_packages:" /etc/ouroboros/system.yaml | grep -q myapp' && echo "✓ system.yaml updated" || echo "✗"
+
+# List
+$SSH 'echo ouroboros | sudo -S our-app -Q' | grep -q myapp && echo "✓ -Q lists myapp" || echo "✗"
+
+# Remove (dir + symlinks + system.yaml entry)
+$SSH 'echo ouroboros | sudo -S our-app -R myapp'
+$SSH 'test ! -e /var/lib/ouroboros/appimages/myapp' && echo "✓ our-app uninstall" || echo "✗ residue lingers"
+$SSH 'grep -A20 "appimage_packages:" /etc/ouroboros/system.yaml | grep -q myapp' && echo "✗ entry still listed" || echo "✓ system.yaml cleaned"
+```
+
+**Pass criteria:** install ✓ → .desktop symlinked ✓ → system.yaml updated ✓ → -Q lists ✓ → remove cleans everything ✓
+
+### our-container cycle (create → remove → recreate)
+
+```bash
+# Mirrors test_create_remove_recreate_cycle (excluded from CI pytest — needs real
+# sudo + systemd-machined + pacstrap, run inside the guest).
+NAME="e2e-recreate-$$"
+
+# Create → active
+$SSH "echo ouroboros | sudo -S our-container create $NAME arch"
+$SSH "echo ouroboros | sudo -S sh -c 'test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd'" \
+    && echo "✓ create + active" || echo "✗ create FAIL"
+
+# Remove → absent
+$SSH "echo ouroboros | sudo -S our-container remove $NAME"
+$SSH "echo ouroboros | sudo -S test ! -e /var/lib/machines/$NAME" \
+    && echo "✓ remove (absent)" || echo "✗ remove left residue"
+
+# Recreate same name → active again
+$SSH "echo ouroboros | sudo -S our-container create $NAME arch"
+$SSH "echo ouroboros | sudo -S sh -c 'test -d /var/lib/machines/$NAME && test -f /var/lib/machines/$NAME/etc/passwd'" \
+    && echo "✓ recreate + active" || echo "✗ recreate FAIL"
+
+# Teardown
+$SSH "echo ouroboros | sudo -S sh -c 'machinectl terminate $NAME 2>/dev/null; rm -rf /var/lib/machines/$NAME'"
+```
+
+**Pass criteria:** create ✓ → remove leaves no residue ✓ → recreate under same name ✓
+
 ### Key E2E constraints
 
 | Constraint | Detail |

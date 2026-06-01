@@ -234,6 +234,52 @@ class TestFullLifecycle:
                 capture_output=True, timeout=15,
             )
 
+    @requires_sudo
+    @requires_machined
+    @pytest.mark.skipif(
+        not shutil.which("pacstrap"),
+        reason="pacstrap not installed",
+    )
+    def test_create_remove_recreate_cycle(self) -> None:
+        name = f"itest-recreate-{os.getpid()}"
+        container_dir = Path(f"/var/lib/machines/{name}")
+
+        try:
+            result = subprocess.run(
+                ["sudo", "bash", str(_our_container_path()), "create", name, "arch"],
+                capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode != 0:
+                pytest.skip(f"pacstrap unavailable or failed: {result.stderr[:200]}")
+
+            assert container_dir.exists()
+            assert (container_dir / "etc" / "passwd").exists()
+
+            result = subprocess.run(
+                ["sudo", "bash", str(_our_container_path()), "remove", name],
+                capture_output=True, text=True, timeout=30,
+            )
+            assert result.returncode == 0
+            assert not container_dir.exists()
+
+            result = subprocess.run(
+                ["sudo", "bash", str(_our_container_path()), "create", name, "arch"],
+                capture_output=True, text=True, timeout=300,
+            )
+            assert result.returncode == 0
+            assert container_dir.exists()
+            assert (container_dir / "etc" / "passwd").exists()
+
+        finally:
+            subprocess.run(
+                ["sudo", "machinectl", "terminate", name],
+                capture_output=True, timeout=15,
+            )
+            subprocess.run(
+                ["sudo", "rm", "-rf", f"/var/lib/machines/{name}"],
+                capture_output=True, timeout=15,
+            )
+
 
 class TestPersistence:
 

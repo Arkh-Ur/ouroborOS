@@ -56,7 +56,7 @@ _container_state() {
     state="$(machinectl show "$name" 2>/dev/null | grep -m1 '^State=' || true)"
     if [[ -z "$state" ]]; then
         echo "unknown"
-        return 1
+        return 0
     fi
     echo "${state#State=}"
     return 0
@@ -441,7 +441,9 @@ cmd_remove() {
     log_info "Removing container '${name}' at ${target}..."
     if btrfs subvolume show "$target" >/dev/null 2>&1; then
         log_info "Detected Btrfs subvolume -- using btrfs subvolume delete"
-        if ! btrfs subvolume delete "$target"; then
+        # --recursive: containers nest subvolumes (var/lib/portables, var/lib/machines
+        # created by systemd-tmpfiles), so a plain delete fails with "Directory not empty".
+        if ! btrfs subvolume delete --recursive "$target"; then
             log_error "btrfs subvolume delete failed for ${target}"
             die "failed to remove Btrfs subvolume -- check dmesg for filesystem errors"
         fi
@@ -591,7 +593,7 @@ cmd_snapshot_restore() {
     fi
 
     log_info "Deleting current container subvolume..."
-    if ! btrfs subvolume delete "$source"; then
+    if ! btrfs subvolume delete --recursive "$source"; then
         log_error "Failed to delete current container subvolume"
         die "restore aborted -- container may be in an inconsistent state"
     fi
@@ -1113,7 +1115,7 @@ cmd_image_remove() {
     if _is_btrfs_subvolume "$image_dir"; then
         btrfs property set -ts "$image_dir" ro false 2>/dev/null || true
         log_info "Deleting Btrfs subvolume: ${image_dir}"
-        if ! btrfs subvolume delete "$image_dir"; then
+        if ! btrfs subvolume delete --recursive "$image_dir"; then
             log_error "btrfs subvolume delete failed for ${image_dir}"
             die "failed to remove base image -- check dmesg for Btrfs errors"
         fi
