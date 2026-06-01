@@ -1,0 +1,19 @@
+/* ouroborOS TUI stylesheet */
+Screen { background: #000000; color: #ffffff; }
+LogoWidget { background: #083F28; color: #00FF66; height: auto; width: 100%; padding: 0; }
+#left-panel { width: 35%; border-right: tall #419E6E; }
+#right-panel { width: 65%; padding: 0 1; }
+ListView > ListItem.--highlight { background: #00FF66; color: #000000; }
+ListView > ListItem { padding: 0 1; }
+.section-title { color: #419E6E; text-style: bold; }
+.value { color: #00FF66; }
+.dim { color: #555555; }
+.warning { color: #f4a261; }
+.error { color: #d62828; }
+.success { color: #00FF66; text-style: bold; }
+Button.primary { background: #067B3B; color: #ffffff; }
+Button.danger { background: #d62828; color: #ffffff; }
+GradientBar { height: 1; width: 100%; }
+ProgressPane { padding: 1 2; }
+#language-screen { align: center middle; }
+#language-list { width: 50; }

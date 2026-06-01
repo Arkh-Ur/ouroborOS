@@ -5,6 +5,73 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-01
+
+TUI restructuring: the installer moves from a linear Rich wizard to a
+two-panel Textual interface (archinstall-style), with a full-screen language
+selector, persistent left menu, and inline edit panes. Adds `our-wall`
+(firewalld wrapper), Thunderbolt auto-detection, the `ouroboros-install`
+boot-mode launcher, and phase-based progress bars.
+
+### Added
+
+- **`tui_textual.py`** — Textual-based two-panel installer UI. `LanguageScreen`
+  (full-screen, 19 locales, default English) transitions to `MainMenuScreen`
+  (left `ListView` always visible, right `ContentSwitcher` with `PreviewPane`
+  and per-category `EditPane`s). Falls back to Rich TUI if Textual is not
+  installed (`HAS_TEXTUAL` guard).
+- **`LOCALE_CATALOG`** — 19 culturally-specific entries
+  `(display_name, locale_code, i18n_code)` covering regional variants
+  (Chileno, Québécois, Österreichisch, etc.) with correct i18n fallbacks.
+- **`GradientBar` widget** — custom `Static` subclass. RTL fill with a
+  gradient from `#067B3B` (trailing) to `#00FF66` (leading edge). Inline
+  percentage. Used in `ProgressPane`.
+- **`ProgressPane`** — four phase bars (FORMAT 10%, INSTALL 50%,
+  CONFIGURE 35%, SNAPSHOT 5%) plus an overall bar. Suppresses raw pacman output.
+- **`LogoWidget`** — renders the ouroborOS braille wordmark in `#00FF66` on
+  `#083F28` background, used in both `LanguageScreen` and `MainMenuScreen`.
+- **`installer.tcss`** — ouroborOS Textual stylesheet: `#000000` background,
+  `#083F28` header, `#00FF66` selections, `#419E6E` accents.
+- **`our-wall` binary** — sixth `our-*` tool. Wraps `firewalld`: `status`,
+  `enable`, `disable`, `reload`, `allow <service|port>`, `deny <service|port>`,
+  `list`, `zone show/set`, `preset desktop/server/reset`. Shellcheck-clean,
+  `set -euo pipefail`.
+- **`ouroboros-install` binary** — boot-mode menu with 5-second countdown.
+  Modes: TUI (default), Shell (drops to bash), GUI (shown dim, not yet
+  available). Shell mode sources `/etc/profile` and shows MOTD hint to
+  re-launch the installer.
+- **`ouroboros-autostart.sh`** — `profile.d` snippet that auto-invokes
+  `ouroboros-install` on TTY1 in the live ISO.
+- **`HardwareConfig` dataclass** — `thunderbolt_detected: bool = False`,
+  set at PREFLIGHT, drives `configure.sh`. No user interaction required.
+- **Thunderbolt auto-detect** — `_handle_preflight()` runs `lspci -nn`,
+  sets `config.hardware.thunderbolt_detected`. If detected, `configure.sh`
+  installs `bolt`, enables `boltd.service`, and writes
+  `/etc/bolt/bolt.conf` (`DefaultRule=auto`). Fully silent.
+- **`lang_from_locale()`** in `i18n.py` — maps a `locale_code` to its
+  `i18n_code` via `LOCALE_CATALOG`; falls back to `_LANG_MAP` when
+  `tui_textual` is not importable.
+- **`python-textual`** added to `packages.x86_64`.
+- **`firewalld`** added to `packages.x86_64`; enabled in `configure.sh`
+  PHASE 3 alongside other system services.
+- **`profiledef.sh`** — `our-wall` and `ouroboros-install` registered at
+  `0:0:755`.
+- **`test-shellcheck.sh`** — `our-wall` and `ouroboros-install` added to the
+  shellcheck loop.
+- **48 new tests** — `test_tui_textual.py` (LOCALE_CATALOG structure,
+  `lang_from_locale`, `TUIBuffer` defaults, required-fields gate, logo,
+  `HAS_TEXTUAL`) and `test_config.py` (`HardwareConfig` defaults,
+  `InstallerConfig.hardware` field, `to_system_yaml` hardware output).
+
+### Changed
+
+- **`main.py`** — imports `TUI` from `tui_textual` first; falls back to `tui`
+  (Rich) on `ImportError`.
+- **`state_machine.py`** — `_handle_preflight()` detects Thunderbolt via
+  `lspci`; `_handle_configure()` passes `THUNDERBOLT_DETECTED` env var.
+- **`config.py`** — `InstallerConfig` gains `hardware: HardwareConfig` field;
+  `to_system_yaml()` includes `hardware.thunderbolt_detected`.
+
 ## [0.5.12] - 2026-06-01
 
 New tool `our-box`: rootless user-space containers (podman) for development

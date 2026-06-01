@@ -44,6 +44,7 @@ libnewt
 python
 python-yaml
 python-rich
+python-textual
 python-pyaml
 
 # Text utilities
@@ -79,5 +80,8 @@ sbctl
 
 # TPM2 tools (tpm2-unlock via systemd-cryptenroll)
 tpm2-tools
+
+# Firewall (our-wall wrapper)
+firewalld
 
 # Flatpak is installed on-demand post-install via our-flat, not needed in the live ISO

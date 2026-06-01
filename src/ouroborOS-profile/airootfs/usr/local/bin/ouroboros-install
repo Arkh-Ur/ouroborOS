@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ouroborOS installer launcher.
+# Shows a mode-selection menu with a 5-second countdown, then launches
+# the selected mode. Accessible from the shell at any time via this name.
+
+readonly TIMEOUT=5
+
+# ouroborOS wordmark in braille art (color: #00FF66 on terminal output)
+readonly LOGO='⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣿⣿⡿⠿⠿⣿⣿⣶⣄⠀⠀⠀⠀⢀⣾⣿⡿⠿⢿⣿⣷⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⣿⠋⠀⠀⠀⠀⠀⠀⠻⣿⣧⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠉⠀
+⠀⠀⣤⣶⣿⣿⣷⣤⠀⠀⠀⠀⣿⡇⠀⠀⠀⠀⢸⣿⠀⠀⠀⣿⡇⢀⣶⣿⣿⠀⠀⠀⣤⣶⣿⣿⣷⣤⠀⠀⠀⠀⣿⣿⢀⣶⣿⣿⣶⣄⠀⠀⠀⠀⣠⣶⣿⣿⣿⣦⡀⠀⠀⠀⣿⣿⠀⣴⣿⣿⠆⠀⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⢹⣿⡆⠀⠀⣿⣿⡀⠀⠀⠀⠀⠀⠀
+⢀⣿⡿⠁⠀⠀⠀⢻⣿⡀⠀⠀⣿⡇⠀⠀⠀⠀⢸⣿⠀⠀⠀⣿⣷⠟⠁⠀⠀⠀⢀⣿⡿⠁⠀⠀⠀⢻⣿⡀⠀⠀⣿⣿⠋⠀⠀⠀⠹⣿⡆⠀⠀⣾⣿⠋⠀⠀⠀⠙⣿⣆⠀⠀⣿⣿⡿⠉⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠈⠿⣿⣿⣶⣤⡀⠀⠀
+⣼⣿⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⣿⡇⠀⠀⠀⠀⢸⣿⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⣼⣿⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⣿⣿⠀⠀⠀⠀⠀⣿⣿⠀⢠⣿⡇⠀⠀⠀⠀⠀⢿⣿⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠉⠙⠿⣿⣷⡀
+⣿⣿⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⣿⡇⠀⠀⠀⠀⢸⣿⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⣿⣿⠀⠀⠀⠀⠀⣿⣿⠀⢸⣿⡇⠀⠀⠀⠀⠀⣸⣿⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⣿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣧
+⠸⣿⣆⠀⠀⠀⠀⢠⣿⠏⠀⠀⣿⣇⠀⠀⠀⠀⣸⣿⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠸⣿⣆⠀⠀⠀⠀⢠⣿⠏⠀⠀⣿⣿⠀⠀⠀⠀⢠⣿⡏⠀⠀⣿⣷⠀⠀⠀⠀⠀⣿⡿⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠈⣿⣿⣄⠀⠀⠀⠀⠀⠀⣴⣿⡟⠀⠀⠀⣤⡀⠀⠀⠀⠀⣠⣿⠇
+⠀⠙⣿⣷⣤⣤⣶⣿⠋⠀⠀⠀⠻⣿⣶⣤⣴⡿⢻⣿⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠙⣿⣷⣤⣤⣶⣿⠋⠀⠀⠀⣿⡿⣷⣦⣤⣶⣿⠟⠀⠀⠀⠈⢿⣿⣦⣤⣶⣿⠟⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠛⣿⣿⣷⣶⣶⣿⣿⡿⠋⠀⠀⠀⠈⠿⣿⣿⣶⣶⣿⣿⠋⠀
+⠀⠀⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠉⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠉⠁⠀⠈⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠀⠀⠀⠀⠀⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠁⠀⠀⠀'
+
+# ANSI color helpers — #00FF66 neon green, dim, reset
+_neon()  { printf '\033[38;2;0;255;102m%s\033[0m' "$*"; }
+_dim()   { printf '\033[2m%s\033[0m' "$*"; }
+_bold()  { printf '\033[1m%s\033[0m' "$*"; }
+
+_show_menu() {
+    local countdown=$1
+    printf '\033[2J\033[H'  # clear screen
+    printf '\033[38;2;0;255;102m'
+    printf '%s\n' "$LOGO"
+    printf '\033[0m\n'
+    printf '  Select installation mode:\n\n'
+    printf '  \033[38;2;0;255;102m► 1. %-38s\033[0m  [default in %ds]\n' \
+        "Install ouroborOS (TUI)" "$countdown"
+    printf '    2. %-38s  (drop to bash)\n' "Shell"
+    printf '    \033[2m3. %-38s  (not yet available)\033[0m\n' \
+        "Install ouroborOS (GUI)"
+    printf '\n  [ Enter / 1 ] TUI installer   [ 2 / q ] Shell\n\n'
+}
+
+_launch_tui() {
+    printf '\033[2J\033[H'
+    exec python -m installer.main
+}
+
+_launch_shell() {
+    printf '\033[2J\033[H'
+    # Source /etc/profile so PATH includes /usr/local/bin, then show hint.
+    exec /bin/bash --rcfile <(
+        printf '%s\n' \
+            'source /etc/profile 2>/dev/null || true' \
+            'source ~/.bashrc 2>/dev/null || true' \
+            'printf "\n  Type '"'"'ouroboros-install'"'"' to return to the installer menu.\n\n"'
+    )
+}
+
+_launch_gui() {
+    printf '\033[2J\033[H'
+    exec python -m installer.main --gui
+}
+
+# Terminal setup — restore on exit/signal
+if [[ -t 0 ]]; then
+    _saved_term=$(stty -g)
+    # shellcheck disable=SC2064
+    trap "stty '$_saved_term'" EXIT INT TERM HUP
+    stty -echo -icanon min 0 time 0
+fi
+
+choice="tui"
+t=$TIMEOUT
+while [[ $t -gt 0 ]]; do
+    _show_menu "$t"
+    key=""
+    if IFS= read -r -s -n1 -t 1 key 2>/dev/null; then
+        case "$key" in
+            "1"|$'\n'|$'\r') choice="tui";   break ;;
+            "2"|q|Q)          choice="shell"; break ;;
+        esac
+    fi
+    t=$((t - 1))
+done
+
+if [[ -t 0 ]]; then
+    stty "$_saved_term"
+fi
+
+case "$choice" in
+    tui)   _launch_tui ;;
+    shell) _launch_shell ;;
+    gui)   _launch_gui ;;
+    *)     _launch_tui ;;
+esac

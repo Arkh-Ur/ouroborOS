@@ -11,6 +11,7 @@ import yaml
 
 from installer.config import (
     ConfigValidationError,
+    HardwareConfig,
     InstallerConfig,
     SecurityConfig,
     UserConfig,
@@ -1021,3 +1022,46 @@ class TestHomedLuksConfig:
         cfg = load_config(_write_yaml(tmp_path, content))
         assert cfg.users[0].tpm2_enroll is False
         assert cfg.users[0].fido2_enroll is False
+
+
+# ---------------------------------------------------------------------------
+# HardwareConfig
+# ---------------------------------------------------------------------------
+
+
+class TestHardwareConfig:
+    def test_default_thunderbolt_detected_is_false(self) -> None:
+        hw = HardwareConfig()
+        assert hw.thunderbolt_detected is False
+
+    def test_thunderbolt_can_be_set_true(self) -> None:
+        hw = HardwareConfig(thunderbolt_detected=True)
+        assert hw.thunderbolt_detected is True
+
+    def test_installer_config_has_hardware_field(self) -> None:
+        cfg = InstallerConfig()
+        assert hasattr(cfg, "hardware")
+        assert isinstance(cfg.hardware, HardwareConfig)
+
+    def test_installer_config_hardware_default_not_detected(self) -> None:
+        cfg = InstallerConfig()
+        assert cfg.hardware.thunderbolt_detected is False
+
+    def test_hardware_config_independent_instances(self) -> None:
+        cfg1 = InstallerConfig()
+        cfg2 = InstallerConfig()
+        cfg1.hardware.thunderbolt_detected = True
+        assert cfg2.hardware.thunderbolt_detected is False
+
+    def test_to_system_yaml_includes_hardware(self) -> None:
+        cfg = InstallerConfig()
+        cfg.hardware.thunderbolt_detected = True
+        result = cfg.to_system_yaml()
+        assert "hardware" in result
+        assert result["hardware"]["thunderbolt_detected"] is True
+
+    def test_to_system_yaml_hardware_default_false(self) -> None:
+        cfg = InstallerConfig()
+        result = cfg.to_system_yaml()
+        assert "hardware" in result
+        assert result["hardware"]["thunderbolt_detected"] is False

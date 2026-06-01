@@ -49,6 +49,7 @@ set -euo pipefail
 : "${SECURE_BOOT:='0'}"
 : "${SBCTL_INCLUDE_MS_KEYS:='0'}"
 : "${USER_PASSWORD:=''}"
+: "${THUNDERBOLT_DETECTED:='0'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -945,6 +946,8 @@ STUB
         our-aur
         our-app
         our-box
+        our-wall
+        ouroboros-install
         ouroboros-secureboot
         ouroboros-rebase
         ouroboros-verify-update
@@ -975,6 +978,24 @@ STUB
         log_ok "our-app XDG integration snippet installed."
     else
         log_warn "ouroboros-appimages.sh not found on live ISO — our-app .desktop entries won't appear in menus."
+    fi
+
+    # Thunderbolt auto-plug-and-play — only if hardware was detected at PREFLIGHT.
+    if [[ "${THUNDERBOLT_DETECTED:-0}" == "1" ]]; then
+        arch-chroot "${TARGET}" pacman -S --noconfirm bolt
+        in_chroot systemctl enable boltd.service
+        mkdir -p "${TARGET}/etc/bolt"
+        printf '[bolt]\nDefaultRule=auto\n' > "${TARGET}/etc/bolt/bolt.conf"
+        log_ok "Thunderbolt: boltd enabled with DefaultRule=auto (auto-detected, plug and play)."
+    fi
+
+    # ouroboros-install autostart on TTY1 of the live ISO — copy profile.d snippet.
+    local _autostart_src="/etc/profile.d/ouroboros-autostart.sh"
+    if [[ -f "${_autostart_src}" ]]; then
+        mkdir -p "${TARGET}/etc/profile.d"
+        cp "${_autostart_src}" "${TARGET}/etc/profile.d/ouroboros-autostart.sh"
+        chmod 0644 "${TARGET}/etc/profile.d/ouroboros-autostart.sh"
+        log_ok "ouroboros-autostart.sh installed (TTY1 installer autostart)."
     fi
 
     # Phase 3 Bluetooth/FIDO2 config files — copy from live ISO.
@@ -1193,6 +1214,8 @@ main() {
     in_chroot systemctl enable getty@tty1.service
     in_chroot systemctl enable sshd.service
     log_ok "sshd enabled (uses default After=network.target)."
+    in_chroot systemctl enable firewalld.service
+    log_ok "firewalld enabled (default zone: public)."
 
     # Display manager — enabled only for desktop profiles that ship one.
     # greetd (COSMIC) requires extra setup: cosmic-greeter config + greeter user.

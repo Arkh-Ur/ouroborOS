@@ -421,6 +421,17 @@ class Installer:
         if failed:
             raise InstallerError("Preflight checks failed:\n" + "\n".join(failed))
 
+        # Thunderbolt auto-detect — silent, no UI, drives configure.sh
+        try:
+            tb = subprocess.run(
+                ["lspci", "-nn"], capture_output=True, text=True, check=False,
+            )
+            self.config.hardware.thunderbolt_detected = "thunderbolt" in tb.stdout.lower()
+            if self.config.hardware.thunderbolt_detected:
+                log.info("Thunderbolt hardware detected — boltd will be enabled during CONFIGURE.")
+        except FileNotFoundError:
+            log.debug("lspci not available — thunderbolt detection skipped.")
+
     def _handle_locale(self) -> None:
         """LOCALE — set locale, timezone, keymap."""
         self._update_progress(State.LOCALE, 0)
@@ -1008,6 +1019,7 @@ class Installer:
                 "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
                 "ENABLE_DUAL_BOOT": "1" if self.config.security.dual_boot else "0",
                 "SECURE_BOOT": "1" if self.config.security.secure_boot else "0",
+                "THUNDERBOLT_DETECTED": "1" if self.config.hardware.thunderbolt_detected else "0",
                 "SBCTL_INCLUDE_MS_KEYS": "1" if self.config.security.sbctl_include_ms_keys else "0",
                 "ISO_VERSION": _read_iso_version(),
                 "OFFLINE_MODE": "true" if (not self._has_internet() and self._detect_offline_cache()) else "false",

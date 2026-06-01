@@ -139,6 +139,13 @@ class SecurityConfig:
 
 
 @dataclass
+class HardwareConfig:
+    """Hardware capabilities detected at PREFLIGHT time."""
+
+    thunderbolt_detected: bool = False
+
+
+@dataclass
 class InstallerConfig:
     """Complete installation configuration.
 
@@ -152,6 +159,7 @@ class InstallerConfig:
     users: list[UserConfig] = field(default_factory=list)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -216,6 +224,9 @@ class InstallerConfig:
                 "use_luks": self.disk.use_luks,
                 "btrfs_label": self.disk.btrfs_label,
                 "swap_type": self.disk.swap_type,
+            },
+            "hardware": {
+                "thunderbolt_detected": self.hardware.thunderbolt_detected,
             },
         }
 

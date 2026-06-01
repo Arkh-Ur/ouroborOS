@@ -437,6 +437,46 @@ our-box migrate --from toolbox mybox
 
 ---
 
+### 8.7 Firewall — `our-wall`
+
+`our-wall` wraps `firewalld` with a concise interface. The firewall is enabled
+automatically during installation (default zone: `public`).
+
+```bash
+# Check current state
+our-wall status
+
+# Open / close a port
+our-wall allow 8080/tcp
+our-wall deny  8080/tcp
+
+# Open a named service
+our-wall allow http
+our-wall deny  http
+
+# List what is currently open
+our-wall list
+
+# Common presets
+our-wall preset desktop   # mdns + kde-connect + syncthing
+our-wall preset server    # ssh + http + https
+our-wall preset reset     # back to default: public zone, ssh only
+
+# Zone management
+our-wall zone show
+our-wall zone set home
+
+# Start/stop the firewall (does not uninstall)
+sudo our-wall enable
+sudo our-wall disable
+```
+
+> `our-wall` requires `sudo` for any command that modifies firewall state.
+> `status`, `list`, and `zone show` work without root.
+> See `docs/architecture/our-wall.md` for the design rationale.
+
+---
+
 ## 9. Roll back to a previous snapshot
 
 ### List snapshots
