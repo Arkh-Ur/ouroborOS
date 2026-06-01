@@ -195,6 +195,7 @@ class InstallerConfig:
             "user_packages": [],
             "aur_packages": [],
             "appimage_packages": [],
+            "box_packages": [],
             "users": [
                 {
                     "username": u.username,

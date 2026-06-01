@@ -31,6 +31,12 @@ def our_container_script(project_root: Path) -> Path:
     return project_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-container"
 
 
+@pytest.fixture(scope="session")
+def our_box_script(project_root: Path) -> Path:
+    """Absolute path to the our-box script."""
+    return project_root / "src" / "ouroborOS-profile" / "airootfs" / "usr" / "local" / "bin" / "our-box"
+
+
 # ---------------------------------------------------------------------------
 # Temporary directories that mimic our-container paths
 # ---------------------------------------------------------------------------

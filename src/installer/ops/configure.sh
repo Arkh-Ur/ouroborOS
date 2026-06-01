@@ -944,6 +944,7 @@ STUB
         our-flat
         our-aur
         our-app
+        our-box
         ouroboros-secureboot
         ouroboros-rebase
         ouroboros-verify-update

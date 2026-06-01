@@ -5,6 +5,41 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.12] - 2026-06-01
+
+New tool `our-box`: rootless user-space containers (podman) for development
+environments, disposable shells, and GUI desktop apps. The user-space counterpart
+to `our-container` — no root required, home directory mounted, host UID mapped
+inside the container.
+
+### Added
+
+- **`our-box` binary** — fifth `our-*` tool. Manages rootless containers via
+  `podman` (default) or `docker`. Three preset box types: `dev` (home + Wayland +
+  audio defaults), `ephemeral` (disposable, `--rm`), `app` (Wayland + GPU + audio
+  defaults). All flags (`--home`, `--wayland`, `--x11`, `--gpu`, `--audio`) are
+  explicit overrides; types are presets, not restrictions.
+- **Lazy engine install** — `our-box` calls `our-pac -S podman` automatically on
+  first use if podman is not installed. `--engine docker` does the same for Docker.
+- **GUI passthrough** — Wayland socket (`$XDG_RUNTIME_DIR/wayland-0`), X11 socket
+  (`/tmp/.X11-unix`), GPU device (`/dev/dri`), and PipeWire/PulseAudio audio can
+  each be enabled independently via flags.
+- **`our-box export <name> <app>`** — generates a `.desktop` entry under
+  `~/.local/share/applications/` that launches the app inside the box.
+- **`our-box migrate --from distrobox|toolbox <name>`** — imports metadata from
+  an existing distrobox or toolbox container into our-box.
+- **`our-box repo` and `our-box engine`** — same surface as `our-container`,
+  stored under `$XDG_CONFIG_HOME/our-box/` (no root paths).
+- **`system.yaml` integration** — new key `box_packages: []`, updated by
+  `our-box create` (add) and `our-box remove` (remove).
+- **`profiledef.sh`** — `our-box` registered at `0:0:755`.
+- **`configure.sh`** — `our-box` copied to installed system alongside other
+  `our-*` tools.
+- **`test_our_box_integration.py`** — 4 test classes: `TestOurBoxHelp`,
+  `TestOurBoxValidation`, `TestOurBoxList` (no-root, no-podman), and
+  `TestOurBoxLifecycle` (`@requires_podman`). Excluded from CI pytest via
+  `--ignore`.
+
 ## [0.5.11] - 2026-05-31
 
 Multi-engine para `our-container`: el wrapper deja de estar atado a

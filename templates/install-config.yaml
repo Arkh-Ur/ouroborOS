@@ -81,6 +81,10 @@ desktop:
 #   fido2_pam: false
 #   dual_boot: false
 
+# Post-install package sets — managed automatically by their respective tools.
+# appimage_packages: []  # managed by our-app (AppImage manager)
+# box_packages: []       # managed by our-box (user-space dev containers)
+
 extra_packages:
   - openssh
 

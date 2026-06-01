@@ -1,0 +1,647 @@
+#!/usr/bin/env bash
+# our-box — user-space container tool for ouroborOS (rootless, podman)
+set -euo pipefail
+
+readonly PROGRAM_NAME="our-box"
+
+# ── XDG paths (with fallbacks) ────────────────────────────────────────────────
+: "${XDG_DATA_HOME:=${HOME}/.local/share}"
+: "${XDG_CONFIG_HOME:=${HOME}/.config}"
+
+readonly BOX_CONF_DIR="${XDG_CONFIG_HOME}/our-box"
+readonly BOX_META_DIR="${BOX_CONF_DIR}/boxes.d"
+readonly BOX_CONF="${BOX_CONF_DIR}/box.conf"
+readonly BOX_REPOS_CONF="${BOX_CONF_DIR}/repos.conf"
+
+readonly VALID_ENGINES="podman docker"
+readonly VALID_TYPES="dev ephemeral app"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+_msg()  { echo "[${PROGRAM_NAME}] $*"; }
+_warn() { echo "[${PROGRAM_NAME}] WARNING: $*" >&2; }
+_err()  { echo "[${PROGRAM_NAME}] ERROR: $*" >&2; }
+_die()  { _err "$*"; exit 1; }
+
+# ── Cleanup ───────────────────────────────────────────────────────────────────
+_CLEANUP_TMPDIR=""
+_cleanup() {
+    [[ -n "${_CLEANUP_TMPDIR}" && -d "${_CLEANUP_TMPDIR}" ]] \
+        && rm -rf "${_CLEANUP_TMPDIR}" 2>/dev/null || true
+}
+trap '_cleanup' EXIT
+
+# ── Engine helpers ────────────────────────────────────────────────────────────
+_engine_is_valid() {
+    case " ${VALID_ENGINES} " in *" ${1} "*) return 0 ;; *) return 1 ;; esac
+}
+
+_engine_available() {
+    command -v "${1}" >/dev/null 2>&1
+}
+
+_engine_default() {
+    local e="podman"
+    if [[ -f "${BOX_CONF}" ]]; then
+        local v
+        v="$(awk -F= '/^[[:space:]]*ENGINE[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' \
+            "${BOX_CONF}" 2>/dev/null || true)"
+        [[ -n "${v}" ]] && _engine_is_valid "${v}" && e="${v}"
+    fi
+    echo "${e}"
+}
+
+_engine_ensure() {
+    local eng="${1}"
+    _engine_is_valid "${eng}" || _die "unknown engine '${eng}' (valid: ${VALID_ENGINES})"
+    if ! _engine_available "${eng}"; then
+        _msg "Engine '${eng}' not installed. Installing via our-pac..."
+        our-pac -S "${eng}" \
+            || _die "failed to install ${eng} — install manually: sudo pacman -S ${eng}"
+    fi
+}
+
+# ── Box metadata ──────────────────────────────────────────────────────────────
+_box_meta_file() { echo "${BOX_META_DIR}/${1}.conf"; }
+
+_box_set_meta() {
+    local name="${1}" engine="${2}" image="${3}" type="${4}"
+    local opt_home="${5}" opt_wayland="${6}" opt_x11="${7}" opt_gpu="${8}" opt_audio="${9}"
+    mkdir -p "${BOX_META_DIR}"
+    {
+        echo "ENGINE=${engine}"
+        echo "IMAGE=${image}"
+        echo "TYPE=${type}"
+        echo "HOME=${opt_home}"
+        echo "WAYLAND=${opt_wayland}"
+        echo "X11=${opt_x11}"
+        echo "GPU=${opt_gpu}"
+        echo "AUDIO=${opt_audio}"
+        echo "CREATED=$(date '+%Y-%m-%dT%H:%M:%S')"
+    } > "$(_box_meta_file "${name}")"
+}
+
+_box_clear_meta() {
+    rm -f "$(_box_meta_file "${1}")" 2>/dev/null || true
+}
+
+_box_get_meta() {
+    local name="${1}" key="${2}" default="${3:-}"
+    local meta
+    meta="$(_box_meta_file "${name}")"
+    [[ -f "${meta}" ]] || { echo "${default}"; return 0; }
+    local v
+    v="$(awk -F= -v k="${key}" \
+        '/^[[:space:]]*#/{next} $1==k{gsub(/[[:space:]]/,"",$2); print $2; exit}' \
+        "${meta}" 2>/dev/null || true)"
+    echo "${v:-${default}}"
+}
+
+_box_engine_for() {
+    local name="${1}"
+    local v
+    v="$(_box_get_meta "${name}" "ENGINE" "")"
+    if [[ -n "${v}" ]] && _engine_is_valid "${v}"; then echo "${v}"; return 0; fi
+    _engine_default
+}
+
+_box_exists_local() {
+    [[ -f "$(_box_meta_file "${1}")" ]]
+}
+
+_box_exists_engine() {
+    "${1}" inspect "${2}" >/dev/null 2>&1
+}
+
+_require_box() {
+    local name="${1}"
+    _box_exists_local "${name}" \
+        || _die "box '${name}' not found — list boxes with: our-box list"
+}
+
+# ── Type defaults ─────────────────────────────────────────────────────────────
+_type_default() {
+    local type="${1}" flag="${2}"
+    case "${flag}" in
+        home)    case "${type}" in dev) echo 1 ;; *) echo 0 ;; esac ;;
+        wayland) case "${type}" in dev|app) echo 1 ;; *) echo 0 ;; esac ;;
+        x11)     echo 0 ;;
+        gpu)     case "${type}" in app) echo 1 ;; *) echo 0 ;; esac ;;
+        audio)   case "${type}" in dev|app) echo 1 ;; *) echo 0 ;; esac ;;
+        *)       echo 0 ;;
+    esac
+}
+
+# ── system.yaml sync ──────────────────────────────────────────────────────────
+_update_system_yaml() {
+    local op="${1}" name="${2}"
+    local yaml="/etc/ouroboros/system.yaml"
+    [[ -f "${yaml}" ]] || return 0
+    python3 - "${yaml}" "${op}" "${name}" <<'PYEOF'
+import sys, os
+yaml_path, op, name = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    import yaml as _yaml
+    with open(yaml_path) as f:
+        data = _yaml.safe_load(f) or {}
+    pkgs = data.get("box_packages", [])
+    if op == "add" and name not in pkgs:
+        pkgs.append(name)
+    elif op == "remove":
+        pkgs = [p for p in pkgs if p != name]
+    data["box_packages"] = sorted(pkgs)
+    tmp = yaml_path + ".tmp"
+    with open(tmp, "w") as f:
+        _yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    os.replace(tmp, yaml_path)
+except Exception as e:
+    print(f"[our-box] WARNING: could not update system.yaml: {e}", file=sys.stderr)
+PYEOF
+}
+
+# ── Repo helpers ──────────────────────────────────────────────────────────────
+_repos_conf_ensure() {
+    [[ -f "${BOX_REPOS_CONF}" ]] && return 0
+    mkdir -p "$(dirname "${BOX_REPOS_CONF}")"
+    {
+        echo "# our-box repositories"
+        echo "# Format: <name><TAB><type><TAB><url>"
+        echo "#   type=oci     OCI registry (docker.io, quay.io, ghcr.io)"
+        echo "#   type=direct  direct URL to an OCI tarball"
+        printf 'docker.io\toci\tdocker.io\n'
+        printf 'ghcr.io\toci\tghcr.io\n'
+    } > "${BOX_REPOS_CONF}"
+    _msg "Created default repository registry: ${BOX_REPOS_CONF}"
+}
+
+_repo_get() {
+    local name="${1}"
+    [[ -f "${BOX_REPOS_CONF}" ]] || return 1
+    awk -F'\t' -v n="${name}" '
+        /^[[:space:]]*#/{next}
+        NF>=3 && $1==n{print; found=1; exit}
+        END{exit !found}
+    ' "${BOX_REPOS_CONF}"
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_create() {
+    local name="${1:-}" image="${2:-}"
+    [[ -n "${name}" && -n "${image}" ]] || _die \
+        "usage: our-box create <name> <image> [--type dev|ephemeral|app] [--engine podman|docker]
+               [--home|--no-home] [--wayland|--no-wayland] [--x11] [--gpu|--no-gpu]
+               [--audio|--no-audio] [--gui]"
+    shift 2
+
+    local engine type
+    engine="$(_engine_default)"
+    type="dev"
+
+    # flag tracking: -1 = unset, 0 = off, 1 = on
+    local f_home=-1 f_wayland=-1 f_x11=-1 f_gpu=-1 f_audio=-1
+
+    while [[ $# -gt 0 ]]; do
+        case "${1}" in
+            --type)       [[ -n "${2:-}" ]] || _die "--type requires a value"
+                          type="${2}"; shift 2 ;;
+            --engine)     [[ -n "${2:-}" ]] || _die "--engine requires a value"
+                          engine="${2}"; shift 2 ;;
+            --home)       f_home=1;    shift ;;
+            --no-home)    f_home=0;    shift ;;
+            --wayland)    f_wayland=1; shift ;;
+            --no-wayland) f_wayland=0; shift ;;
+            --x11)        f_x11=1;     shift ;;
+            --gpu)        f_gpu=1;     shift ;;
+            --no-gpu)     f_gpu=0;     shift ;;
+            --audio)      f_audio=1;   shift ;;
+            --no-audio)   f_audio=0;   shift ;;
+            --gui)        f_wayland=1; f_gpu=1; f_audio=1; shift ;;
+            *) _die "unknown option: ${1}" ;;
+        esac
+    done
+
+    case " ${VALID_TYPES} " in *" ${type} "*) ;; *) _die "invalid type '${type}' (valid: ${VALID_TYPES})" ;; esac
+    _engine_is_valid "${engine}" || _die "invalid engine '${engine}' (valid: ${VALID_ENGINES})"
+    _box_exists_local "${name}" && _die "box '${name}' already exists — remove it first"
+
+    # apply type defaults for unset flags
+    [[ "${f_home}"    -ge 0 ]] || f_home="$(_type_default "${type}" home)"
+    [[ "${f_wayland}" -ge 0 ]] || f_wayland="$(_type_default "${type}" wayland)"
+    [[ "${f_x11}"     -ge 0 ]] || f_x11="$(_type_default "${type}" x11)"
+    [[ "${f_gpu}"     -ge 0 ]] || f_gpu="$(_type_default "${type}" gpu)"
+    [[ "${f_audio}"   -ge 0 ]] || f_audio="$(_type_default "${type}" audio)"
+
+    _engine_ensure "${engine}"
+
+    # ephemeral: run immediately and exit
+    if [[ "${type}" == "ephemeral" ]]; then
+        _msg "Launching ephemeral box from '${image}' (removed on exit)..."
+        "${engine}" run --rm -it --name "${name}" --userns=keep-id --hostname "${name}" \
+            "${image}" bash 2>/dev/null \
+            || "${engine}" run --rm -it --name "${name}" --userns=keep-id --hostname "${name}" \
+               "${image}" sh
+        return 0
+    fi
+
+    # dev/app: build flags array
+    local -a cflags=(
+        --name "${name}"
+        --hostname "${name}"
+        --userns=keep-id
+        --cap-add=SYS_PTRACE
+    )
+
+    if [[ "${f_home}" -eq 1 ]]; then
+        cflags+=(-v "${HOME}:${HOME}" --workdir "${HOME}")
+    fi
+
+    if [[ "${f_wayland}" -eq 1 ]]; then
+        local wsock="/run/user/${UID}/wayland-0"
+        if [[ -S "${wsock}" ]]; then
+            cflags+=(-v "${wsock}:${wsock}:ro")
+            cflags+=(--env "WAYLAND_DISPLAY=wayland-0")
+            cflags+=(--env "XDG_RUNTIME_DIR=/run/user/${UID}")
+        else
+            _warn "Wayland socket not found at ${wsock} — --wayland skipped"
+        fi
+    fi
+
+    if [[ "${f_x11}" -eq 1 ]]; then
+        if [[ -d /tmp/.X11-unix ]]; then
+            cflags+=(-v "/tmp/.X11-unix:/tmp/.X11-unix:ro")
+            cflags+=(--env "DISPLAY=${DISPLAY:-:0}")
+            [[ -f "${HOME}/.Xauthority" ]] \
+                && cflags+=(-v "${HOME}/.Xauthority:${HOME}/.Xauthority:ro")
+        else
+            _warn "/tmp/.X11-unix not found — --x11 skipped"
+        fi
+    fi
+
+    if [[ "${f_gpu}" -eq 1 ]]; then
+        if [[ -d /dev/dri ]]; then
+            cflags+=(--device /dev/dri)
+        else
+            _warn "/dev/dri not found — --gpu skipped"
+        fi
+    fi
+
+    if [[ "${f_audio}" -eq 1 ]]; then
+        local pw="/run/user/${UID}/pipewire-0"
+        local pulse="/run/user/${UID}/pulse/native"
+        if [[ -S "${pw}" ]]; then
+            cflags+=(-v "${pw}:${pw}:ro" --env "PIPEWIRE_REMOTE=${pw}")
+        elif [[ -S "${pulse}" ]]; then
+            cflags+=(-v "${pulse}:${pulse}:ro" --env "PULSE_SERVER=unix:${pulse}")
+        else
+            _warn "No PipeWire or PulseAudio socket found — --audio skipped"
+        fi
+    fi
+
+    _msg "Pulling image '${image}'..."
+    "${engine}" pull "${image}" || _die "failed to pull image '${image}'"
+
+    _msg "Creating ${type} box '${name}'..."
+    "${engine}" create "${cflags[@]}" "${image}" sleep infinity >/dev/null \
+        || _die "failed to create box '${name}'"
+
+    _box_set_meta "${name}" "${engine}" "${image}" "${type}" \
+        "${f_home}" "${f_wayland}" "${f_x11}" "${f_gpu}" "${f_audio}"
+    _update_system_yaml "add" "${name}"
+    _msg "Box '${name}' created (${type}). Enter it: our-box enter ${name}"
+}
+
+cmd_enter() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "usage: our-box enter <name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+
+    if ! _box_exists_engine "${engine}" "${name}"; then
+        _die "box '${name}' not found in ${engine} — was it removed externally?"
+    fi
+
+    local running
+    running="$("${engine}" inspect -f '{{.State.Running}}' "${name}" 2>/dev/null || echo false)"
+    if [[ "${running}" != "true" ]]; then
+        _msg "Starting box '${name}'..."
+        "${engine}" start "${name}" >/dev/null || _die "failed to start '${name}'"
+    fi
+
+    if "${engine}" exec "${name}" sh -c 'command -v bash >/dev/null 2>&1' 2>/dev/null; then
+        exec "${engine}" exec -it "${name}" bash
+    fi
+    exec "${engine}" exec -it "${name}" sh
+}
+
+cmd_start() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "usage: our-box start <name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+    "${engine}" start "${name}" >/dev/null || _die "failed to start '${name}'"
+    _msg "Box '${name}' started"
+}
+
+cmd_stop() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "usage: our-box stop <name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+    "${engine}" stop "${name}" >/dev/null || _die "failed to stop '${name}'"
+    _msg "Box '${name}' stopped"
+}
+
+cmd_remove() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "usage: our-box remove <name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+    if _box_exists_engine "${engine}" "${name}"; then
+        "${engine}" rm -f "${name}" >/dev/null || _die "failed to remove '${name}'"
+    fi
+    _box_clear_meta "${name}"
+    _update_system_yaml "remove" "${name}"
+    _msg "Box '${name}' removed"
+}
+
+cmd_list() {
+    if [[ ! -d "${BOX_META_DIR}" ]] || [[ -z "$(ls -A "${BOX_META_DIR}" 2>/dev/null)" ]]; then
+        echo ""
+        echo "  (no boxes — create one with: our-box create <name> <image>)"
+        echo ""
+        return 0
+    fi
+
+    echo ""
+    echo "=== our-box boxes ==="
+    printf "  %-20s  %-10s  %-8s  %-8s  %s\n" "NAME" "TYPE" "ENGINE" "STATUS" "IMAGE"
+    echo "  -------------------------------------------------------------------"
+
+    for meta in "${BOX_META_DIR}"/*.conf; do
+        [[ -f "${meta}" ]] || continue
+        local name
+        name="$(basename "${meta}" .conf)"
+        local engine type image
+        engine="$(_box_get_meta "${name}" "ENGINE" "podman")"
+        type="$(_box_get_meta "${name}" "TYPE" "dev")"
+        image="$(_box_get_meta "${name}" "IMAGE" "?")"
+        local status="stopped"
+        if _engine_available "${engine}" && _box_exists_engine "${engine}" "${name}"; then
+            local running
+            running="$("${engine}" inspect -f '{{.State.Running}}' "${name}" 2>/dev/null \
+                || echo false)"
+            [[ "${running}" == "true" ]] && status="running"
+        else
+            status="missing"
+        fi
+        printf "  %-20s  %-10s  %-8s  %-8s  %s\n" "${name}" "${type}" "${engine}" \
+            "${status}" "${image}"
+    done
+    echo ""
+}
+
+cmd_logs() {
+    local name="${1:-}"
+    [[ -n "${name}" ]] || _die "usage: our-box logs <name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+    "${engine}" logs "${name}"
+}
+
+cmd_export() {
+    local name="${1:-}" app="${2:-}"
+    [[ -n "${name}" && -n "${app}" ]] || _die "usage: our-box export <name> <app-name>"
+    _require_box "${name}"
+    local engine
+    engine="$(_box_engine_for "${name}")"
+    _engine_ensure "${engine}"
+
+    local running
+    running="$("${engine}" inspect -f '{{.State.Running}}' "${name}" 2>/dev/null || echo false)"
+    if [[ "${running}" != "true" ]]; then
+        "${engine}" start "${name}" >/dev/null || _die "failed to start '${name}' for export"
+    fi
+
+    "${engine}" exec "${name}" sh -c "command -v ${app} >/dev/null 2>&1" \
+        || _die "'${app}' not found inside box '${name}' — install it first"
+
+    local desktop_dir="${HOME}/.local/share/applications"
+    mkdir -p "${desktop_dir}"
+    local desktop_file="${desktop_dir}/our-box-${name}-${app}.desktop"
+
+    cat > "${desktop_file}" <<DESKTOP
+[Desktop Entry]
+Name=${app} (${name})
+Exec=our-box enter ${name}
+Terminal=false
+Type=Application
+Comment=Launched via our-box in box '${name}'
+X-OurBox-Name=${name}
+X-OurBox-App=${app}
+DESKTOP
+
+    _msg "Exported '${app}' from box '${name}' → ${desktop_file}"
+    _msg "Refresh desktop: update-desktop-database ${desktop_dir}"
+}
+
+cmd_migrate() {
+    # allow: our-box migrate --from distrobox mybox
+    local source_tool="${1:-}" name="${2:-}"
+    if [[ "${source_tool}" == "--from" ]]; then
+        source_tool="${2:-}"
+        name="${3:-}"
+    fi
+    [[ -n "${source_tool}" && -n "${name}" ]] \
+        || _die "usage: our-box migrate --from distrobox|toolbox <name>"
+
+    case "${source_tool}" in
+        distrobox)
+            command -v distrobox >/dev/null 2>&1 || _die "distrobox not installed"
+            local image
+            image="$(distrobox list --no-color 2>/dev/null \
+                | awk -v n="${name}" 'index($0, n) && NR>1 {print $NF; exit}')"
+            [[ -n "${image}" ]] || _die "distrobox box '${name}' not found"
+            _box_set_meta "${name}" "podman" "${image}" "dev" 1 1 0 0 1
+            _update_system_yaml "add" "${name}"
+            _msg "Migrated distrobox '${name}' → our-box metadata created"
+            ;;
+        toolbox)
+            command -v toolbox >/dev/null 2>&1 || _die "toolbox not installed"
+            _box_set_meta "${name}" "podman" "fedora-toolbox:latest" "dev" 1 0 0 0 0
+            _update_system_yaml "add" "${name}"
+            _msg "Migrated toolbox '${name}' → our-box metadata created"
+            ;;
+        *) _die "unknown source '${source_tool}' (valid: distrobox toolbox)" ;;
+    esac
+}
+
+cmd_repo() {
+    local sub="${1:-list}"
+    shift || true
+    case "${sub}" in
+        add)
+            local rname="${1:-}" url="${2:-}" rtype="${3:-oci}"
+            [[ -n "${rname}" && -n "${url}" ]] \
+                || _die "usage: our-box repo add <name> <url> [oci|direct]"
+            [[ "${rname}" =~ ^[A-Za-z0-9._-]+$ ]] \
+                || _die "invalid repo name '${rname}' (letters, digits, '.', '-', '_' only)"
+            _repos_conf_ensure
+            _repo_get "${rname}" >/dev/null 2>&1 \
+                && _die "repo '${rname}' already exists — remove it first"
+            printf '%s\t%s\t%s\n' "${rname}" "${rtype}" "${url}" >> "${BOX_REPOS_CONF}"
+            _msg "Added ${rtype} repo '${rname}' → ${url}"
+            ;;
+        remove)
+            local rname="${1:-}"
+            [[ -n "${rname}" ]] || _die "usage: our-box repo remove <name>"
+            [[ -f "${BOX_REPOS_CONF}" ]] || _die "no repository registry found"
+            local tmp
+            tmp="$(mktemp "${BOX_REPOS_CONF}.XXXXXX")"
+            awk -F'\t' -v n="${rname}" \
+                '/^[[:space:]]*#/{print;next} NF>=3 && $1==n{next} {print}' \
+                "${BOX_REPOS_CONF}" > "${tmp}"
+            mv "${tmp}" "${BOX_REPOS_CONF}"
+            _msg "Removed repo '${rname}'"
+            ;;
+        list)
+            _repos_conf_ensure
+            echo ""
+            echo "=== our-box repositories ==="
+            printf "  %-15s  %-8s  %s\n" "NAME" "TYPE" "URL"
+            echo "  -----------------------------------------------"
+            local count=0 rname rtype url
+            while IFS=$'\t' read -r rname rtype url; do
+                [[ -z "${rname}" || "${rname}" == \#* ]] && continue
+                printf "  %-15s  %-8s  %s\n" "${rname}" "${rtype}" "${url}"
+                (( count++ )) || true
+            done < "${BOX_REPOS_CONF}"
+            [[ "${count}" -eq 0 ]] && echo "  (no repositories configured)"
+            echo ""
+            ;;
+        *) _die "unknown repo subcommand '${sub}' (valid: add list remove)" ;;
+    esac
+}
+
+cmd_engine() {
+    local sub="${1:-show}"
+    shift || true
+    case "${sub}" in
+        show|list)
+            local default_eng
+            default_eng="$(_engine_default)"
+            echo ""
+            echo "=== our-box engines ==="
+            printf "  %-10s  %-15s  %s\n" "ENGINE" "STATUS" ""
+            echo "  -----------------------------------"
+            local eng
+            for eng in ${VALID_ENGINES}; do
+                local avail="not installed"
+                _engine_available "${eng}" && avail="installed"
+                local marker=""
+                [[ "${eng}" == "${default_eng}" ]] && marker=" ← default"
+                printf "  %-10s  %-15s%s\n" "${eng}" "${avail}" "${marker}"
+            done
+            echo ""
+            ;;
+        set)
+            local eng="${1:-}"
+            [[ -n "${eng}" ]] || _die "usage: our-box engine set <engine>"
+            _engine_is_valid "${eng}" || _die "invalid engine '${eng}' (valid: ${VALID_ENGINES})"
+            mkdir -p "$(dirname "${BOX_CONF}")"
+            if [[ -f "${BOX_CONF}" ]]; then
+                local tmp
+                tmp="$(mktemp "${BOX_CONF}.XXXXXX")"
+                if grep -q "^ENGINE=" "${BOX_CONF}"; then
+                    sed "s|^ENGINE=.*|ENGINE=${eng}|" "${BOX_CONF}" > "${tmp}"
+                else
+                    { cat "${BOX_CONF}"; echo "ENGINE=${eng}"; } > "${tmp}"
+                fi
+                mv "${tmp}" "${BOX_CONF}"
+            else
+                echo "ENGINE=${eng}" > "${BOX_CONF}"
+            fi
+            _msg "Default engine set to '${eng}'"
+            ;;
+        *) _die "unknown engine subcommand '${sub}' (valid: show list set)" ;;
+    esac
+}
+
+cmd_help() {
+    cat <<'EOF'
+
+Usage: our-box <command> [options]
+
+Commands:
+  create <name> <image>             Create a new box
+  enter  <name>                     Enter a box (starts if stopped)
+  start  <name>                     Start a stopped box
+  stop   <name>                     Stop a running box
+  remove|rm <name>                  Remove a box
+  list|ls                           List all boxes
+  logs   <name>                     Show box logs
+  export <name> <app>               Export app as .desktop shortcut
+  migrate --from distrobox|toolbox  Import an existing box
+  repo   add|list|remove            Manage image repositories
+  engine show|set                   Manage engines
+
+Create options:
+  --type dev|ephemeral|app     Box type (default: dev)
+  --engine podman|docker       Engine (default: podman, installed on demand)
+  --home / --no-home           Mount $HOME in the box
+  --wayland / --no-wayland     Wayland socket passthrough
+  --x11                        X11 socket passthrough
+  --gpu / --no-gpu             GPU passthrough (/dev/dri)
+  --audio / --no-audio         Audio passthrough (PipeWire / PulseAudio)
+  --gui                        Enable wayland + gpu + audio
+
+Box types (default flags):
+  dev         $HOME + Wayland + audio  for development (add --gpu for AI/ML/CUDA)
+  ephemeral   no mounts, no persistence  run something, exit, gone
+  app         Wayland + GPU + audio  run a GUI app isolated from the host
+
+Examples:
+  our-box create dev-env archlinux --type dev
+  our-box create pytorch-env pytorch/pytorch --type dev --gpu
+  our-box create scratch alpine --type ephemeral
+  our-box create browser firefox-image --type app
+  our-box enter dev-env
+  our-box export dev-env code
+  our-box remove dev-env
+
+EOF
+}
+
+# ── Dispatcher ────────────────────────────────────────────────────────────────
+main() {
+    local cmd="${1:-}"
+    [[ -n "${cmd}" ]] || { cmd_help; exit 0; }
+    shift || true
+
+    case "${cmd}" in
+        create)              cmd_create  "$@" ;;
+        enter)               cmd_enter   "$@" ;;
+        start)               cmd_start   "$@" ;;
+        stop)                cmd_stop    "$@" ;;
+        remove|rm)           cmd_remove  "$@" ;;
+        list|ls)             cmd_list    "$@" ;;
+        logs)                cmd_logs    "$@" ;;
+        export)              cmd_export  "$@" ;;
+        migrate)             cmd_migrate "$@" ;;
+        repo)                cmd_repo    "$@" ;;
+        engine)              cmd_engine  "$@" ;;
+        help|--help|-h|"")  cmd_help; exit 0 ;;
+        *) _err "unknown command '${cmd}'"; cmd_help; exit 1 ;;
+    esac
+}
+
+main "$@"

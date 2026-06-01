@@ -24,6 +24,7 @@ file_permissions=(
   ["/usr/local/bin/our-app"]="0:0:755"
   ["/usr/local/bin/our-aur"]="0:0:755"
   ["/usr/local/bin/our-bluetooth"]="0:0:755"
+  ["/usr/local/bin/our-box"]="0:0:755"
   ["/usr/local/bin/our-container"]="0:0:755"
   ["/usr/local/bin/our-container-autostart"]="0:0:755"
   ["/usr/local/bin/our-fido2"]="0:0:755"
