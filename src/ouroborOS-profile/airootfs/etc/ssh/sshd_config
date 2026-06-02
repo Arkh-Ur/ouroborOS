@@ -10,6 +10,7 @@ PubkeyAuthentication yes
 PasswordAuthentication yes
 ChallengeResponseAuthentication no
 UsePAM yes
+PrintMotd no
 
 # Disable strict modes for live env (permissions may be relaxed)
 StrictModes no
