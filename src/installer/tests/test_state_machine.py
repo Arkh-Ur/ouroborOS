@@ -20,6 +20,21 @@ from installer.state_machine import (
 )
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _mock_popen(returncode: int = 0, lines: list[str] | None = None) -> tuple:
+    """Return (popen_cls_mock, proc_mock) for patching subprocess.Popen."""
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.stdout = iter(lines or [])
+    proc.__enter__ = lambda s: s
+    proc.__exit__ = MagicMock(return_value=False)
+    return MagicMock(return_value=proc), proc
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint system tests
 # ---------------------------------------------------------------------------
 
@@ -872,9 +887,9 @@ class TestHandleConfigure:
         installer.tui = None
         installer._update_progress = MagicMock()
         installer.config.disk.device = "/dev/vda"
-        ok = MagicMock()
-        ok.returncode = 0
-        with patch("subprocess.run", return_value=ok), \
+        popen_cls, _ = _mock_popen(returncode=0)
+        with patch("installer.state_machine.subprocess.Popen", popen_cls), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
 
@@ -883,9 +898,9 @@ class TestHandleConfigure:
         installer.tui = None
         installer._update_progress = MagicMock()
         installer.config.disk.device = "/dev/vda"
-        fail = MagicMock()
-        fail.returncode = 1
-        with patch("subprocess.run", return_value=fail), \
+        popen_cls, _ = _mock_popen(returncode=1)
+        with patch("installer.state_machine.subprocess.Popen", popen_cls), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             with pytest.raises(InstallerError, match="configuration failed"):
                 installer._handle_configure()
@@ -906,9 +921,9 @@ class TestHandleConfigure:
         installer.config.users = [u]
         mock_tui = MagicMock()
         installer.tui = mock_tui
-        ok = MagicMock()
-        ok.returncode = 0
-        with patch("subprocess.run", return_value=ok), \
+        popen_cls, _ = _mock_popen(returncode=0)
+        with patch("installer.state_machine.subprocess.Popen", popen_cls), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
         mock_tui.show_users_creation.assert_not_called()
@@ -1426,15 +1441,19 @@ class TestMultiUser:
 
         captured_env: dict[str, str] = {}
 
-        def fake_run(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
+        def fake_popen(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
             if env:
                 captured_env.update(env)
-            m = MagicMock()
-            m.returncode = 0
-            return m
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = iter([])
+            proc.__enter__ = lambda s: s
+            proc.__exit__ = MagicMock(return_value=False)
+            return proc
 
         installer.tui = None
-        with patch("subprocess.run", side_effect=fake_run), \
+        with patch("installer.state_machine.subprocess.Popen", side_effect=fake_popen), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
 
@@ -1455,10 +1474,10 @@ class TestMultiUser:
             u.password_plaintext = "secret"
             installer.config.users.append(u)
 
-        ok = MagicMock()
-        ok.returncode = 0
+        popen_cls, _ = _mock_popen(returncode=0)
         installer.tui = None
-        with patch("subprocess.run", return_value=ok), \
+        with patch("installer.state_machine.subprocess.Popen", popen_cls), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
 
@@ -1489,15 +1508,19 @@ class TestMultiUser:
 
         captured_env: dict[str, str] = {}
 
-        def fake_run(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
+        def fake_popen(cmd: object, env: dict[str, str] | None = None, **kwargs: object) -> MagicMock:
             if env:
                 captured_env.update(env)
-            m = MagicMock()
-            m.returncode = 0
-            return m
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = iter([])
+            proc.__enter__ = lambda s: s
+            proc.__exit__ = MagicMock(return_value=False)
+            return proc
 
         installer.tui = None
-        with patch("subprocess.run", side_effect=fake_run), \
+        with patch("installer.state_machine.subprocess.Popen", side_effect=fake_popen), \
+             patch.object(installer, "_has_internet", return_value=True), \
              patch("installer.state_machine.OPS_DIR", tmp_path):
             installer._handle_configure()
 

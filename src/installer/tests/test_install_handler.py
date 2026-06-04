@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,6 +35,16 @@ def _failure(code: int = 1) -> CompletedProcess:
     return CompletedProcess(args=[], returncode=code, stdout="", stderr="")
 
 
+def _mock_popen(returncode: int = 0, lines: list[str] | None = None) -> tuple:
+    """Return (popen_cls_mock, proc_mock) for patching subprocess.Popen."""
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.stdout = iter(lines or [])
+    proc.__enter__ = lambda s: s
+    proc.__exit__ = MagicMock(return_value=False)
+    return MagicMock(return_value=proc), proc
+
+
 # ---------------------------------------------------------------------------
 # _handle_install — happy path
 # ---------------------------------------------------------------------------
@@ -47,29 +57,30 @@ class TestHandleInstallHappyPath:
         monkeypatch.setattr(state_machine.Installer, "_has_internet", lambda self: True)
     def test_pacstrap_called_with_base_packages(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
+        popen_cls, _ = _mock_popen()
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", return_value=_success()) as mock_run:
+             patch("installer.state_machine.subprocess.Popen", popen_cls) as mock_popen:
             inst._handle_install()
 
-        # subprocess.run must have been called with pacstrap
-        calls = [str(c) for c in mock_run.call_args_list]
+        calls = [str(c) for c in mock_popen.call_args_list]
         assert any("pacstrap" in c for c in calls)
 
     def test_mkinitcpio_conf_written_before_pacstrap(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
         mkinitcpio = Path(inst.config.install_target) / "etc" / "mkinitcpio.conf"
+        popen_cls, _ = _mock_popen()
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", return_value=_success()):
+             patch("installer.state_machine.subprocess.Popen", popen_cls):
             inst._handle_install()
 
         assert mkinitcpio.exists()
@@ -79,18 +90,18 @@ class TestHandleInstallHappyPath:
 
     def test_microcode_prepended_to_package_list(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
+        popen_cls, _ = _mock_popen()
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value="amd-ucode"), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", return_value=_success()) as mock_run:
+             patch("installer.state_machine.subprocess.Popen", popen_cls) as mock_popen:
             inst._handle_install()
 
-        # amd-ucode must appear in the pacstrap command
         pacstrap_call = None
-        for c in mock_run.call_args_list:
+        for c in mock_popen.call_args_list:
             args = c.args[0] if c.args else []
             if args and args[0] == "pacstrap":
                 pacstrap_call = args
@@ -102,16 +113,17 @@ class TestHandleInstallHappyPath:
     def test_extra_packages_included(self, tmp_path: Path) -> None:
         inst = _make_installer(tmp_path)
         inst.config.extra_packages = ["neovim", "tmux"]
+        popen_cls, _ = _mock_popen()
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", return_value=_success()) as mock_run:
+             patch("installer.state_machine.subprocess.Popen", popen_cls) as mock_popen:
             inst._handle_install()
 
-        pacstrap_call = mock_run.call_args_list[0].args[0]
+        pacstrap_call = mock_popen.call_args_list[0].args[0]
         assert "neovim" in pacstrap_call
         assert "tmux" in pacstrap_call
 
@@ -120,12 +132,17 @@ class TestHandleInstallHappyPath:
 
         inst = _make_installer(tmp_path)
 
-        def fake_run(cmd: list[str], **kwargs):
+        def fake_popen(cmd: list[str], **kwargs: object) -> MagicMock:
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = iter([])
+            proc.__enter__ = lambda s: s
+            proc.__exit__ = MagicMock(return_value=False)
             if cmd and cmd[0] == "pacstrap":
                 call_order.append("pacstrap")
-            return _success()
+            return proc
 
-        def fake_fstab():
+        def fake_fstab() -> None:
             call_order.append("fstab")
 
         with patch.object(inst, "_generate_mirrorlist"), \
@@ -133,7 +150,7 @@ class TestHandleInstallHappyPath:
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab", side_effect=fake_fstab), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", side_effect=fake_run):
+             patch("installer.state_machine.subprocess.Popen", side_effect=fake_popen):
             inst._handle_install()
 
         assert call_order.index("pacstrap") < call_order.index("fstab")
@@ -154,19 +171,22 @@ class TestHandleInstallRetry:
         inst = _make_installer(tmp_path)
         call_count = 0
 
-        def flaky_run(cmd: list[str], **kwargs):
+        def flaky_popen(cmd: list[str], **kwargs: object) -> MagicMock:
             nonlocal call_count
             call_count += 1
-            if call_count < 3:
-                return _failure()
-            return _success()
+            proc = MagicMock()
+            proc.returncode = 1 if call_count < 3 else 0
+            proc.stdout = iter([])
+            proc.__enter__ = lambda s: s
+            proc.__exit__ = MagicMock(return_value=False)
+            return proc
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", side_effect=flaky_run):
+             patch("installer.state_machine.subprocess.Popen", side_effect=flaky_popen):
             inst._handle_install()
 
         assert call_count == 3
@@ -187,25 +207,28 @@ class TestHandleInstallRetry:
         inst = _make_installer(tmp_path)
         mirror_calls = 0
 
-        def count_mirror():
+        def count_mirror() -> None:
             nonlocal mirror_calls
             mirror_calls += 1
 
         call_count = 0
 
-        def flaky_run(cmd: list[str], **kwargs):
+        def flaky_popen(cmd: list[str], **kwargs: object) -> MagicMock:
             nonlocal call_count
             call_count += 1
-            if call_count < 2:
-                return _failure()
-            return _success()
+            proc = MagicMock()
+            proc.returncode = 1 if call_count < 2 else 0
+            proc.stdout = iter([])
+            proc.__enter__ = lambda s: s
+            proc.__exit__ = MagicMock(return_value=False)
+            return proc
 
         with patch.object(inst, "_generate_mirrorlist", side_effect=count_mirror), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", side_effect=flaky_run):
+             patch("installer.state_machine.subprocess.Popen", side_effect=flaky_popen):
             inst._handle_install()
 
         # Called once at start + once on retry = 2
@@ -226,19 +249,17 @@ class TestHandleInstallEdgeCases:
     def test_pacstrap_stdout_logged(self, tmp_path: Path) -> None:
         """Covers the stdout-logging block (lines 644-648)."""
         inst = _make_installer(tmp_path)
-
-        def run_with_stdout(cmd: list[str], **kwargs):
-            return CompletedProcess(
-                args=cmd, returncode=0,
-                stdout=":: Syncing package databases...\n  warning: something\n",
-            )
+        popen_cls, _ = _mock_popen(
+            returncode=0,
+            lines=[":: Syncing package databases...\n", "  warning: something\n"],
+        )
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", side_effect=run_with_stdout):
+             patch("installer.state_machine.subprocess.Popen", popen_cls):
             inst._handle_install()  # must not raise
 
     def test_dm_package_appended_for_sddm(self, tmp_path: Path) -> None:
@@ -246,16 +267,17 @@ class TestHandleInstallEdgeCases:
         inst = _make_installer(tmp_path)
         inst.config.desktop.profile = "hyprland"
         inst.config.desktop.dm = "sddm"
+        popen_cls, _ = _mock_popen()
 
         with patch.object(inst, "_generate_mirrorlist"), \
              patch.object(inst, "_init_pacman_keyring"), \
              patch.object(inst, "_detect_microcode_package", return_value=None), \
              patch.object(inst, "_regenerate_fstab"), \
              patch.object(inst, "_update_progress"), \
-             patch("installer.state_machine.subprocess.run", return_value=_success()) as mock_run:
+             patch("installer.state_machine.subprocess.Popen", popen_cls) as mock_popen:
             inst._handle_install()
 
-        pacstrap_args = mock_run.call_args_list[0].args[0]
+        pacstrap_args = mock_popen.call_args_list[0].args[0]
         assert "sddm" in pacstrap_args
 
 

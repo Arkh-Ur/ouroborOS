@@ -18,6 +18,27 @@ _log()  { echo "[${LOG_TAG}] $*"; }
 _warn() { echo "[${LOG_TAG}] WARNING: $*" >&2; }
 _err()  { echo "[${LOG_TAG}] ERROR: $*" >&2; }
 
+_usage() {
+    cat <<'EOF'
+ouroboros-firstboot — first-boot setup for ouroborOS
+
+Runs ONCE on the first boot of the installed system (guarded by firstboot.done).
+Optimises the pacman mirrorlist, ensures a unique machine-id, enables system
+maintenance timers, and processes any queued AUR installs.
+
+Usage: ouroboros-firstboot
+
+This tool takes no options; it is invoked automatically by its systemd unit.
+EOF
+}
+
+case "${1:-}" in
+    -h|--help|help)
+        _usage
+        exit 0
+        ;;
+esac
+
 # Idempotency guard (belt + suspenders — unit also checks via Condition)
 if [[ -f "$GUARD_FILE" ]]; then
     _log "Already ran (${GUARD_FILE} exists). Nothing to do."

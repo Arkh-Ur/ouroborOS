@@ -440,3 +440,29 @@ msgstr "Creating snapshot"
 
 msgid "Finishing"
 msgstr "Finishing"
+
+# Textual TUI — progress pane
+msgid "Installation Progress"
+msgstr "Installation Progress"
+
+msgid "working…"
+msgstr "working…"
+
+msgid "done"
+msgstr "done"
+
+# Textual TUI — done pane
+msgid "Installation Complete!"
+msgstr "Installation Complete!"
+
+msgid "What would you like to do?"
+msgstr "What would you like to do?"
+
+msgid "Reboot"
+msgstr "Reboot"
+
+msgid "Shutdown"
+msgstr "Shutdown"
+
+msgid "Exit to shell"
+msgstr "Exit to shell"

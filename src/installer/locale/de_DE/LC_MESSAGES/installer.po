@@ -439,3 +439,29 @@ msgstr "Schnappschuss erstellen"
 
 msgid "Finishing"
 msgstr "Abschließen"
+
+# Textual TUI — progress pane
+msgid "Installation Progress"
+msgstr "Installationsfortschritt"
+
+msgid "working…"
+msgstr "läuft…"
+
+msgid "done"
+msgstr "fertig"
+
+# Textual TUI — done pane
+msgid "Installation Complete!"
+msgstr "Installation abgeschlossen!"
+
+msgid "What would you like to do?"
+msgstr "Was möchten Sie tun?"
+
+msgid "Reboot"
+msgstr "Neustart"
+
+msgid "Shutdown"
+msgstr "Herunterfahren"
+
+msgid "Exit to shell"
+msgstr "Terminal öffnen"

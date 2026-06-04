@@ -6,6 +6,7 @@ set -euo pipefail
 # the selected mode. Accessible from the shell at any time via this name.
 
 readonly TIMEOUT=5
+readonly SHELL_RCFILE=/etc/ouroboros/shell.bashrc
 
 # ouroborOS wordmark in braille art (color: #00FF66 on terminal output)
 readonly LOGO='⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠀⠀⠀
@@ -26,14 +27,20 @@ _dim()  { printf '\033[2m%s\033[0m' "$*"; }
 _show_menu() {
     local countdown=$1
     local selected=${2:-1}
+    local interacted=${3:-0}
+    local tui_hint=''
+    # The countdown hint disappears as soon as the user touches a key.
+    if [[ $interacted -eq 0 ]]; then
+        tui_hint=$(printf '[default in %ds]' "$countdown")
+    fi
     printf '\033[2J\033[H'
     printf '\033[38;2;0;255;102m%s\033[0m\n\n' "$LOGO"
     printf '  Select installation mode:\n\n'
     if [[ $selected -eq 1 ]]; then
-        printf '  \033[38;2;0;255;102m► 1. Install ouroborOS (TUI)\033[0m          [default in %ds]\n' "$countdown"
+        printf '  \033[38;2;0;255;102m► 1. Install ouroborOS (TUI)\033[0m          %s\n' "$tui_hint"
         printf '    2. Shell                             (drop to bash)\n'
     else
-        printf '    1. Install ouroborOS (TUI)           [default in %ds]\n' "$countdown"
+        printf '    1. Install ouroborOS (TUI)           %s\n' "$tui_hint"
         printf '  \033[38;2;0;255;102m► 2. Shell\033[0m                             (drop to bash)\n'
     fi
     printf '    \033[2m3. Install ouroborOS (GUI)           (not yet available)\033[0m\n'
@@ -48,12 +55,13 @@ _launch_tui() {
 _launch_shell() {
     printf '\033[2J\033[H'
     export OUROBOROS_SHELL_SESSION=1
-    exec /bin/bash --rcfile <(
-        printf '%s\n' \
-            'source /etc/profile 2>/dev/null || true' \
-            'source ~/.bashrc 2>/dev/null || true' \
-            'printf "\n  Type \x27ouroboros-install\x27 to return to the installer menu.\n\n"'
-    )
+    # Use a real rcfile on disk: process substitution (<(...)) is unreliable
+    # under exec because the feeder process gets reparented and its fd closes.
+    if [[ -r "$SHELL_RCFILE" ]]; then
+        exec /bin/bash --rcfile "$SHELL_RCFILE"
+    else
+        exec /bin/bash
+    fi
 }
 
 _launch_gui() {
@@ -61,39 +69,56 @@ _launch_gui() {
     exec /usr/local/bin/ouroborOS-installer --gui
 }
 
-# Terminal setup — restore on exit/signal
+# Terminal setup — restore on exit/signal.
+# min 1 time 0 (not min 0): a read blocks for at least one byte, so bash's
+# -t timeout cleanly distinguishes "no key" (read fails) from "Enter pressed"
+# (read succeeds with an empty var, because -n1 strips the newline delimiter).
 if [[ -t 0 ]]; then
     _saved_term=$(stty -g)
     # shellcheck disable=SC2064
     trap "stty '$_saved_term'" EXIT INT TERM HUP
-    stty -echo -icanon min 0 time 0
+    stty -echo -icanon min 1 time 0
 fi
 
 choice="tui"
 selected=1
+interacted=0
 t=$TIMEOUT
 
-while [[ $t -gt 0 ]]; do
-    _show_menu "$t" "$selected"
+while :; do
+    _show_menu "$t" "$selected" "$interacted"
     key=""
     if IFS= read -r -s -n1 -t 1 key 2>/dev/null; then
+        # A key arrived → user is steering; cancel the auto-default countdown.
+        interacted=1
         case "$key" in
-            $'\033')
-                IFS= read -r -s -n2 -t 0.1 seq 2>/dev/null || true
+            "")  # Enter: read -n1 consumes the newline and returns it empty.
+                [[ $selected -eq 1 ]] && choice="tui" || choice="shell"
+                break ;;
+            $'\033')  # ESC: arrow escape sequence, or a bare ESC.
+                seq=""
+                IFS= read -r -s -n2 -t 0.05 seq 2>/dev/null || true
                 case "$seq" in
                     '[A') selected=$(( selected > 1 ? selected - 1 : 1 )) ;;
                     '[B') selected=$(( selected < 2 ? selected + 1 : 2 )) ;;
+                    '')   choice="shell"; break ;;  # bare ESC → shell
                 esac
                 ;;
-            "1") choice="tui";   break ;;
-            "2") choice="shell"; break ;;
-            $'\n'|$'\r')
-                [[ $selected -eq 1 ]] && choice="tui" || choice="shell"
-                break ;;
+            "1") selected=1; choice="tui";   break ;;
+            "2") selected=2; choice="shell"; break ;;
+            j|J) selected=$(( selected < 2 ? selected + 1 : 2 )) ;;
+            k|K) selected=$(( selected > 1 ? selected - 1 : 1 )) ;;
             q|Q) choice="shell"; break ;;
         esac
     else
-        t=$((t - 1))
+        # read timed out (no key). Tick the countdown only until first input.
+        if [[ $interacted -eq 0 ]]; then
+            t=$(( t - 1 ))
+            if [[ $t -le 0 ]]; then
+                choice="tui"   # default mode
+                break
+            fi
+        fi
     fi
 done
 

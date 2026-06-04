@@ -122,6 +122,149 @@ partition_auto() {
     _log_ok "Partitioning complete."
 }
 
+# partition_manual DISK TARGET [--luks PASS] --part SPEC [--part SPEC ...]
+#   archinstall-style manual layout. Each SPEC is colon-delimited:
+#       NUMBER:SIZE:TYPE:MOUNTPOINT:FS
+#   e.g. "1:512MiB:esp:/boot:fat32"  "2:100%:btrfs:/:btrfs"
+#   TYPE   : esp | btrfs | swap | linux
+#   SIZE   : "512MiB", "20GiB", or "rest"/"0"/"100%" for the remaining space
+#
+# The root partition (MOUNTPOINT "/") is always given the ouroborOS Btrfs
+# subvolume layout (@ @var @etc @home @snapshots), preserving the immutable
+# design. Extra partitions are formatted and mounted at their mountpoints.
+partition_manual() {
+    local disk="$1"
+    local target="$2"
+    local use_luks=false
+    local luks_pass=""
+    local -a parts=()
+
+    shift 2
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --luks)
+                use_luks=true
+                luks_pass="${2:?'--luks requires a passphrase'}"
+                shift 2
+                ;;
+            --part)
+                parts+=("${2:?'--part requires a spec'}")
+                shift 2
+                ;;
+            *)
+                _log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    check_root
+    check_tools
+    assert_block_device "$disk"
+
+    if [[ ${#parts[@]} -eq 0 ]]; then
+        _log_error "partition_manual requires at least one --part spec."
+        return 1
+    fi
+
+    _log_warn "Manual partitioning ${disk} (${#parts[@]} partitions)..."
+    sgdisk --zap-all "$disk"
+
+    local spec num size type mp fs typecode end
+    for spec in "${parts[@]}"; do
+        IFS=':' read -r num size type mp fs <<< "$spec"
+        case "$type" in
+            esp)  typecode="EF00" ;;
+            swap) typecode="8200" ;;
+            *)    typecode="8300" ;;
+        esac
+        end=$(_size_to_sgdisk "$size")
+        sgdisk \
+            --new="${num}:0:${end}" \
+            --typecode="${num}:${typecode}" \
+            --change-name="${num}:ouroborOS-${type}" \
+            "$disk"
+    done
+
+    partprobe "$disk" 2>/dev/null || true
+    sleep 1
+
+    # Format pass — identify and prepare the root and ESP partitions.
+    local root_part="" root_device="" esp_dev="" dev
+    for spec in "${parts[@]}"; do
+        IFS=':' read -r num size type mp fs <<< "$spec"
+        dev=$(_part_device "$disk" "$num")
+        assert_block_device "$dev"
+        case "$type" in
+            esp)
+                esp_dev="$dev"
+                format_esp "$dev"
+                ;;
+            swap)
+                mkswap "$dev"
+                swapon "$dev"
+                ;;
+            *)
+                if [[ "$mp" == "/" ]]; then
+                    root_part="$dev"
+                    if [[ "$use_luks" == true ]]; then
+                        encrypt_partition "$dev" "$luks_pass"
+                        root_device="/dev/mapper/ouroboros-root"
+                    else
+                        root_device="$dev"
+                    fi
+                    format_btrfs "$root_device" "ouroborOS"
+                    create_subvolumes "$root_device"
+                else
+                    case "$fs" in
+                        btrfs) mkfs.btrfs --force "$dev" ;;
+                        ext4)  mkfs.ext4 -F "$dev" ;;
+                        xfs)   mkfs.xfs -f "$dev" ;;
+                        *)     mkfs.ext4 -F "$dev" ;;
+                    esac
+                fi
+                ;;
+        esac
+    done
+
+    if [[ -z "$root_device" ]]; then
+        _log_error "Manual layout needs a root partition (mountpoint '/')."
+        return 1
+    fi
+    if [[ -z "$esp_dev" ]]; then
+        _log_error "Manual layout needs an ESP partition (type 'esp')."
+        return 1
+    fi
+
+    # Mount root subvolume layout, then the ESP.
+    mount_subvolumes "$root_device" "$target"
+    mount_esp "$esp_dev" "$target"
+
+    # Mount any extra partitions at their mountpoints (skip root/esp/swap).
+    for spec in "${parts[@]}"; do
+        IFS=':' read -r num size type mp fs <<< "$spec"
+        if [[ "$type" == "esp" || "$type" == "swap" ]]; then
+            continue
+        fi
+        if [[ "$mp" == "/" || -z "$mp" ]]; then
+            continue
+        fi
+        dev=$(_part_device "$disk" "$num")
+        mkdir -p "${target}${mp}"
+        mount "$dev" "${target}${mp}"
+        _log_info "  Mounted ${dev} at ${target}${mp}"
+    done
+
+    generate_fstab "$target" "$root_device"
+    copy_fstab_to_root "$target" "$root_device"
+
+    if [[ "$use_luks" == true ]]; then
+        generate_crypttab "$target" "$root_part"
+    fi
+
+    _log_ok "Manual disk preparation complete. System is ready for pacstrap."
+}
+
 # --- Device name helpers ----------------------------------------------------
 
 # _esp_device DISK — print the ESP partition device path
@@ -143,6 +286,32 @@ _root_device() {
     else
         echo "${disk}2"
     fi
+}
+
+# _part_device DISK NUM — print the device path for an arbitrary partition number
+_part_device() {
+    local disk="$1"
+    local num="$2"
+    if [[ "$disk" =~ nvme|mmcblk ]]; then
+        echo "${disk}p${num}"
+    else
+        echo "${disk}${num}"
+    fi
+}
+
+# _size_to_sgdisk SIZE — translate a manual-spec size to an sgdisk end value
+#   "512MiB" -> "+512M"   "20GiB" -> "+20G"   "rest"|"0"|"100%" -> "0" (fill)
+_size_to_sgdisk() {
+    local size="$1"
+    case "$size" in
+        rest|0|100%|"") echo "0" ;;
+        *)
+            # Strip binary "iB"/"B" suffixes: sgdisk's +N{K,M,G,T} are already binary.
+            local s="${size/iB/}"
+            s="${s/B/}"
+            echo "+${s}"
+            ;;
+    esac
 }
 
 # --- Formatting -------------------------------------------------------------
@@ -532,6 +701,8 @@ _cli_usage() {
     echo "  --disk DEVICE   Target disk (e.g. /dev/vda)" >&2
     echo "  --target PATH   Mount point (e.g. /mnt)" >&2
     echo "  --luks PASS     Enable LUKS with passphrase" >&2
+    echo "  --scheme MODE   Partition scheme: auto (default) | manual" >&2
+    echo "  --part SPEC     Manual partition (repeatable): NUMBER:SIZE:TYPE:MOUNTPOINT:FS" >&2
     echo "Options for regenerate_fstab:" >&2
     echo "  --target PATH       Mount point (e.g. /mnt)" >&2
     echo "  --root-device DEV   Root block device (e.g. /dev/vda2)" >&2
@@ -564,11 +735,15 @@ if [[ "${1:-}" == "--action" ]]; then
             disk=""
             target=""
             luks_pass=""
+            scheme="auto"
+            declare -a part_specs=()
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --disk)     disk="${2:?--disk requires a value}"; shift 2 ;;
                     --target)   target="${2:?--target requires a value}"; shift 2 ;;
                     --luks)     luks_pass="${2:?--luks requires a value}"; shift 2 ;;
+                    --scheme)   scheme="${2:?--scheme requires a value}"; shift 2 ;;
+                    --part)     part_specs+=("${2:?--part requires a value}"); shift 2 ;;
                     *)          _log_error "Unknown option: $1"; _cli_usage; exit 1 ;;
                 esac
             done
@@ -576,11 +751,33 @@ if [[ "${1:-}" == "--action" ]]; then
                 _log_error "prepare_disk requires --disk and --target"
                 exit 1
             fi
-            if [[ -n "$luks_pass" ]]; then
-                prepare_disk "$disk" "$target" --luks "$luks_pass"
-            else
-                prepare_disk "$disk" "$target"
-            fi
+            case "$scheme" in
+                manual)
+                    if [[ ${#part_specs[@]} -eq 0 ]]; then
+                        _log_error "manual scheme requires at least one --part spec"
+                        exit 1
+                    fi
+                    declare -a manual_args=("$disk" "$target")
+                    if [[ -n "$luks_pass" ]]; then
+                        manual_args+=(--luks "$luks_pass")
+                    fi
+                    for spec in "${part_specs[@]}"; do
+                        manual_args+=(--part "$spec")
+                    done
+                    partition_manual "${manual_args[@]}"
+                    ;;
+                auto)
+                    if [[ -n "$luks_pass" ]]; then
+                        prepare_disk "$disk" "$target" --luks "$luks_pass"
+                    else
+                        prepare_disk "$disk" "$target"
+                    fi
+                    ;;
+                *)
+                    _log_error "Unknown scheme: $scheme (expected auto|manual)"
+                    exit 1
+                    ;;
+            esac
             ;;
         *)
             _log_error "Unknown action: $action"

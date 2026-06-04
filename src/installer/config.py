@@ -96,6 +96,15 @@ class DiskConfig:
     luks_passphrase: str = ""        # cleared after encrypt_partition() is called
     btrfs_label: str = "ouroborOS"
     swap_type: str = "zram"          # "zram" or "none"
+    # Partitioning strategy:
+    #   "auto"   -> partition_auto() in disk.sh (GPT: ESP + Btrfs, zram swap)
+    #   "manual" -> partition_manual() in disk.sh, driven by manual_partitions
+    partition_scheme: str = "auto"
+    # Manual layout spec (only used when partition_scheme == "manual").
+    # Each entry: {"number": int, "size": str, "type": "esp"|"btrfs"|"swap"|"linux",
+    #              "mountpoint": str, "fs": "fat32"|"btrfs"|"ext4"|"swap"|""}.
+    # "size" accepts sgdisk end syntax: "512MiB", "100%" (rest of disk), etc.
+    manual_partitions: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -136,6 +145,10 @@ class SecurityConfig:
     # When combined with secure_boot=true, sbctl enroll-keys --microsoft is used
     # so Microsoft OEM keys are included (required for Windows to boot under SB).
     dual_boot: bool = False
+
+    # Optional root password (transient — cleared after CONFIGURE).
+    # Empty string means the root account stays locked (passwd --lock root).
+    root_password: str = ""
 
 
 @dataclass
@@ -224,6 +237,8 @@ class InstallerConfig:
                 "use_luks": self.disk.use_luks,
                 "btrfs_label": self.disk.btrfs_label,
                 "swap_type": self.disk.swap_type,
+                "partition_scheme": self.disk.partition_scheme,
+                "manual_partitions": self.disk.manual_partitions,
             },
             "hardware": {
                 "thunderbolt_detected": self.hardware.thunderbolt_detected,
@@ -281,6 +296,15 @@ def validate_config(data: dict) -> None:
         raise ConfigValidationError(
             "disk.device must reference a whole disk, not a partition"
             " (e.g. /dev/sda not /dev/sda1)"
+        )
+    scheme = disk.get("partition_scheme", "auto")
+    if scheme not in ("auto", "manual"):
+        raise ConfigValidationError(
+            f"disk.partition_scheme must be 'auto' or 'manual', got: {scheme!r}"
+        )
+    if scheme == "manual" and not disk.get("manual_partitions"):
+        raise ConfigValidationError(
+            "disk.partition_scheme 'manual' requires a non-empty disk.manual_partitions list"
         )
 
     # locale section
@@ -482,6 +506,8 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.disk.use_luks = bool(d.get("use_luks", False))
     cfg.disk.btrfs_label = str(d.get("btrfs_label", "ouroborOS"))
     cfg.disk.swap_type = str(d.get("swap_type", "zram"))
+    cfg.disk.partition_scheme = str(d.get("partition_scheme", "auto"))
+    cfg.disk.manual_partitions = list(d.get("manual_partitions", []))
     cfg.enable_luks = cfg.disk.use_luks
 
     # Locale

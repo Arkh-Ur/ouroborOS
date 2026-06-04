@@ -5,6 +5,241 @@ All notable changes to ouroborOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Critical bug fix + Phase B redesign.** The installer was silently ignoring the
+user's configuration choices (desktop profile, locale, hostname) and installing
+the minimal profile instead — because `_apply()` only ran on button press, while
+`Select` widgets held the chosen value only in the UI. Fixed with live-sync
+`@on(Select.Changed)` / `@on(Input.Changed)` handlers in `EnvironmentPane`,
+`LocalePane`, and `HostnamePane`, plus a safeguard in `_start_install` that
+force-syncs those panes before validation.
+
+Phase B adds a single ouroboros color-cycle progress bar (▰▱ glyphs, green
+PALETTE) with animated gradient, real-time phase subtitle and step counter,
+live streaming of `pacstrap` / `configure.sh` / `snapshot.sh` output to the
+console log (no more blank screen during long chroot phases), i18n coverage for
+all hardcoded progress/done strings, and locale seed so the finish screen
+reflects the language actually chosen.
+
+End-to-end fixes for the v0.6.0 Textual TUI after live-ISO testing surfaced 15
+usability bugs spanning the bash launcher, layout, keyboard navigation, input
+widgets, and an incomplete disk-configuration flow.
+
+A second manual VNC pass surfaced 13 more UX issues, fixed here: installer log
+bleeding over the TUI canvas, eventual silent crashes, oversized comboboxes
+hiding fields, missing initial focus, and an install flow that couldn't run
+straight from sensible defaults. The visual language was also nudged toward the
+Charm/Lip Gloss look (rounded green-accent panels) while staying on Textual.
+
+A third manual VNC pass surfaced a critical reliability bug plus a batch of UX
+refinements. The headline fix is **park-at-gate**: the installer no longer
+self-triggers and the VNC/SSH session no longer drops mid-configuration. The
+rest cover a faithful, ordered, colour-coded summary, install-ready defaults,
+multi-user creation, an optional root password, round toggle widgets with
+conditional field reveals, a compact erase-confirmation popup, and a menu that
+translates when a non-English language is selected.
+
+A fourth manual VNC pass caught the install actually crashing mid-run: confirming
+Install left every progress bar at 0%, did nothing visible, then dropped back to
+the menu and tore down the VNC/SSH session (`RuntimeError: App is not running`).
+The root cause was the long `pacstrap`/`configure` chroots fighting Textual (which
+runs in a background thread) for the controlling terminal, compounded by progress
+updates keyed on a translated label that never matched a bar id. Fixed here along
+with arrow navigation over standalone toggles, visible install errors, a compact
+erase popup, a cleaner progress layout, and hiding the menu while installing.
+
+A fifth manual VNC pass requested visibility and polish around the install
+itself: a **live install-log panel** with a **working spinner** so the long
+chroot phases no longer look frozen, a **root-password popup** (the inline fields
+were stranded below the scroll fold), a **post-install summary** that reflects
+the real chosen config instead of frozen defaults, and removal of the console
+text bleeding over the TUI at boot and on completion.
+
+### Added
+
+- **Live install log + spinner** — the progress pane now tails
+  `/tmp/ouroborOS-install.log` into a `RichLog` panel below the OVERALL bar and
+  animates a braille spinner, both driven by Textual timers in its own thread
+  (no `call_from_thread`), so the long `pacstrap`/`configure` phases show
+  continuous activity. The spinner switches to a done glyph on completion.
+- **Root-password popup** — toggling "Set root password" now opens a
+  `RootPasswordModal` with password + confirm fields and inline validation
+  (match, ≥4 chars), replacing the inline fields that were stranded below the
+  fold; cancelling reverts the toggle without re-triggering it.
+
+- **Optional root password** — a round "Set root password" toggle in the Users
+  pane reveals password + confirm fields; when left off the root account is
+  locked (sudo-only). Carried through `SecurityConfig.root_password` (transient,
+  cleared after CONFIGURE) into `configure.sh`, mirroring the user-password
+  lifecycle — no plaintext is persisted.
+- **Multi-user creation** — the Users pane now adds more than one account; the
+  first is primary (`wheel`). Each is appended to the buffer and shown in a live
+  list with an "Add user" / "Remove last" control.
+- **Spanish menu translation** — selecting a Spanish locale now translates the
+  menu, pane titles, labels, buttons and Select options. All three Spanish
+  variants (`es_CL`/`es_MX`/`es_ES`) resolve to the single `es_CL` catalog.
+
+### Changed (third pass)
+
+- **Menu order** — Network now precedes Security; the live summary follows the
+  same order as the menu (Localization → Disk → Hostname → Users → Environment
+  → Network → Security).
+- **Summary fidelity** — `PreviewPane` lists every configured field in menu
+  order and colours each value green once it differs from its default (dim
+  otherwise); the display manager shows its effective value (`none (auto)` for
+  the minimal profile).
+- **Round toggle widgets** — LUKS, Secure Boot, TPM2, FIDO2, "Show passphrase",
+  "Enable SSH" and "Set root password" are now standalone `RadioButton` toggles
+  (◉/○) instead of switches/checkboxes; LUKS, manual layout and root-password
+  fields are revealed conditionally by their toggle/scheme.
+- **Install-ready defaults** — `hostname` defaults to `ouroboros` and the
+  display manager defaults to `auto` (resolved to `none` for minimal), so the
+  install can run straight through without blocking on those fields.
+- **Compact erase confirmation** — `ConfirmEraseScreen` renders as a centered
+  popup over a dimmed background instead of filling the screen.
+
+### Fixed
+
+- **Post-install summary frozen at defaults** — `DonePane` read the buffer once
+  at compose time (before any field was chosen) so the completion screen showed
+  `Disk: (not set)` / `Locale: en_US`. It now refreshes from the live buffer via
+  `refresh_summary()` when the done screen is shown.
+- **Console text bleeding over the TUI** — dropped `+console` from the installer
+  unit's `StandardError` and switched the live boot entry to
+  `quiet loglevel=3 systemd.show_status=false`, so kernel/unit chatter no longer
+  paints over the Textual canvas at boot or after install.
+- **Installer self-triggering + VNC/SSH drop (critical)** — the FSM worker and
+  the Textual panes shared a single FIFO `queue.Queue` consumed by positional
+  `_get()`. Four panes did out-of-order `put()`s, eventually desyncing so a
+  stray value answered `show_confirmation` → install started without pressing
+  Install → the process exited → the session dropped. Reworked to a
+  **park-at-gate** model: the four pane `put()`s are gone; `show_locale_menu` is
+  the single blocking gate, unblocked only by Install's `put(True)`; everything
+  else reads the buffer. Exactly three blocking gets remain (language, install
+  gate, reboot). `show_confirmation` and `show_users_creation` are now
+  non-blocking (the erase confirmation happens in the modal before the gate).
+- **Live install medium auto-selected as target** — `_lsblk_disks()` now detects
+  the disk backing the live root (`findmnt` + `lsblk -no PKNAME`) and excludes
+  it, so the installer USB/ISO is never offered or auto-picked as the install
+  target.
+- **`--help` on `ouroboros-firstboot`** — the script now responds to
+  `-h`/`--help`/`help` with a usage message instead of running the full
+  first-boot setup (which hung).
+
+#### Fourth pass (live install crash + progress UX)
+
+- **Install crash + session drop (critical)** — confirming Install showed 0%
+  bars, did nothing, then dropped to the menu and killed the VNC/SSH session.
+  Root cause: the Textual app runs in a background daemon thread reading the
+  controlling TTY, while the FSM blocks the main thread on long `pacstrap`/
+  `configure` chroots; those children disrupted the shared terminal, the app
+  stopped, and the next unguarded `call_from_thread` raised `RuntimeError: App is
+  not running`, which the FSM never caught. `pacstrap`, `configure.sh` and the
+  disk op runner now launch with `stdin=DEVNULL` + `start_new_session=True` so
+  they can't touch Textual's terminal, and every `call_from_thread` UI update is
+  guarded so a dead app can never abort the install.
+- **Progress bars stuck at 0%** — `_update_progress` passed a translated step
+  label ("Installing packages") that `ProgressPane.update_phase` turned into a
+  non-existent bar id (`bar-installing packages`). It now passes the stable FSM
+  phase name (`INSTALL`) and the per-phase percent, so each bar fills and the
+  OVERALL bar tracks the weighted total.
+- **Invisible install errors** — `TUI.show_error` was a silent no-op in Textual
+  mode. Errors now surface on the progress pane via a new `show_error_screen`
+  path instead of vanishing.
+- **Arrow navigation over toggles** — standalone `RadioButton` toggles are now
+  `NavRadioButton`, so up/down move focus through them (enter/space still
+  toggles) instead of the arrows skipping or trapping on them.
+- **Root-password fields hidden below the fold** — enabling "Set root password"
+  now focuses and scrolls the revealed fields into view, and redundant spacer
+  rows were trimmed so the pane is shorter.
+- **Progress layout** — phase bars no longer render an internal left title (the
+  label above each bar is enough); the OVERALL bar is uppercased and separated
+  from the phase bars; the left menu panel is hidden during installation so the
+  progress fills the width.
+- **Erase confirmation truly compact** — the modal's button row is constrained to
+  `height: auto` and the dialog height capped, so it shrink-wraps just below the
+  buttons instead of stretching down the screen.
+
+- **Installer log no longer bleeds over the TUI** — while Textual owns the TTY,
+  the root logger's `stderr` `StreamHandler` is detached (the `FileHandler` to
+  `/tmp/ouroborOS-install.log` stays) and restored on exit, so log lines stop
+  painting over the canvas.
+- **Silent crashes after a while** — `_run_app` now wraps `App.run()` in
+  `try/except` and logs the full traceback to the install log (never to stderr),
+  so the TUI can no longer vanish without a trace.
+- **Oversized comboboxes** — global CSS bounds every `Select` to the field width
+  (`width: 56`) with a capped dropdown overlay (`max-height: 10`), so keymap,
+  timezone, disk and following fields stay visible.
+- **Initial focus** — `MainMenuScreen` focuses the left category list on mount,
+  mirroring `LanguageScreen`.
+
+- **`ouroboros-install` launcher** — the boot-mode countdown no longer keeps
+  running after a keypress, `Enter` reliably confirms the highlighted mode, and
+  the Shell mode now drops to a real bash session via a committed rcfile
+  (`/etc/ouroboros/shell.bashrc`) instead of a fragile process substitution.
+- **Logo background** — removed the dark-green (`#083F28`) fill behind
+  `LogoWidget`; the braille wordmark now renders `#00FF66` on black.
+- **Language selector** — `LanguageScreen` is centered and its list holds focus
+  on mount, so picking a language immediately advances to the main menu.
+- **Main menu rendering** — panes fill the viewport (`height: 1fr`); the live
+  console no longer bleeds through behind the menu.
+- **Keyboard navigation** — selecting a category moves focus into the right
+  pane; `Escape` returns focus to the left menu (it no longer aborts the
+  installer); arrows/Tab move between fields within a pane.
+- **LUKS toggle** — enabling encryption now actually sets `disk.use_luks=True`
+  (previously only the passphrase was stored, so encryption was silently
+  skipped).
+- **`show_partition_preview` signature** — accepts the `(disk, use_luks)` form
+  the FSM passes, fixing a latent `TypeError` in the interactive disk flow.
+
+### Changed
+
+- **Localization / Shell / Desktop panes** — free-text `Input`s and `Button`
+  grids replaced with `Select` comboboxes (locale, keymap, timezone, shell,
+  desktop profile, display manager).
+- **Disk configuration** — `DiskPane` rewritten as a single pane that folds in
+  the old `EncryptionPane`: target-disk `Select`, an **auto** scheme
+  (GPT ESP + Btrfs subvolumes, unchanged `partition_auto`) and a new **manual**
+  scheme (archinstall-style line spec → `partition_manual` in `disk.sh`), plus
+  an inline LUKS `Switch` + passphrase. The standalone "Disk encryption" menu
+  item is gone.
+- **`homed_storage`** — no longer prompted; derived from the disk config
+  (`luks` when the disk is encrypted, otherwise `subvolume`).
+- **Unified Environment pane** — the separate Shell, Desktop and GPU menu items
+  are folded into a single **Environment** pane with four `Select`s (login
+  shell, desktop profile, display manager, GPU driver); GPU moved from a button
+  grid to a combobox. The 25 `show_*` contract is unchanged — these now read
+  their values from the buffer (non-blocking).
+- **Security & Network panes use checkboxes** — Secure Boot / TPM2 / FIDO2 and
+  SSH are `Checkbox`es; the WiFi passphrase has a "Show passphrase" toggle.
+- **Buffer-backed `show_*` methods** — environment, security and network
+  `show_*` read the buffer instead of blocking on the response queue, and the
+  partition preview is informational; the disk-erase gate moved to an explicit
+  confirmation modal. This lets an install run directly from auto-detected
+  defaults.
+- **Charm/Lip Gloss-look styling** — rounded panels and inputs with a dim-green
+  accent border, a bright highlight on the active menu row, and a muted footer,
+  keeping the braille `#00FF66`-on-black ouroborOS identity.
+
+### Added
+
+- **`partition_manual` in `disk.sh`** — creates a user-defined GPT layout from
+  `--part NUMBER:SIZE:TYPE:MOUNTPOINT:FS` specs, applies the ouroborOS Btrfs
+  subvolume layout to the root partition, supports optional LUKS, and writes
+  `fstab`/`crypttab`. Exposed via `prepare_disk --scheme manual`.
+- **`DiskConfig.partition_scheme` / `manual_partitions`** — config-model and
+  YAML support for the manual layout, with validation
+  (`partition_scheme ∈ {auto, manual}`; manual requires a non-empty list).
+- **WiFi SSID scan with manual fallback** — `NetworkPane` scans for networks via
+  the Worker API (`iwctl`, off the event loop, short timeouts) and populates the
+  SSID `Select`; an "Enter manually" option reveals an `Input` for environments
+  with no detected networks (e.g. QEMU).
+- **Auto-assigned disk + erase confirmation** — the first detected disk is
+  pre-selected on mount (`partition_scheme=auto`, no LUKS), and pressing
+  **Install** opens a `ConfirmEraseScreen` modal warning that the target disk
+  will be erased before the FSM proceeds.
+
 ## [0.6.0] - 2026-06-01
 
 TUI restructuring: the installer moves from a linear Rich wizard to a

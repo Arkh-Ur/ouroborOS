@@ -49,6 +49,7 @@ set -euo pipefail
 : "${SECURE_BOOT:='0'}"
 : "${SBCTL_INCLUDE_MS_KEYS:='0'}"
 : "${USER_PASSWORD:=''}"
+: "${ROOT_PASSWORD:=''}"
 : "${THUNDERBOLT_DETECTED:='0'}"
 
 TARGET="$INSTALL_TARGET"
@@ -813,8 +814,16 @@ PYEOF
 EOF
     chmod 0440 "${TARGET}/etc/sudoers.d/10-wheel"
 
-    # Lock root account (access via sudo only)
-    in_chroot passwd --lock root
+    # Root account: set a password if one was provided, otherwise lock it
+    # (access via sudo only). Plaintext is piped through chpasswd and never
+    # written to disk.
+    if [[ -n "$ROOT_PASSWORD" ]]; then
+        printf 'root:%s' "$ROOT_PASSWORD" | in_chroot chpasswd
+        log_ok "Root password set."
+    else
+        in_chroot passwd --lock root
+        log_ok "Root account locked (sudo-only access)."
+    fi
 
     log_ok "Users configured."
 }

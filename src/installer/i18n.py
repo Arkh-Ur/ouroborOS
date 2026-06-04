@@ -28,9 +28,12 @@ _DOMAIN = "installer"
 _translation: gettext.NullTranslations = gettext.NullTranslations()
 
 # Short-form language aliases → canonical locale codes.
+# All Spanish variants share the single es_CL catalog.
 _LANG_MAP: dict[str, str] = {
     "en":    "en_US",
     "es":    "es_CL",
+    "es_MX": "es_CL",
+    "es_ES": "es_CL",
     "de":    "de_DE",
 }
 

@@ -438,6 +438,67 @@ class TestValidateConfigBranches:
         with pytest.raises(ConfigValidationError, match="desktop.profile"):
             validate_config(data)
 
+
+# ---------------------------------------------------------------------------
+# Partition scheme (bug #10) — auto/manual layout
+# ---------------------------------------------------------------------------
+
+
+class TestPartitionScheme:
+    def test_default_scheme_is_auto(self) -> None:
+        cfg = InstallerConfig()
+        assert cfg.disk.partition_scheme == "auto"
+        assert cfg.disk.manual_partitions == []
+
+    def test_auto_scheme_validates(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "auto"
+        validate_config(data)  # must not raise
+
+    def test_invalid_scheme_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "lvm"
+        with pytest.raises(ConfigValidationError, match="partition_scheme"):
+            validate_config(data)
+
+    def test_manual_scheme_without_partitions_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        with pytest.raises(ConfigValidationError, match="manual_partitions"):
+            validate_config(data)
+
+    def test_manual_scheme_with_partitions_validates(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        data["disk"]["manual_partitions"] = [
+            {"number": 1, "size": "512MiB", "type": "esp", "mountpoint": "/boot", "fs": "fat32"},
+            {"number": 2, "size": "100%", "type": "btrfs", "mountpoint": "/", "fs": "btrfs"},
+        ]
+        validate_config(data)  # must not raise
+
+    def test_load_manual_scheme(self, tmp_path: Path) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        data["disk"]["manual_partitions"] = [
+            {"number": 1, "size": "512MiB", "type": "esp", "mountpoint": "/boot", "fs": "fat32"},
+            {"number": 2, "size": "100%", "type": "btrfs", "mountpoint": "/", "fs": "btrfs"},
+        ]
+        p = tmp_path / "manual.yaml"
+        p.write_text(yaml.safe_dump(data), encoding="utf-8")
+        cfg = load_config(p)
+        assert cfg.disk.partition_scheme == "manual"
+        assert len(cfg.disk.manual_partitions) == 2
+        assert cfg.disk.manual_partitions[0]["type"] == "esp"
+
+    def test_system_yaml_preserves_scheme(self) -> None:
+        cfg = InstallerConfig()
+        cfg.disk.partition_scheme = "manual"
+        cfg.disk.manual_partitions = [{"number": 1, "size": "100%", "type": "btrfs",
+                                       "mountpoint": "/", "fs": "btrfs"}]
+        d = cfg.to_system_yaml()
+        assert d["disk"]["partition_scheme"] == "manual"
+        assert d["disk"]["manual_partitions"][0]["mountpoint"] == "/"
+
     def test_valid_desktop_profile_hyprland(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
         data["desktop"] = {"profile": "hyprland"}
