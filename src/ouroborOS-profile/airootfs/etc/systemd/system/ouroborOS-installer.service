@@ -13,7 +13,7 @@ Conflicts=getty@tty1.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/ouroborOS-installer
+ExecStart=/usr/bin/fbterm -s 14 -- /usr/local/bin/ouroborOS-installer
 Environment=TERM=xterm-256color
 StandardInput=tty
 StandardOutput=tty

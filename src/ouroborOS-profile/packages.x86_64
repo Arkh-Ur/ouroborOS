@@ -39,6 +39,7 @@ openssh
 # Terminal & TUI
 dialog
 libnewt
+fbterm
 
 # Python (installer runtime)
 python
