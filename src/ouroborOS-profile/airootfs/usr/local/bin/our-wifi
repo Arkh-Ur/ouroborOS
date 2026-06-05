@@ -118,10 +118,6 @@ cmd_connect() {
         esac
     done
 
-    _require_iwd
-    local iface
-    iface=$(_detect_iface)
-
     # If no password given, check for saved PSK first
     if [[ -z "$password" ]]; then
         local saved
@@ -132,14 +128,16 @@ cmd_connect() {
         fi
     fi
 
-    # Still no password — prompt interactively
+    # Still no password — prompt interactively (requires iwd to be up)
     if [[ -z "$password" ]]; then
+        _require_iwd
         read -r -s -p "Passphrase for '${ssid}': " password
         echo ""
         [[ -n "$password" ]] || _die "Passphrase cannot be empty."
     fi
 
-    # Write PSK so iwd can connect non-interactively
+    # Write PSK so iwd can connect non-interactively (before device check so
+    # credentials can be pre-configured even without a hardware interface)
     if [[ $EUID -eq 0 ]]; then
         _write_psk "$ssid" "$password"
     else
@@ -148,6 +146,11 @@ cmd_connect() {
         sudo /usr/local/bin/our-wifi connect "$ssid" --password "$password"
         return $?
     fi
+
+    # Now require a live iwd + interface to actually connect
+    _require_iwd
+    local iface
+    iface=$(_detect_iface)
 
     # Reload iwd so it picks up the new PSK
     pkill -HUP iwd 2>/dev/null || true

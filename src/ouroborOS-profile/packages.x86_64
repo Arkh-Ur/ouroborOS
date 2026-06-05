@@ -83,5 +83,7 @@ tpm2-tools
 
 # Firewall (our-wall wrapper)
 firewalld
+python-dbus
+python-firewall
 
 # Flatpak is installed on-demand post-install via our-flat, not needed in the live ISO
