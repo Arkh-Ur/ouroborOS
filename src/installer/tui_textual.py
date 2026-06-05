@@ -294,7 +294,7 @@ if HAS_TEXTUAL:
             padding: 1 2;
         }
         ProgressPane #install-log {
-            height: 8;
+            height: 1fr;
             border: round $primary;
             margin-top: 1;
         }
@@ -1769,7 +1769,7 @@ Button.btn-back { background: #1a1a1a; color: #00FF66; }
 .button-row Button { margin-right: 2; }
 
 GradientBar { height: 1; width: 100%; }
-ProgressPane { padding: 1 2; }
+ProgressPane { padding: 1 2; height: 1fr; }
 
 Footer { background: #0a0a0a; color: #555555; }
 Footer > .footer--key { color: #00FF66; }
