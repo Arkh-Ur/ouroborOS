@@ -186,6 +186,27 @@ def _live_medium_disk() -> str:
     return f"/dev/{base}" if base else ""
 
 
+def _disk_size_bytes(size_str: str) -> int:
+    """Parse lsblk size string (e.g. '20G', '940.1M', '4K') into bytes."""
+    if not size_str or size_str == "?":
+        return 0
+    units = {"B": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+    size_str = size_str.strip()
+    for suffix, factor in units.items():
+        if size_str.upper().endswith(suffix):
+            try:
+                return int(float(size_str[:-1]) * factor)
+            except ValueError:
+                return 0
+    try:
+        return int(size_str)
+    except ValueError:
+        return 0
+
+
+_MIN_DISK_BYTES = 1024**3  # 1 GiB — excludes floppy, ROM, tiny virtual devices
+
+
 def _lsblk_disks() -> list[dict[str, str]]:
     """Return list of block devices suitable for installation (excludes live medium)."""
     import json
@@ -207,10 +228,13 @@ def _lsblk_disks() -> list[dict[str, str]]:
                 name = f"/dev/{dev['name']}"
                 if live and name == live:
                     continue
+                size_str = dev.get("size", "?")
+                if _disk_size_bytes(size_str) < _MIN_DISK_BYTES:
+                    continue
                 disks.append(
                     {
                         "name": name,
-                        "size": dev.get("size", "?"),
+                        "size": size_str,
                         "model": dev.get("model") or "Unknown",
                     }
                 )
