@@ -24,7 +24,7 @@ on:
         description: "Run network-dependent cycles (our-flat / our-aur / our-app)"
         required: false
         type: boolean
-        default: 'false'
+        default: false
   # Uncomment to also run on release tags (requires runner online):
   # push:
   #   tags: ["v*"]
@@ -33,10 +33,6 @@ env:
   SSH_USER: testuser
   SSH_PASS: testpass123
   SSH_PORT: "2223"
-  # On disk (runner.temp lives under the runner _work tree), NOT tmpfs — a 40G
-  # sparse qcow must not land on /tmp. The runner user owns this path; /home
-  # itself is root-owned and not writable by the unprivileged runner user.
-  QCOW: ${{ runner.temp }}/ouroboros-e2e.qcow2
   OVMF: /usr/share/edk2/x64/OVMF_CODE.4m.fd
   SERIAL_INSTALL: /tmp/ouroboros-e2e-install.log
   SERIAL_BOOT: /tmp/ouroboros-e2e-boot.log
@@ -47,13 +43,17 @@ jobs:
     runs-on: self-hosted
     permissions:
       contents: read
+    env:
+      # runner.temp is only available at job/step scope, not workflow scope.
+      # Keeps the qcow off tmpfs (which is ~4 GB and too small for a 40G sparse disk).
+      QCOW: ${{ runner.temp }}/ouroboros-e2e.qcow2
 
     steps:
       - name: Clean root-owned artifacts from previous run
         run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           clean: false
 
