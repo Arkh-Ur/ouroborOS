@@ -39,6 +39,7 @@ class NetworkConfig:
     enable_networkd: bool = True
     enable_iwd: bool = True
     enable_resolved: bool = True
+    enable_ssh: bool = False
 
     # WiFi pre-configuration (unattended installs / first-boot).
     # These fields are transient — written to /var/lib/iwd/*.psk (chmod 600)
@@ -523,6 +524,7 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
     cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
     cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
+    cfg.network.enable_ssh = bool(net.get("enable_ssh", False))
     wifi_cfg = net.get("wifi", {}) or {}
     cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
     cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))

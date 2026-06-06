@@ -1221,8 +1221,10 @@ main() {
     # So certain files must exist directly on the @ subvolume.
 
     in_chroot systemctl enable getty@tty1.service
-    in_chroot systemctl enable sshd.service
-    log_ok "sshd enabled (uses default After=network.target)."
+    if [[ "${ENABLE_SSH:-0}" == "1" ]]; then
+        in_chroot systemctl enable sshd.service
+        log_ok "sshd enabled."
+    fi
     if arch-chroot "${TARGET}" pacman -Q firewalld &>/dev/null; then
         in_chroot systemctl enable firewalld.service
         log_ok "firewalld enabled (default zone: public)."
@@ -1425,30 +1427,32 @@ GREETD_EOF
     chmod 0755 "${TARGET}/var/lib/extensions"
     log_ok "/var/lib/extensions created (systemd-sysext / our-aur)."
 
-    # sshd_config: disable reverse DNS lookup.
-    # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
-    # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.
-    # This causes a 30s+ hang at banner exchange even though sshd is running.
-    # Append directly to sshd_config — Arch openssh does not read sshd_config.d/
-    # by default (no Include directive in the default config).
-    echo "UseDNS no" >> "${TARGET}/etc/ssh/sshd_config"
-    log_ok "sshd_config: UseDNS no (appended to sshd_config)."
-    # Force TCP listener on all interfaces. systemd-ssh-generator (openssh 9.8+)
-    # creates AF_UNIX socket units that coexist with sshd.service but do not open
-    # a TCP port. Without this, SLIRP hostfwd to port 22 has nothing to forward to.
-    echo "ListenAddress 0.0.0.0" >> "${TARGET}/etc/ssh/sshd_config"
-    log_ok "sshd_config: ListenAddress 0.0.0.0 (TCP listener forced for SLIRP)."
-    # OpenSSH 10.3+ introduced PerSourcePenalties which bans source IPs after
-    # repeated auth failures. In SLIRP/NAT the client always appears as 10.0.2.2,
-    # so a few failed SSH attempts ban the entire test environment. Disable it.
-    echo "PerSourcePenalties no" >> "${TARGET}/etc/ssh/sshd_config"
-    log_ok "sshd_config: PerSourcePenalties no (prevents SLIRP IP ban)."
+    if [[ "${ENABLE_SSH:-0}" == "1" ]]; then
+        # sshd_config: disable reverse DNS lookup.
+        # Without UseDNS=no, sshd does a PTR lookup for each connecting client.
+        # In QEMU SLIRP, the client appears as 10.0.2.2 which has no PTR record.
+        # This causes a 30s+ hang at banner exchange even though sshd is running.
+        # Append directly to sshd_config — Arch openssh does not read sshd_config.d/
+        # by default (no Include directive in the default config).
+        echo "UseDNS no" >> "${TARGET}/etc/ssh/sshd_config"
+        log_ok "sshd_config: UseDNS no."
+        # Force TCP listener on all interfaces. systemd-ssh-generator (openssh 9.8+)
+        # creates AF_UNIX socket units that coexist with sshd.service but do not open
+        # a TCP port. Without this, SLIRP hostfwd to port 22 has nothing to forward to.
+        echo "ListenAddress 0.0.0.0" >> "${TARGET}/etc/ssh/sshd_config"
+        log_ok "sshd_config: ListenAddress 0.0.0.0."
+        # OpenSSH 10.3+ introduced PerSourcePenalties which bans source IPs after
+        # repeated auth failures. In SLIRP/NAT the client always appears as 10.0.2.2,
+        # so a few failed SSH attempts ban the entire test environment. Disable it.
+        echo "PerSourcePenalties no" >> "${TARGET}/etc/ssh/sshd_config"
+        log_ok "sshd_config: PerSourcePenalties no."
 
-    # Pre-generate SSH host keys during install so sshd can start immediately
-    # on first boot without waiting for entropy. Without this, sshd resets
-    # connections during key generation (kex_exchange_identification error).
-    in_chroot ssh-keygen -A 2>/dev/null || true
-    log_ok "SSH host keys pre-generated."
+        # Pre-generate SSH host keys during install so sshd can start immediately
+        # on first boot without waiting for entropy. Without this, sshd resets
+        # connections during key generation (kex_exchange_identification error).
+        in_chroot ssh-keygen -A 2>/dev/null || true
+        log_ok "SSH host keys pre-generated."
+    fi
 
     # /var/log/journal — on @var (rw overlay) with correct ownership
     mkdir -p "${TARGET}/var/log/journal"

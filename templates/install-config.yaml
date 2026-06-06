@@ -16,6 +16,7 @@ network:
   enable_networkd: true
   enable_iwd: true
   enable_resolved: true
+  enable_ssh: false           # Install and enable sshd. Default: false (not installed).
   # Optional: pre-configure WiFi for unattended installs.
   # If ssid is set, passphrase is required.
   # The passphrase is written to /var/lib/iwd/<SSID>.psk (chmod 600)

@@ -815,7 +815,6 @@ class Installer:
             "efibootmgr",
             "sudo",
             "zram-generator",
-            "openssh",
             "which",
             "neovim",
             # systemd-nspawn + machinectl ship with the `systemd` package
@@ -830,6 +829,10 @@ class Installer:
             skip = set(self.config.skip_packages)
             packages = [p for p in packages if p not in skip]
             log.info("Skipped packages from config: %s", ", ".join(skip))
+
+        # Add openssh only when explicitly enabled
+        if self.config.network.enable_ssh:
+            packages.append("openssh")
 
         # Add sbctl when Secure Boot is enabled
         if self.config.security.secure_boot and "sbctl" not in packages:
@@ -1029,6 +1032,7 @@ class Installer:
                 "USER_PASSWORD": self.config.users[0].password_plaintext if self.config.users else "",
                 "USER_GROUPS": ",".join(self.config.users[0].groups) if self.config.users else "",
                 "USER_SHELL": self.config.users[0].shell if self.config.users else "/bin/bash",
+                "ENABLE_SSH": "1" if self.config.network.enable_ssh else "0",
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
                 "ENABLE_TPM2": "1" if self.config.security.tpm2_unlock else "0",
