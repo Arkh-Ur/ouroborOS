@@ -24,7 +24,7 @@ on:
         description: "Run network-dependent cycles (our-flat / our-aur / our-app)"
         required: false
         type: boolean
-        default: false
+        default: 'false'
   # Uncomment to also run on release tags (requires runner online):
   # push:
   #   tags: ["v*"]
