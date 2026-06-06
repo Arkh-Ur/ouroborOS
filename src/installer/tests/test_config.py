@@ -393,6 +393,18 @@ class TestSecurityConfig:
         with pytest.raises(ConfigValidationError, match="boolean"):
             validate_config(data)
 
+    def test_root_password_loaded_from_top_level(self, tmp_path: Path) -> None:
+        content = textwrap.dedent(VALID_CONFIG) + '\nroot_password: "toor"\n'
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.security.root_password == "toor"
+
+    def test_root_password_defaults_empty(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, VALID_CONFIG)
+        cfg = load_config(path)
+        assert cfg.security.root_password == ""
+
 
 # ---------------------------------------------------------------------------
 # Phase 3 — Additional validate_config branches
