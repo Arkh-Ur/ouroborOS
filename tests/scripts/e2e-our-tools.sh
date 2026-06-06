@@ -10,7 +10,7 @@
 # Variables (all have defaults):
 #   E2E_ROOT_PASS  — root SSH password (default: toor)
 #   E2E_SSH_PORT   — SSH port on localhost (default: 2225)
-set -uo pipefail
+set -euo pipefail
 
 ROOT_PASS="${E2E_ROOT_PASS:-toor}"
 SSH_PORT="${E2E_SSH_PORT:-2225}"
