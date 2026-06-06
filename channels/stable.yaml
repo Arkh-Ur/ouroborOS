@@ -1,9 +1,9 @@
 # channels/stable.yaml — ouroborOS OTA stable channel
-# Generated automatically by CI on tag v0.5.11
-version: 0.5.11
-released: 2026-06-01T00:45:15Z
+# Generated automatically by CI on tag v0.6.0
+version: 0.6.0
+released: 2026-06-06T16:44:49Z
 min_compatible_version: 0.5.0
-changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.5.11
+changelog_url: https://github.com/Arkh-Ur/ouroborOS/releases/tag/v0.6.0
 base_packages:
   - amd-ucode
   - arch-install-scripts
@@ -18,6 +18,7 @@ base_packages:
   - dosfstools
   - edk2-shell
   - efibootmgr
+  - firewalld
   - fish
   - git
   - gptfdisk
@@ -38,8 +39,11 @@ base_packages:
   - parted
   - pciutils
   - python
+  - python-dbus
+  - python-firewall
   - python-pyaml
   - python-rich
+  - python-textual
   - python-yaml
   - reflector
   - rsync
