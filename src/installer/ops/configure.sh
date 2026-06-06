@@ -1446,6 +1446,10 @@ GREETD_EOF
         # so a few failed SSH attempts ban the entire test environment. Disable it.
         echo "PerSourcePenalties no" >> "${TARGET}/etc/ssh/sshd_config"
         log_ok "sshd_config: PerSourcePenalties no."
+        # Allow root password login. Default is prohibit-password (keys only),
+        # which blocks the E2E test runner that authenticates as root via password.
+        echo "PermitRootLogin yes" >> "${TARGET}/etc/ssh/sshd_config"
+        log_ok "sshd_config: PermitRootLogin yes."
 
         # Pre-generate SSH host keys during install so sshd can start immediately
         # on first boot without waiting for entropy. Without this, sshd resets
