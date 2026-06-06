@@ -41,21 +41,41 @@ FAKE_WORK="/tmp/ouroborOS-work-$$"
 
 trap 'sudo rm -rf "$MOCK_DIR" "$FAKE_PROFILE" "$FAKE_OUTPUT" "$FAKE_WORK" 2>/dev/null || rm -rf "$MOCK_DIR" "$FAKE_PROFILE" "$FAKE_OUTPUT" "$FAKE_WORK" 2>/dev/null || true' EXIT
 
-# Mock mkarchiso: captures args, creates fake ISO, exits 0
+# Seed FAKE_PROFILE with a real profiledef.sh so build-iso.sh can derive the ISO
+# filename (${iso_name}-${iso_version}-${arch}.iso) at the checksum stage.
+cp "$WORKSPACE/src/ouroborOS-profile/profiledef.sh" "$FAKE_PROFILE/"
+
+# Mock mkarchiso: captures args, creates fake ISO matching the real ISO name, exits 0
 cat > "$MOCK_DIR/mkarchiso" << 'MOCK_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 # Capture args to a file for inspection
 echo "$@" > /tmp/mkarchiso-args-captured
-# Create a fake ISO in the output directory
+# Parse -o <out_dir> and the trailing profile_dir from the argument list
+out_dir=""
+profile_dir=""
 prev=""
 for arg in "$@"; do
-    if [[ "$prev" == "-o" ]]; then
-        mkdir -p "$arg"
-        touch "$arg/ouroborOS-2026.03.26-x86_64.iso"
+    case "$prev" in
+        -o) out_dir="$arg" ;;
+    esac
+    # Profile dir is any positional arg not following a known flag
+    if [[ "$arg" != -* ]] && [[ "$prev" != "-o" ]] && [[ "$prev" != "-w" ]]; then
+        profile_dir="$arg"
     fi
     prev="$arg"
 done
+# Derive ISO name from profiledef.sh (mirrors what build-iso.sh expects)
+iso_name="ouroborOS"; iso_version="test"; iso_arch="x86_64"
+if [[ -f "${profile_dir}/profiledef.sh" ]]; then
+    iso_name=$(sed -n 's/^iso_name="\(.*\)"/\1/p' "${profile_dir}/profiledef.sh")
+    iso_version=$(sed -n 's/^iso_version="\(.*\)"/\1/p' "${profile_dir}/profiledef.sh")
+    iso_arch=$(sed -n 's/^arch="\(.*\)"/\1/p' "${profile_dir}/profiledef.sh")
+fi
+if [[ -n "$out_dir" ]]; then
+    mkdir -p "$out_dir"
+    touch "$out_dir/${iso_name}-${iso_version}-${iso_arch}.iso"
+fi
 echo "[MOCK] mkarchiso called with: $*" >&2
 exit 0
 MOCK_EOF
