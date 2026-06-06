@@ -1438,6 +1438,11 @@ GREETD_EOF
     # a TCP port. Without this, SLIRP hostfwd to port 22 has nothing to forward to.
     echo "ListenAddress 0.0.0.0" >> "${TARGET}/etc/ssh/sshd_config"
     log_ok "sshd_config: ListenAddress 0.0.0.0 (TCP listener forced for SLIRP)."
+    # OpenSSH 10.3+ introduced PerSourcePenalties which bans source IPs after
+    # repeated auth failures. In SLIRP/NAT the client always appears as 10.0.2.2,
+    # so a few failed SSH attempts ban the entire test environment. Disable it.
+    echo "PerSourcePenalties no" >> "${TARGET}/etc/ssh/sshd_config"
+    log_ok "sshd_config: PerSourcePenalties no (prevents SLIRP IP ban)."
 
     # Pre-generate SSH host keys during install so sshd can start immediately
     # on first boot without waiting for entropy. Without this, sshd resets

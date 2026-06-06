@@ -1,14 +1,12 @@
-# ouroborOS E2E test config — Phase 6 feature validation
+# ouroborOS E2E test config — Hyprland profile
 #
-# Used by: sudo bash src/scripts/build-iso.sh --e2e-config=tests/qemu/phase6-e2e.yaml
-# Tests v0.6.0 features: our-wall (firewalld), ouroboros-install launcher,
-# Textual TUI files present, Thunderbolt not detected in QEMU.
+# Used by: sudo bash src/scripts/build-iso.sh --e2e-config=tests/qemu/hyprland-e2e.yaml
+# Credentials: root/toor, admin/admin
 #
 # QEMU constraints:
 #   homed_storage: classic  — homectl create fails in QEMU (Btrfs subvolume conflict)
 #   secure_boot: false      — sbctl requires real UEFI Setup Mode (OVMF limitation)
 #   wifi: omitted           — iwd not used in QEMU SLIRP network
-#   thunderbolt: none       — no Thunderbolt hardware in QEMU → bolt must NOT be installed
 #   post_install_action: shutdown — QEMU must power off after install so wait_qemu_exit() returns
 
 disk:
@@ -23,17 +21,17 @@ locale:
   timezone: UTC
 
 network:
-  hostname: ouroboros-p6
+  hostname: ouroboros-hypr
   enable_networkd: true
   enable_iwd: false
   enable_resolved: true
 
-root_password: "7907"
+root_password: "toor"
 
 users:
-  - username: hbuddenberg
-    password: "7907"
-    real_name: "Hernan Buddenberg"
+  - username: admin
+    password: "admin"
+    real_name: "Admin User"
     groups:
       - wheel
       - audio
@@ -46,7 +44,7 @@ users:
 shell: bash
 
 desktop:
-  profile: minimal
+  profile: hyprland
   dm: none
 
 security:
@@ -59,5 +57,7 @@ post_install_action: shutdown
 extra_packages:
   - openssh
   - firewalld
+  - python-firewall
+  - python-dbus
   - linux-firmware-other
   - linux-firmware-whence
