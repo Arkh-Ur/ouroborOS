@@ -43,12 +43,14 @@ jobs:
     runs-on: self-hosted
     permissions:
       contents: read
-    env:
-      # runner.temp is only available at job/step scope, not workflow scope.
-      # Keeps the qcow off tmpfs (which is ~4 GB and too small for a 40G sparse disk).
-      QCOW: ${{ runner.temp }}/ouroboros-e2e.qcow2
 
     steps:
+      - name: Set job-level env vars
+        run: |
+          # runner.temp is only available inside steps (not in env: blocks).
+          # Export QCOW here so all subsequent steps inherit it via GITHUB_ENV.
+          echo "QCOW=${RUNNER_TEMP}/ouroboros-e2e.qcow2" >> "$GITHUB_ENV"
+
       - name: Clean root-owned artifacts from previous run
         run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
 
