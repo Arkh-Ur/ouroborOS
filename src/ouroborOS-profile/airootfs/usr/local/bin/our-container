@@ -332,8 +332,9 @@ _nspawn_enter() {
     [[ -n "$name" ]] || die "usage: our-container enter <name> [--isolated] [--wayland] [--gpu] [--audio] [--gui]"
     shift
 
-    # Parse optional flags
+    # Parse optional flags; -- ends flag parsing and remaining args run as a command
     local opt_isolated=false opt_wayland=false opt_gpu=false opt_audio=false
+    local cmd_args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --isolated) opt_isolated=true; shift ;;
@@ -341,7 +342,8 @@ _nspawn_enter() {
             --gpu)      opt_gpu=true;      shift ;;
             --audio)    opt_audio=true;    shift ;;
             --gui)      opt_wayland=true; opt_gpu=true; opt_audio=true; shift ;;
-            *) die "unknown option: $1 (valid: --isolated --wayland --gpu --audio --gui)" ;;
+            --) shift; cmd_args=("$@"); break ;;
+            *) die "unknown option: $1 (valid: --isolated --wayland --gpu --audio --gui [-- cmd])" ;;
         esac
     done
 
@@ -408,21 +410,47 @@ _nspawn_enter() {
     # If flags are set, always use systemd-nspawn directly (machinectl doesn't support them)
     if [[ ${#nspawn_extra[@]} -gt 0 ]]; then
         log_info "Using systemd-nspawn with flags: ${nspawn_extra[*]}"
-        exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" "${nspawn_extra[@]}"
+        if [[ ${#cmd_args[@]} -gt 0 ]]; then
+            exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" "${nspawn_extra[@]}" -- "${cmd_args[@]}"
+        else
+            exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" "${nspawn_extra[@]}"
+        fi
     fi
 
     if [[ "$state" != "unknown" ]]; then
-        log_info "Entering container '${name}' via machinectl shell"
-        exec machinectl shell "$name" || {
-            local rc=$?
-            log_error "machinectl shell failed with exit code ${rc}"
-            log_info "Falling back to systemd-nspawn direct access..."
-            exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
-        }
+        if [[ ${#cmd_args[@]} -gt 0 ]]; then
+            if [[ "$state" == "running" ]]; then
+                # Container is already running — use nsenter to run inside it
+                local leader
+                leader=$(machinectl show --value -p Leader "$name" 2>/dev/null || true)
+                if [[ -n "$leader" ]]; then
+                    log_info "Running command in running container '${name}' via nsenter (leader PID ${leader})"
+                    exec nsenter -t "$leader" --mount --uts --ipc --net --pid -- "${cmd_args[@]}"
+                fi
+                log_error "Could not get leader PID for container '${name}'"
+                exit 1
+            else
+                # Container not running — use systemd-nspawn directly
+                log_info "Running command in container '${name}' via systemd-nspawn"
+                exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" -- "${cmd_args[@]}"
+            fi
+        else
+            log_info "Entering container '${name}' via machinectl shell"
+            exec machinectl shell "$name" || {
+                local rc=$?
+                log_error "machinectl shell failed with exit code ${rc}"
+                log_info "Falling back to systemd-nspawn direct access..."
+                exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+            }
+        fi
     fi
 
     log_info "Container '${name}' not registered with machinectl, using systemd-nspawn fallback"
-    exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+    if [[ ${#cmd_args[@]} -gt 0 ]]; then
+        exec systemd-nspawn -D "${MACHINES_ROOT}/${name}" -- "${cmd_args[@]}"
+    else
+        exec systemd-nspawn -D "${MACHINES_ROOT}/${name}"
+    fi
 }
 
 # --- Command: start (router) ---

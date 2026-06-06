@@ -14,9 +14,10 @@ Conflicts=getty@tty1.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/ouroborOS-installer
+Environment=TERM=xterm-256color
 StandardInput=tty
 StandardOutput=tty
-StandardError=journal+console
+StandardError=tty
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes

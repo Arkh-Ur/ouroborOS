@@ -437,10 +437,18 @@ log_ok "Build completed in ${BUILD_DURATION}s"
 
 # ── Checksums ─────────────────────────────────────────────────────────────────
 log_section "Generating Checksums"
-ISO_FILE=$(find "$OUTPUT_DIR" -name "ouroborOS-*.iso" -newer "$SCRIPT_DIR" | head -1)
+# Derive the ISO path from profiledef.sh (single source of truth) — mkarchiso
+# names the output ${iso_name}-${iso_version}-${arch}.iso. Reading it here keeps
+# the epilogue in sync with the version actually built and avoids picking a stale
+# ISO left in $OUTPUT_DIR by a previous build (find | head -1 was order-dependent).
+_profiledef="${PROFILE_DIR}/profiledef.sh"
+_iso_name=$(sed -n 's/^iso_name="\(.*\)"/\1/p' "$_profiledef")
+_iso_version=$(sed -n 's/^iso_version="\(.*\)"/\1/p' "$_profiledef")
+_iso_arch=$(sed -n 's/^arch="\(.*\)"/\1/p' "$_profiledef")
+ISO_FILE="${OUTPUT_DIR}/${_iso_name}-${_iso_version}-${_iso_arch}.iso"
 
-if [[ -z "$ISO_FILE" ]]; then
-    log_error "Could not find newly built ISO in $OUTPUT_DIR"
+if [[ ! -f "$ISO_FILE" ]]; then
+    log_error "Expected ISO not found: $ISO_FILE"
     exit 1
 fi
 

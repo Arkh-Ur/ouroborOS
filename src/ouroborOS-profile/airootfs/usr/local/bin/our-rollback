@@ -294,17 +294,22 @@ cmd_promote() {
     # NEVER delete @ before the rename succeeds: the running kernel mounts @ by
     # subvolume ID, but deleting it invalidates dcache entries under it, which
     # can cause /usr/bin/* lookups to fail on the running system.
+    # Old @ is kept as @.old so cmd_undo can restore it; it's also the live
+    # dcache root, so it must NOT be deleted until after reboot.
     _info "Replacing @ with copy of '${name}'..."
     btrfs property set "$tl_root" ro false 2>/dev/null || true
-    local tl_del="${toplevel}/@.del"
-    mv "$tl_root" "$tl_del" || _die "Could not move @ to @.del."
+    local tl_old="${toplevel}/@.old"
+    # Remove a stale @.old from a previous promote (safe if not the live root)
+    if [[ -d "$tl_old" ]]; then
+        btrfs subvolume delete "$tl_old" 2>/dev/null || mv "$tl_old" "${toplevel}/@.old.bak" || true
+    fi
+    mv "$tl_root" "$tl_old" || _die "Could not move @ to @.old."
     mv "$tl_new" "$tl_root" || _die "Could not rename @_new to @."
     btrfs property set "$tl_root" ro true 2>/dev/null || true
     _ok "New @ is read-only."
-    # @.del is the old running root — deleting it HERE invalidates the live dcache
-    # and breaks subsequent commands (umount, etc.). Leave it for post-reboot cleanup.
-    # A cleanup unit or the user can delete it after verifying the new system works.
-    _warn "@.del (old root) left on disk. Safe to delete after reboot: btrfs subvolume delete @.del on top-level mount."
+    # @.old is the old running root — deleting it HERE invalidates the live dcache
+    # and breaks subsequent commands. Leave it for post-reboot cleanup or undo.
+    _warn "@.old (old root) left on disk. Run: ${PROGRAM} undo  to revert. Or delete after reboot: btrfs subvolume delete @.old on top-level mount."
 
     umount "$toplevel"
     rmdir "$toplevel"
@@ -329,6 +334,14 @@ cmd_promote() {
 }
 
 cmd_undo() {
+    local opt_force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f) opt_force=true; shift ;;
+            *) _die "Unknown option for undo: $1" ;;
+        esac
+    done
+
     local dev
     dev=$(_root_device)
 
@@ -336,8 +349,8 @@ cmd_undo() {
     toplevel=$(_mount_toplevel "$dev")
 
     cleanup() {
-        umount "$toplevel" 2>/dev/null || true
-        rmdir "$toplevel" 2>/dev/null || true
+        umount "${toplevel:-}" 2>/dev/null || true
+        rmdir "${toplevel:-}" 2>/dev/null || true
     }
     trap cleanup EXIT
 
@@ -351,9 +364,11 @@ cmd_undo() {
 
     _warn "UNDO: @.old will replace the current @."
     _warn "The current @ will be deleted permanently."
-    echo ""
-    read -r -p "Type 'yes' to continue: " confirm
-    [[ "$confirm" == "yes" ]] || { umount "$toplevel"; rmdir "$toplevel"; trap - EXIT; _die "Aborted."; }
+    if [[ "$opt_force" != true ]]; then
+        echo ""
+        read -r -p "Type 'yes' to continue: " confirm
+        [[ "$confirm" == "yes" ]] || { umount "$toplevel"; rmdir "$toplevel"; trap - EXIT; _die "Aborted."; }
+    fi
 
     _info "Making @.old read-write for restore..."
     btrfs property set "${tl_old}" ro false 2>/dev/null || true
@@ -363,6 +378,10 @@ cmd_undo() {
     local tl_del="${toplevel}/@.del"
     _info "Moving current @ aside as @.del..."
     btrfs property set "${tl_root}" ro false 2>/dev/null || true
+    # Remove stale @.del from a previous promote/undo (safe: not the live root at this point)
+    if [[ -d "$tl_del" ]]; then
+        btrfs subvolume delete "$tl_del" 2>/dev/null || mv "$tl_del" "${toplevel}/@.del.bak" || true
+    fi
     mv "${tl_root}" "${tl_del}" || _die "Could not move @ to @.del."
 
     _info "Restoring @.old → @..."
@@ -428,7 +447,7 @@ case "$command" in
     status)   cmd_status ;;
     try)      cmd_try "${1:-}" ;;
     promote)  cmd_promote "${1:-}" "${@:2}" ;;
-    undo)     cmd_undo ;;
+    undo)     cmd_undo "$@" ;;
     help|--help|-h) cmd_help ;;
     *)
         _err "Unknown command: ${command}"

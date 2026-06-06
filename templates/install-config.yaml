@@ -16,6 +16,7 @@ network:
   enable_networkd: true
   enable_iwd: true
   enable_resolved: true
+  enable_ssh: false           # Install and enable sshd. Default: false (not installed).
   # Optional: pre-configure WiFi for unattended installs.
   # If ssid is set, passphrase is required.
   # The passphrase is written to /var/lib/iwd/<SSID>.psk (chmod 600)
@@ -80,6 +81,10 @@ desktop:
 #   sbctl_include_ms_keys: false
 #   fido2_pam: false
 #   dual_boot: false
+
+# Post-install package sets — managed automatically by their respective tools.
+# appimage_packages: []  # managed by our-app (AppImage manager)
+# box_packages: []       # managed by our-box (user-space dev containers)
 
 extra_packages:
   - openssh

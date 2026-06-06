@@ -47,7 +47,7 @@ mapfile -t SCRIPTS < <(
         # Phase 3/4 user-facing tools (bash, no .sh extension)
         for tool in our-snapshot our-rollback our-wifi our-bluetooth our-fido2 \
                     ouroboros-secureboot ouroboros-firstboot our-pac our-container \
-                    our-aur our-flat our-app; do
+                    our-aur our-flat our-app our-box our-wall ouroboros-install; do
             local_path="$WORKSPACE/src/ouroborOS-profile/airootfs/usr/local/bin/${tool}"
             [[ -f "$local_path" ]] && echo "$local_path"
         done

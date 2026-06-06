@@ -439,3 +439,229 @@ msgstr "Creando snapshot"
 
 msgid "Finishing"
 msgstr "Finalizando"
+
+# Textual TUI — menu items
+msgid "Localization"
+msgstr "Localización"
+
+msgid "Disk configuration"
+msgstr "Configuración de disco"
+
+msgid "Hostname"
+msgstr "Nombre de host"
+
+msgid "Users & Authentication"
+msgstr "Usuarios y autenticación"
+
+msgid "Environment"
+msgstr "Entorno"
+
+msgid "Network"
+msgstr "Red"
+
+msgid "Security"
+msgstr "Seguridad"
+
+msgid "Install"
+msgstr "Instalar"
+
+# Textual TUI — common buttons
+msgid "Back"
+msgstr "Volver"
+
+msgid "Apply"
+msgstr "Aplicar"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+# Textual TUI — localization pane
+msgid "Locale:"
+msgstr "Configuración regional:"
+
+msgid "Keymap:"
+msgstr "Mapa de teclado:"
+
+msgid "Timezone:"
+msgstr "Zona horaria:"
+
+# Textual TUI — users pane
+msgid "User & Authentication"
+msgstr "Usuario y autenticación"
+
+msgid "Added users:"
+msgstr "Usuarios agregados:"
+
+msgid "Username:"
+msgstr "Nombre de usuario:"
+
+msgid "Full name (optional):"
+msgstr "Nombre completo (opcional):"
+
+msgid "Password:"
+msgstr "Contraseña:"
+
+msgid "Confirm password:"
+msgstr "Confirmar contraseña:"
+
+msgid "Add user"
+msgstr "Agregar usuario"
+
+msgid "Remove last"
+msgstr "Quitar último"
+
+msgid "Set root password"
+msgstr "Definir contraseña de root"
+
+msgid "Root password:"
+msgstr "Contraseña de root:"
+
+msgid "Confirm root password:"
+msgstr "Confirmar contraseña de root:"
+
+msgid "(none yet — add at least one)"
+msgstr "(ninguno aún — agregue al menos uno)"
+
+msgid "primary"
+msgstr "primario"
+
+msgid "user"
+msgstr "usuario"
+
+msgid "Username cannot be empty."
+msgstr "El nombre de usuario no puede estar vacío."
+
+msgid "That username is already added."
+msgstr "Ese nombre de usuario ya fue agregado."
+
+msgid "Passwords do not match."
+msgstr "Las contraseñas no coinciden."
+
+msgid "Root passwords do not match."
+msgstr "Las contraseñas de root no coinciden."
+
+msgid "Root password must be at least 4 characters."
+msgstr "La contraseña de root debe tener al menos 4 caracteres."
+
+# Textual TUI — environment pane
+msgid "Login shell:"
+msgstr "Shell de inicio:"
+
+msgid "Desktop profile:"
+msgstr "Perfil de escritorio:"
+
+msgid "Display manager:"
+msgstr "Gestor de inicio de sesión:"
+
+msgid "GPU driver:"
+msgstr "Controlador de GPU:"
+
+# Textual TUI — disk pane
+msgid "Disk Configuration"
+msgstr "Configuración de disco"
+
+msgid "Target disk:"
+msgstr "Disco de destino:"
+
+msgid "Partitioning:"
+msgstr "Particionado:"
+
+msgid "No disks detected — enter a device path:"
+msgstr "No se detectaron discos — ingrese una ruta de dispositivo:"
+
+msgid "Manual layout — one partition per line: SIZE:TYPE:MOUNTPOINT:FS"
+msgstr "Diseño manual — una partición por línea: TAMAÑO:TIPO:PUNTO_MONTAJE:FS"
+
+msgid "Automatic — GPT + Btrfs subvolumes (recommended)"
+msgstr "Automático — GPT + subvolúmenes Btrfs (recomendado)"
+
+msgid "Manual — define your own partitions (advanced)"
+msgstr "Manual — defina sus propias particiones (avanzado)"
+
+msgid "Encrypt disk with LUKS2"
+msgstr "Cifrar disco con LUKS2"
+
+msgid "LUKS passphrase:"
+msgstr "Frase de cifrado LUKS:"
+
+msgid "Confirm passphrase:"
+msgstr "Confirmar frase de cifrado:"
+
+# Textual TUI — security pane
+msgid "Secure Boot (requires UEFI Setup Mode)"
+msgstr "Secure Boot (requiere modo de configuración UEFI)"
+
+msgid "TPM2 auto-unlock for LUKS"
+msgstr "Desbloqueo automático TPM2 para LUKS"
+
+msgid "FIDO2 PAM authentication"
+msgstr "Autenticación PAM con FIDO2"
+
+# Textual TUI — network pane
+msgid "WiFi SSID (leave on manual + blank to skip):"
+msgstr "SSID WiFi (deje en manual y en blanco para omitir):"
+
+msgid "WiFi passphrase:"
+msgstr "Contraseña WiFi:"
+
+msgid "Show passphrase"
+msgstr "Mostrar contraseña"
+
+msgid "Enable SSH"
+msgstr "Habilitar SSH"
+
+# Textual TUI — summary pane
+msgid "Installation Summary"
+msgstr "Resumen de instalación"
+
+msgid "Select a category from the left panel."
+msgstr "Seleccione una categoría en el panel izquierdo."
+
+# Textual TUI — confirm erase modal
+msgid "Confirm installation"
+msgstr "Confirmar instalación"
+
+msgid "The entire disk {device} will be ERASED."
+msgstr "El disco completo {device} será BORRADO."
+
+msgid "This action cannot be undone."
+msgstr "Esta acción no se puede deshacer."
+
+msgid "Erase and install"
+msgstr "Borrar e instalar"
+
+# Textual TUI — install validation
+msgid "Select a target disk before installing."
+msgstr "Seleccione un disco de destino antes de instalar."
+
+msgid "Add at least one user before installing."
+msgstr "Agregue al menos un usuario antes de instalar."
+
+msgid "LUKS is enabled — set a passphrase in Disk configuration."
+msgstr "LUKS está habilitado — defina una frase de cifrado en Configuración de disco."
+
+# Textual TUI — progress pane
+msgid "Installation Progress"
+msgstr "Progreso de la instalación"
+
+msgid "working…"
+msgstr "trabajando…"
+
+msgid "done"
+msgstr "listo"
+
+# Textual TUI — done pane
+msgid "Installation Complete!"
+msgstr "¡Instalación completa!"
+
+msgid "What would you like to do?"
+msgstr "¿Qué desea hacer?"
+
+msgid "Reboot"
+msgstr "Reiniciar"
+
+msgid "Shutdown"
+msgstr "Apagar"
+
+msgid "Exit to shell"
+msgstr "Salir al terminal"

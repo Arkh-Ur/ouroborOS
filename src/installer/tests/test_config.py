@@ -11,6 +11,7 @@ import yaml
 
 from installer.config import (
     ConfigValidationError,
+    HardwareConfig,
     InstallerConfig,
     SecurityConfig,
     UserConfig,
@@ -392,6 +393,18 @@ class TestSecurityConfig:
         with pytest.raises(ConfigValidationError, match="boolean"):
             validate_config(data)
 
+    def test_root_password_loaded_from_top_level(self, tmp_path: Path) -> None:
+        content = textwrap.dedent(VALID_CONFIG) + '\nroot_password: "toor"\n'
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.security.root_password == "toor"
+
+    def test_root_password_defaults_empty(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, VALID_CONFIG)
+        cfg = load_config(path)
+        assert cfg.security.root_password == ""
+
 
 # ---------------------------------------------------------------------------
 # Phase 3 — Additional validate_config branches
@@ -436,6 +449,67 @@ class TestValidateConfigBranches:
         data["desktop"] = {"profile": "lxqt"}
         with pytest.raises(ConfigValidationError, match="desktop.profile"):
             validate_config(data)
+
+
+# ---------------------------------------------------------------------------
+# Partition scheme (bug #10) — auto/manual layout
+# ---------------------------------------------------------------------------
+
+
+class TestPartitionScheme:
+    def test_default_scheme_is_auto(self) -> None:
+        cfg = InstallerConfig()
+        assert cfg.disk.partition_scheme == "auto"
+        assert cfg.disk.manual_partitions == []
+
+    def test_auto_scheme_validates(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "auto"
+        validate_config(data)  # must not raise
+
+    def test_invalid_scheme_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "lvm"
+        with pytest.raises(ConfigValidationError, match="partition_scheme"):
+            validate_config(data)
+
+    def test_manual_scheme_without_partitions_raises(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        with pytest.raises(ConfigValidationError, match="manual_partitions"):
+            validate_config(data)
+
+    def test_manual_scheme_with_partitions_validates(self) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        data["disk"]["manual_partitions"] = [
+            {"number": 1, "size": "512MiB", "type": "esp", "mountpoint": "/boot", "fs": "fat32"},
+            {"number": 2, "size": "100%", "type": "btrfs", "mountpoint": "/", "fs": "btrfs"},
+        ]
+        validate_config(data)  # must not raise
+
+    def test_load_manual_scheme(self, tmp_path: Path) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data["disk"]["partition_scheme"] = "manual"
+        data["disk"]["manual_partitions"] = [
+            {"number": 1, "size": "512MiB", "type": "esp", "mountpoint": "/boot", "fs": "fat32"},
+            {"number": 2, "size": "100%", "type": "btrfs", "mountpoint": "/", "fs": "btrfs"},
+        ]
+        p = tmp_path / "manual.yaml"
+        p.write_text(yaml.safe_dump(data), encoding="utf-8")
+        cfg = load_config(p)
+        assert cfg.disk.partition_scheme == "manual"
+        assert len(cfg.disk.manual_partitions) == 2
+        assert cfg.disk.manual_partitions[0]["type"] == "esp"
+
+    def test_system_yaml_preserves_scheme(self) -> None:
+        cfg = InstallerConfig()
+        cfg.disk.partition_scheme = "manual"
+        cfg.disk.manual_partitions = [{"number": 1, "size": "100%", "type": "btrfs",
+                                       "mountpoint": "/", "fs": "btrfs"}]
+        d = cfg.to_system_yaml()
+        assert d["disk"]["partition_scheme"] == "manual"
+        assert d["disk"]["manual_partitions"][0]["mountpoint"] == "/"
 
     def test_valid_desktop_profile_hyprland(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
@@ -1021,3 +1095,46 @@ class TestHomedLuksConfig:
         cfg = load_config(_write_yaml(tmp_path, content))
         assert cfg.users[0].tpm2_enroll is False
         assert cfg.users[0].fido2_enroll is False
+
+
+# ---------------------------------------------------------------------------
+# HardwareConfig
+# ---------------------------------------------------------------------------
+
+
+class TestHardwareConfig:
+    def test_default_thunderbolt_detected_is_false(self) -> None:
+        hw = HardwareConfig()
+        assert hw.thunderbolt_detected is False
+
+    def test_thunderbolt_can_be_set_true(self) -> None:
+        hw = HardwareConfig(thunderbolt_detected=True)
+        assert hw.thunderbolt_detected is True
+
+    def test_installer_config_has_hardware_field(self) -> None:
+        cfg = InstallerConfig()
+        assert hasattr(cfg, "hardware")
+        assert isinstance(cfg.hardware, HardwareConfig)
+
+    def test_installer_config_hardware_default_not_detected(self) -> None:
+        cfg = InstallerConfig()
+        assert cfg.hardware.thunderbolt_detected is False
+
+    def test_hardware_config_independent_instances(self) -> None:
+        cfg1 = InstallerConfig()
+        cfg2 = InstallerConfig()
+        cfg1.hardware.thunderbolt_detected = True
+        assert cfg2.hardware.thunderbolt_detected is False
+
+    def test_to_system_yaml_includes_hardware(self) -> None:
+        cfg = InstallerConfig()
+        cfg.hardware.thunderbolt_detected = True
+        result = cfg.to_system_yaml()
+        assert "hardware" in result
+        assert result["hardware"]["thunderbolt_detected"] is True
+
+    def test_to_system_yaml_hardware_default_false(self) -> None:
+        cfg = InstallerConfig()
+        result = cfg.to_system_yaml()
+        assert "hardware" in result
+        assert result["hardware"]["thunderbolt_detected"] is False

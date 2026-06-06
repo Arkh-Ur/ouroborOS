@@ -14,6 +14,11 @@ import yaml
 from installer.config import validate_config
 from installer.state_machine import Installer
 
+try:
+    from installer.tui_textual import TUI  # type: ignore[import]
+except ImportError:
+    from installer.tui import TUI  # type: ignore[import]  # noqa: F401
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

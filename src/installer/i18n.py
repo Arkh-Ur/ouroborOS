@@ -28,9 +28,12 @@ _DOMAIN = "installer"
 _translation: gettext.NullTranslations = gettext.NullTranslations()
 
 # Short-form language aliases → canonical locale codes.
+# All Spanish variants share the single es_CL catalog.
 _LANG_MAP: dict[str, str] = {
     "en":    "en_US",
     "es":    "es_CL",
+    "es_MX": "es_CL",
+    "es_ES": "es_CL",
     "de":    "de_DE",
 }
 
@@ -75,3 +78,27 @@ def _(message: str) -> str:  # noqa: N802
     is called, and the real translation after.
     """
     return _translation.gettext(message)
+
+
+def lang_from_locale(locale_code: str) -> str:
+    """Map a locale_code to its i18n initialisation code.
+
+    Uses the LOCALE_CATALOG defined in ``tui_textual`` when available;
+    falls back to the built-in ``_LANG_MAP`` alias table otherwise.
+
+    Args:
+        locale_code: A locale code such as ``"en_US"`` or ``"es_CL"``.
+
+    Returns:
+        The corresponding i18n code accepted by ``init_i18n()``, e.g.
+        ``"en_US"`` or ``"es_CL"``.  Falls back to ``"en_US"`` if the
+        code is not recognised.
+    """
+    try:
+        from installer.tui_textual import lang_from_locale as _ttx_lang  # type: ignore[import]
+        return _ttx_lang(locale_code)
+    except ImportError:
+        pass
+    # Fallback: strip region and use _LANG_MAP
+    short = locale_code.split("_")[0].lower()
+    return _LANG_MAP.get(short, locale_code)

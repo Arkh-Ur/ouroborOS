@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly PROG="our-wall"
+
+_usage() {
+    cat <<'EOF'
+USAGE: our-wall <command> [args]
+
+Commands:
+  status                  Show active zone, open ports/services, service state
+  enable                  Start and enable firewalld
+  disable                 Stop and disable firewalld (does NOT uninstall)
+  reload                  Reload rules without dropping connections
+
+  allow <service|port>    Open service or port  (e.g. ssh, http, 8080/tcp)
+  deny  <service|port>    Close service or port
+  list                    List open services and ports in active zone
+
+  zone  show              Show active zone and description
+  zone  set <zone>        Set active zone for the default interface
+
+  preset desktop          Allow mdns, kde-connect, syncthing
+  preset server           Allow ssh, http, https
+  preset reset            Restore default: public zone, ssh only
+
+Examples:
+  our-wall status
+  our-wall allow 8080/tcp
+  our-wall deny http
+  our-wall zone set home
+  our-wall preset desktop
+EOF
+}
+
+_check_firewalld() {
+    if ! command -v firewall-cmd &>/dev/null; then
+        printf '%s: firewalld not installed. Install with: our-pac -S firewalld\n' "$PROG" >&2
+        exit 1
+    fi
+}
+
+_require_root() {
+    if [[ "${EUID}" -ne 0 ]]; then
+        printf '%s: this command requires root. Use sudo.\n' "$PROG" >&2
+        exit 1
+    fi
+}
+
+_active_zone() {
+    firewall-cmd --get-active-zones 2>/dev/null | awk 'NR==1{print $1}' || printf 'public'
+}
+
+_default_iface() {
+    ip route show default 2>/dev/null | awk 'NR==1{print $5}'
+}
+
+cmd_status() {
+    _check_firewalld
+    printf '\n  Firewall status\n'
+    printf '  ───────────────\n'
+    if systemctl is-active firewalld.service &>/dev/null; then
+        printf '  Service:     \033[32mactive\033[0m\n'
+    else
+        printf '  Service:     \033[31minactive\033[0m\n'
+        return 0
+    fi
+    local zone
+    zone=$(_active_zone)
+    printf '  Active zone: %s\n' "$zone"
+    local services
+    services=$(firewall-cmd --zone="$zone" --list-services 2>/dev/null || true)
+    [[ -n "$services" ]] && printf '  Services:    %s\n' "$services"
+    local ports
+    ports=$(firewall-cmd --zone="$zone" --list-ports 2>/dev/null || true)
+    [[ -n "$ports" ]] && printf '  Ports:       %s\n' "$ports"
+    printf '\n'
+}
+
+cmd_enable() {
+    _check_firewalld
+    _require_root
+    systemctl enable --now firewalld.service
+    printf 'firewalld enabled and started.\n'
+}
+
+cmd_disable() {
+    _check_firewalld
+    _require_root
+    systemctl disable --now firewalld.service
+    printf 'firewalld stopped and disabled (not uninstalled).\n'
+}
+
+cmd_reload() {
+    _check_firewalld
+    _require_root
+    firewall-cmd --reload
+    printf 'firewalld rules reloaded.\n'
+}
+
+cmd_allow() {
+    local target="${1:-}"
+    _check_firewalld
+    _require_root
+    if [[ -z "$target" ]]; then
+        printf '%s: allow requires a service or port (e.g. ssh, 8080/tcp)\n' "$PROG" >&2
+        exit 1
+    fi
+    local zone
+    zone=$(_active_zone)
+    if [[ "$target" == */* ]]; then
+        firewall-cmd --zone="$zone" --add-port="$target" --permanent
+        firewall-cmd --zone="$zone" --add-port="$target"
+    else
+        firewall-cmd --zone="$zone" --add-service="$target" --permanent
+        firewall-cmd --zone="$zone" --add-service="$target"
+    fi
+    printf 'Allowed %s in zone %s.\n' "$target" "$zone"
+}
+
+cmd_deny() {
+    local target="${1:-}"
+    _check_firewalld
+    _require_root
+    if [[ -z "$target" ]]; then
+        printf '%s: deny requires a service or port\n' "$PROG" >&2
+        exit 1
+    fi
+    local zone
+    zone=$(_active_zone)
+    if [[ "$target" == */* ]]; then
+        firewall-cmd --zone="$zone" --remove-port="$target" --permanent 2>/dev/null || true
+        firewall-cmd --zone="$zone" --remove-port="$target" 2>/dev/null || true
+    else
+        firewall-cmd --zone="$zone" --remove-service="$target" --permanent 2>/dev/null || true
+        firewall-cmd --zone="$zone" --remove-service="$target" 2>/dev/null || true
+    fi
+    printf 'Removed %s from zone %s.\n' "$target" "$zone"
+}
+
+cmd_list() {
+    _check_firewalld
+    local zone
+    zone=$(_active_zone)
+    printf '\n  Open in zone: %s\n' "$zone"
+    printf '  ─────────────────────\n'
+    local svcs ports
+    svcs=$(firewall-cmd --zone="$zone" --list-services 2>/dev/null || true)
+    ports=$(firewall-cmd --zone="$zone" --list-ports 2>/dev/null || true)
+    printf '  Services: %s\n' "${svcs:-(none)}"
+    printf '  Ports:    %s\n' "${ports:-(none)}"
+    printf '\n'
+}
+
+cmd_zone() {
+    local subcmd="${1:-show}"
+    _check_firewalld
+    case "$subcmd" in
+        show)
+            local zone iface
+            zone=$(_active_zone)
+            iface=$(_default_iface)
+            printf 'Active zone: %s (interface: %s)\n' "$zone" "${iface:-(unknown)}"
+            ;;
+        set)
+            _require_root
+            local new_zone="${2:-}"
+            if [[ -z "$new_zone" ]]; then
+                printf '%s: zone set requires a zone name\n' "$PROG" >&2
+                exit 1
+            fi
+            local iface
+            iface=$(_default_iface)
+            if [[ -z "$iface" ]]; then
+                printf '%s: could not detect default interface\n' "$PROG" >&2
+                exit 1
+            fi
+            firewall-cmd --zone="$new_zone" --change-interface="$iface" --permanent
+            firewall-cmd --reload
+            printf 'Interface %s moved to zone %s.\n' "$iface" "$new_zone"
+            ;;
+        *)
+            printf '%s zone: unknown subcommand: %s\n' "$PROG" "$subcmd" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_preset() {
+    local preset="${1:-}"
+    _check_firewalld
+    _require_root
+    case "$preset" in
+        desktop)
+            firewall-cmd --set-default-zone=public --permanent 2>/dev/null || true
+            local svc
+            for svc in mdns kde-connect syncthing; do
+                firewall-cmd --zone=public --add-service="$svc" --permanent 2>/dev/null || true
+            done
+            firewall-cmd --reload
+            printf 'Preset desktop applied: mdns, kde-connect, syncthing allowed.\n'
+            ;;
+        server)
+            firewall-cmd --set-default-zone=public --permanent 2>/dev/null || true
+            for svc in ssh http https; do
+                firewall-cmd --zone=public --add-service="$svc" --permanent 2>/dev/null || true
+            done
+            firewall-cmd --reload
+            printf 'Preset server applied: ssh, http, https allowed.\n'
+            ;;
+        reset)
+            firewall-cmd --set-default-zone=public --permanent 2>/dev/null || true
+            # Remove all services except ssh, then remove all ports
+            local current_services
+            current_services=$(firewall-cmd --zone=public --list-services 2>/dev/null || true)
+            local s
+            for s in $current_services; do
+                [[ "$s" == "ssh" ]] && continue
+                firewall-cmd --zone=public --remove-service="$s" --permanent 2>/dev/null || true
+            done
+            local current_ports
+            current_ports=$(firewall-cmd --zone=public --list-ports 2>/dev/null || true)
+            local p
+            for p in $current_ports; do
+                [[ -z "$p" ]] && continue
+                firewall-cmd --zone=public --remove-port="$p" --permanent 2>/dev/null || true
+            done
+            firewall-cmd --reload
+            printf 'Reset to default: public zone, ssh only.\n'
+            ;;
+        *)
+            printf '%s preset: unknown preset: %s (valid: desktop server reset)\n' "$PROG" "$preset" >&2
+            exit 1
+            ;;
+    esac
+}
+
+case "${1:-}" in
+    status)            cmd_status ;;
+    enable)            cmd_enable ;;
+    disable)           cmd_disable ;;
+    reload)            cmd_reload ;;
+    allow)             cmd_allow "${2:-}" ;;
+    deny)              cmd_deny "${2:-}" ;;
+    list)              cmd_list ;;
+    zone)              cmd_zone "${2:-show}" "${3:-}" ;;
+    preset)            cmd_preset "${2:-}" ;;
+    --help|-h|help|"") _usage ;;
+    *)
+        printf '%s: unknown command: %s\n' "$PROG" "$1" >&2
+        _usage >&2
+        exit 1
+        ;;
+esac

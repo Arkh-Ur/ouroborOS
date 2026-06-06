@@ -37,7 +37,11 @@ from installer.desktop_profiles import (
     shell_path,
 )
 from installer.i18n import _, init_i18n
-from installer.tui import TUI
+
+try:
+    from installer.tui_textual import TUI  # type: ignore[import]
+except ImportError:
+    from installer.tui import TUI  # type: ignore[import]  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -325,7 +329,10 @@ class Installer:
         total = len(_STATE_ORDER)
         label = _(_STEP_LABELS.get(state, state.name))
         if self.tui:
-            self.tui.update_install_progress(global_pct, step_num, total, label, detail)
+            self.tui.update_install_progress(
+                global_pct, step_num, total, label, detail,
+                phase=state.name, sub_pct=int(max(0, min(100, sub_pct))),
+            )
 
     def _handle_init(self) -> None:
         """INIT — detect unattended mode or initialise TUI."""
@@ -421,6 +428,17 @@ class Installer:
         if failed:
             raise InstallerError("Preflight checks failed:\n" + "\n".join(failed))
 
+        # Thunderbolt auto-detect — silent, no UI, drives configure.sh
+        try:
+            tb = subprocess.run(
+                ["lspci", "-nn"], capture_output=True, text=True, check=False,
+            )
+            self.config.hardware.thunderbolt_detected = "thunderbolt" in tb.stdout.lower()
+            if self.config.hardware.thunderbolt_detected:
+                log.info("Thunderbolt hardware detected — boltd will be enabled during CONFIGURE.")
+        except FileNotFoundError:
+            log.debug("lspci not available — thunderbolt detection skipped.")
+
     def _handle_locale(self) -> None:
         """LOCALE — set locale, timezone, keymap."""
         self._update_progress(State.LOCALE, 0)
@@ -471,6 +489,11 @@ class Installer:
                 u.shell = shell_path(shell_name)
                 u.homed_storage = ud.get("homed_storage", "subvolume")
                 self.config.users.append(u)
+
+            # Optional root password (TUI accessor; '' keeps root locked).
+            get_root = getattr(self.tui, "get_root_password", None)
+            if callable(get_root):
+                self.config.security.root_password = get_root()
 
         log.info(
             "Users configured: %s",
@@ -578,6 +601,12 @@ class Installer:
             if use_luks:
                 self.config.disk.luks_passphrase = self.tui.show_passphrase_input()
                 self.config.security.tpm2_unlock = self.tui.show_tpm2_prompt()
+            get_scheme = getattr(self.tui, "get_disk_scheme", None)
+            if callable(get_scheme):
+                result = get_scheme()
+                if isinstance(result, tuple) and len(result) == 2:
+                    self.config.disk.partition_scheme = result[0]
+                    self.config.disk.manual_partitions = result[1]
             self.tui.show_partition_preview(disk, use_luks)
             confirmed = self.tui.show_confirmation(
                 f"WARNING: All data on {disk} will be destroyed. Continue?"
@@ -605,6 +634,18 @@ class Installer:
 
         if self.config.disk.use_luks and self.config.disk.luks_passphrase:
             args += ["--luks", self.config.disk.luks_passphrase]
+
+        if self.config.disk.partition_scheme == "manual":
+            args += ["--scheme", "manual"]
+            for part in self.config.disk.manual_partitions:
+                spec = "{number}:{size}:{type}:{mountpoint}:{fs}".format(
+                    number=part.get("number", ""),
+                    size=part.get("size", ""),
+                    type=part.get("type", ""),
+                    mountpoint=part.get("mountpoint", ""),
+                    fs=part.get("fs", ""),
+                )
+                args += ["--part", spec]
 
         self._run_op(args, progress_title="Disk Setup", final_msg="Disk prepared.")
         self._update_progress(State.FORMAT, 100, "Disco preparado")
@@ -774,7 +815,6 @@ class Installer:
             "efibootmgr",
             "sudo",
             "zram-generator",
-            "openssh",
             "which",
             "neovim",
             # systemd-nspawn + machinectl ship with the `systemd` package
@@ -789,6 +829,10 @@ class Installer:
             skip = set(self.config.skip_packages)
             packages = [p for p in packages if p not in skip]
             log.info("Skipped packages from config: %s", ", ".join(skip))
+
+        # Add openssh only when explicitly enabled
+        if self.config.network.enable_ssh:
+            packages.append("openssh")
 
         # Add sbctl when Secure Boot is enabled
         if self.config.security.secure_boot and "sbctl" not in packages:
@@ -870,30 +914,28 @@ class Installer:
             )
 
             log.info("Running pacstrap (attempt %d/%d): %s", attempt, max_retries, " ".join(cmd))
-            result = subprocess.run(
+            with subprocess.Popen(
                 cmd,
-                check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
                 text=True,
-            )
-
-            # Always log pacstrap output — package hooks may emit warnings
-            # (e.g. filesystem .install "error: command failed to execute correctly")
-            # that are non-fatal but important for diagnostics.
-            if result.stdout:
-                for line in result.stdout.splitlines():
-                    stripped = line.strip()
+            ) as proc:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    stripped = line.rstrip()
                     if stripped:
                         log.debug("[pacstrap] %s", stripped)
+            returncode = proc.returncode
 
-            if result.returncode == 0:
+            if returncode == 0:
                 log.info("pacstrap succeeded on attempt %d.", attempt)
                 break
 
             log.warning(
                 "pacstrap attempt %d/%d failed (exit %d). %s and retrying.",
-                attempt, max_retries, result.returncode,
+                attempt, max_retries, returncode,
                 "Regenerating mirrorlist" if not is_offline else "Offline — mirrorlist unchanged",
             )
             if not is_offline:
@@ -901,7 +943,7 @@ class Installer:
 
             if attempt == max_retries:
                 raise InstallerError(
-                    f"pacstrap failed after {max_retries} attempts (exit code {result.returncode}). "
+                    f"pacstrap failed after {max_retries} attempts (exit code {returncode}). "
                     "Check the install log for details."
                 )
         else:
@@ -990,6 +1032,7 @@ class Installer:
                 "USER_PASSWORD": self.config.users[0].password_plaintext if self.config.users else "",
                 "USER_GROUPS": ",".join(self.config.users[0].groups) if self.config.users else "",
                 "USER_SHELL": self.config.users[0].shell if self.config.users else "/bin/bash",
+                "ENABLE_SSH": "1" if self.config.network.enable_ssh else "0",
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
                 "ENABLE_TPM2": "1" if self.config.security.tpm2_unlock else "0",
@@ -1008,18 +1051,35 @@ class Installer:
                 "FIDO2_PAM": "1" if self.config.security.fido2_pam else "0",
                 "ENABLE_DUAL_BOOT": "1" if self.config.security.dual_boot else "0",
                 "SECURE_BOOT": "1" if self.config.security.secure_boot else "0",
+                "THUNDERBOLT_DETECTED": "1" if self.config.hardware.thunderbolt_detected else "0",
                 "SBCTL_INCLUDE_MS_KEYS": "1" if self.config.security.sbctl_include_ms_keys else "0",
+                "ROOT_PASSWORD": self.config.security.root_password,
                 "ISO_VERSION": _read_iso_version(),
                 "OFFLINE_MODE": "true" if (not self._has_internet() and self._detect_offline_cache()) else "false",
             }
         )
 
-        result = subprocess.run(["bash", str(configure_script)], env=env, check=False)
+        with subprocess.Popen(
+            ["bash", str(configure_script)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            text=True,
+        ) as _proc:
+            assert _proc.stdout is not None
+            for _line in _proc.stdout:
+                stripped = _line.rstrip()
+                if stripped:
+                    log.debug("[configure] %s", stripped)
+        result = _proc
 
         # Clear transient secrets after configure — no longer needed
         for u in self.config.users:
             u.password_plaintext = ""
         self.config.network.wifi_passphrase = ""
+        self.config.security.root_password = ""
 
         if result.returncode != 0:
             raise InstallerError(
@@ -1033,15 +1093,25 @@ class Installer:
         """SNAPSHOT — create baseline Btrfs snapshot."""
         self._update_progress(State.SNAPSHOT, 0, "Creando snapshot...")
 
-        result = subprocess.run(
+        with subprocess.Popen(
             [
                 "bash",
                 str(OPS_DIR / "snapshot.sh"),
                 "--action", "create_install_snapshot",
                 "--target", self.config.install_target,
             ],
-            check=False,
-        )
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            text=True,
+        ) as _snap_proc:
+            assert _snap_proc.stdout is not None
+            for _line in _snap_proc.stdout:
+                stripped = _line.rstrip()
+                if stripped:
+                    log.debug("[snapshot] %s", stripped)
+        result = _snap_proc
         if result.returncode != 0:
             log.warning("Snapshot creation failed — continuing without snapshot.")
         else:
@@ -1207,6 +1277,8 @@ class Installer:
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
             text=True,
         ) as proc:
             assert proc.stdout is not None

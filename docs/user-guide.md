@@ -386,6 +386,95 @@ our-container image info ubuntu
 
 > **Windows ISOs are out of scope.** A container shares the host's Linux kernel, so Windows needs a virtual machine, not a container. OCI images (Docker Hub) are served through the `podman`/`docker` engines — they are not converted into `nspawn` rootfs tarballs. Only `nspawn` containers live on `@var`-backed Btrfs subvolumes and can be snapshotted independently; OCI containers are managed by their engine's own storage.
 
+### 8.6 Dev environments and desktop apps — `our-box`
+
+`our-box` is the user-space counterpart to `our-container`. It runs rootless containers via **podman** (no sudo required), mounts your home directory inside the box, and maps your host UID so files created inside are owned by you on the outside. Designed for development environments, throwaway shells, and GUI apps isolated from the host.
+
+**Box types** are starting-point presets — every flag remains overridable regardless of type:
+
+| Type | Default mounts/flags | Use it for |
+|------|----------------------|-----------|
+| `dev` | home + Wayland + audio | Development inside the box — coding, builds, AI/ML (add `--gpu` for CUDA) |
+| `ephemeral` | none, `--rm` | Throwaway shells — gone when you exit |
+| `app` | Wayland + GPU + audio | GUI apps shown on your desktop (Firefox, Spotify, etc.) |
+
+```bash
+# Create a dev box (home directory mounted automatically)
+our-box create mydev docker.io/library/archlinux --type dev
+
+# Enter it (auto-starts if stopped)
+our-box enter mydev
+
+# Create a CUDA dev box for AI/ML work
+our-box create aidev nvidia/cuda:12.0-base --type dev --gpu
+
+# Throwaway Alpine shell
+our-box create scratch docker.io/library/alpine --type ephemeral
+
+# GUI Firefox, isolated from the host
+our-box create firefox docker.io/library/ubuntu --type app
+
+# Export an app as a .desktop entry (shows in your launcher)
+our-box export firefox firefox
+
+# List all boxes (running + stopped)
+our-box list
+
+# Remove a box and its metadata
+our-box remove mydev
+```
+
+**Lazy engine install** — if podman is not installed, `our-box` installs it automatically via `our-pac` on first use. Pass `--engine docker` to use Docker instead.
+
+**Migrate from distrobox or toolbox** (if you used either before):
+
+```bash
+our-box migrate --from distrobox mybox
+our-box migrate --from toolbox mybox
+```
+
+> `our-box` boxes live entirely in `$XDG_DATA_HOME/our-box/` and `$XDG_CONFIG_HOME/our-box/` — no system paths, no root. This is by design: `our-container` owns system containers (admin, `@var`-backed Btrfs, full systemd boot); `our-box` owns user containers (developer, XDG paths, rootless). See `docs/architecture/our-box.md` for the full design.
+
+---
+
+### 8.7 Firewall — `our-wall`
+
+`our-wall` wraps `firewalld` with a concise interface. The firewall is enabled
+automatically during installation (default zone: `public`).
+
+```bash
+# Check current state
+our-wall status
+
+# Open / close a port
+our-wall allow 8080/tcp
+our-wall deny  8080/tcp
+
+# Open a named service
+our-wall allow http
+our-wall deny  http
+
+# List what is currently open
+our-wall list
+
+# Common presets
+our-wall preset desktop   # mdns + kde-connect + syncthing
+our-wall preset server    # ssh + http + https
+our-wall preset reset     # back to default: public zone, ssh only
+
+# Zone management
+our-wall zone show
+our-wall zone set home
+
+# Start/stop the firewall (does not uninstall)
+sudo our-wall enable
+sudo our-wall disable
+```
+
+> `our-wall` requires `sudo` for any command that modifies firewall state.
+> `status`, `list`, and `zone show` work without root.
+> See `docs/architecture/our-wall.md` for the design rationale.
+
 ---
 
 ## 9. Roll back to a previous snapshot
