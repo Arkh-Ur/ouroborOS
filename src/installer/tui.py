@@ -542,6 +542,76 @@ class TUI:
         return self._select_from_list(label, prompt, self._GPU_OPTIONS, default="auto")
 
     # ------------------------------------------------------------------
+    # Dotfiles pack selection
+    # ------------------------------------------------------------------
+
+    def show_dots_pack_selection(self, profile: str) -> dict[str, str | None]:
+        """Show dotfiles pack selection screen.
+
+        Returns {"pack": id_or_none, "channel": "stable"|"git"}.
+        """
+        from installer.dots_profiles import packs_for_profile  # noqa: PLC0415
+
+        packs = packs_for_profile(profile)
+        if not packs:
+            return {"pack": None, "channel": "stable"}
+
+        options: list[tuple[str, str]] = [
+            ("none", "Skip — keep default empty profile"),
+        ] + [
+            (p.id, p.name + " — " + p.description[:50])
+            for p in packs
+        ]
+
+        if self._backend == "rich":
+            selected_id = self._rich_select(
+                "Dotfiles Pack",
+                f"Select a dotfiles pack for your {profile} profile (optional):",
+                options,
+                default="none",
+            )
+        else:
+            selected_id = self._select_from_list(
+                "Dotfiles Pack",
+                f"Select a dotfiles pack for your {profile} profile (optional):",
+                options,
+                default="none",
+            )
+
+        if selected_id == "none":
+            return {"pack": None, "channel": "stable"}
+
+        # Find the selected pack to check channel availability
+        selected_pack = next((p for p in packs if p.id == selected_id), None)
+        if selected_pack is None:
+            return {"pack": selected_id, "channel": "stable"}
+
+        # If pack has both stable and git channels, ask which to use
+        if selected_pack.has_stable and selected_pack.has_git:
+            channel_options: list[tuple[str, str]] = [
+                ("stable", f"Stable ({selected_pack.stable_version_hint or 'latest release'})"),
+                ("git", f"Git ({selected_pack.git_version_hint or 'latest commit'})"),
+            ]
+            if self._backend == "rich":
+                channel = self._rich_select(
+                    "Pack Channel",
+                    f"Select the channel for '{selected_pack.name}':",
+                    channel_options,
+                    default="stable",
+                )
+            else:
+                channel = self._select_from_list(
+                    "Pack Channel",
+                    f"Select the channel for '{selected_pack.name}':",
+                    channel_options,
+                    default="stable",
+                )
+        else:
+            channel = "git" if selected_pack.has_git and not selected_pack.has_stable else "stable"
+
+        return {"pack": selected_id, "channel": channel}
+
+    # ------------------------------------------------------------------
     # Shell selection
     # ------------------------------------------------------------------
 

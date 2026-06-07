@@ -89,6 +89,14 @@ class DesktopConfig:
 
 
 @dataclass
+class DotsPackConfig:
+    """Dotfiles/config pack selection."""
+
+    pack: str | None = None      # pack id or None
+    channel: str = "stable"      # "stable" | "git"
+
+
+@dataclass
 class DiskConfig:
     """Disk and filesystem configuration."""
 
@@ -174,6 +182,7 @@ class InstallerConfig:
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
+    dots_pack: DotsPackConfig = field(default_factory=DotsPackConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -545,6 +554,11 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.desktop.kde_flavor = str(desk.get("kde_flavor", "plasma-meta"))
     cfg.desktop.gpu_driver = str(desk.get("gpu_driver", "auto"))
     cfg.desktop.aur_packages = aur_packages_for(cfg.desktop.profile)
+
+    # Dots pack (optional)
+    raw_dots = data.get("dots_pack") or {}
+    cfg.dots_pack.pack = raw_dots.get("pack") or None
+    cfg.dots_pack.channel = raw_dots.get("channel") or "stable"
 
     # Security (optional)
     sec = data.get("security", {}) or {}

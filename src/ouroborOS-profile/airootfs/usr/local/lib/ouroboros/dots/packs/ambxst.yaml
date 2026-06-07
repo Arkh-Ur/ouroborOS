@@ -1,0 +1,45 @@
+id: ambxst
+name: Ambxst
+description: |
+  A Quickshell-based Hyprland shell with the explicit design goal of being
+  non-intrusive: it sources into your existing Hyprland config rather than
+  replacing it. All runtime data lives in user-space (~/.local/share/ambxst,
+  ~/.config/ambxst). Feature set is the most comprehensive of the shell-layer
+  projects: app launcher, clipboard manager, notes, wallpaper manager, emoji
+  picker, tmux session manager, system monitor, media control, notifications,
+  Wi-Fi/Bluetooth managers, audio mixer, EasyEffects, screen capture/recording,
+  color picker, OCR, QR scanner, webcam mirror, game mode, night mode, power
+  profiles, AI assistant, weather, calendar, power menu, and workspace
+  management.
+
+credits:
+  author: Axenide
+  homepage: https://axeni.de/es/ambxst/
+  repo: https://github.com/Axenide/Ambxst
+  docs: https://axeni.de/es/ambxst/
+  additional_credits: "outfoxxed (Quickshell), end-4, soramane"
+  license: AGPL-3.0
+
+compatibility:
+  immutable: medium
+  profiles: [hyprland]
+  compatibility_note: |
+    Deps installed via our-pac; runtime is entirely user-space.
+    Initial bootstrap requires root for package install only.
+
+variants:
+  stable:
+    packages: [quickshell, git]
+    aur: []
+    post_deploy: |
+      ambxst install hyprland
+    version_hint: "rolling"
+
+uninstall:
+  packages: []
+  aur: []
+  post_remove: |
+    ambxst uninstall 2>/dev/null || true
+  remove_config: false
+
+signature: null

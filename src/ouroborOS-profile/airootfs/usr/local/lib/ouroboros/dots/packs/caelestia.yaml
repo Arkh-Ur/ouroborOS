@@ -1,0 +1,40 @@
+id: caelestia
+name: Caelestia Shell
+description: |
+  The highest-profile Quickshell shell in this catalog (9,800+ GitHub stars),
+  designed as a full Waybar replacement for Hyprland. Caelestia provides a
+  bar, dashboard, app launcher, lock screen, and system utilities, built in
+  QML and C++. The AUR package installs like a proper compiled application.
+  20+ versioned releases on GitHub with clear stable/git separation.
+
+credits:
+  author: soramane
+  homepage: https://github.com/caelestia-dots/shell
+  docs: https://github.com/caelestia-dots/shell#installation
+  support: https://ko-fi.com/soramane
+  license: (see project repository)
+
+compatibility:
+  immutable: medium
+  profiles: [hyprland]
+  compatibility_note: AUR package (cmake build) — installs to system paths via AUR
+
+variants:
+  stable:
+    packages: []
+    aur: [caelestia-shell]
+    post_deploy: null
+    version_hint: "stable (AUR)"
+  git:
+    packages: []
+    aur: [caelestia-shell-git]
+    post_deploy: null
+    version_hint: "git (bleeding edge, may be unstable)"
+
+uninstall:
+  packages: []
+  aur: [caelestia-shell, caelestia-shell-git]
+  post_remove: null
+  remove_config: false
+
+signature: null

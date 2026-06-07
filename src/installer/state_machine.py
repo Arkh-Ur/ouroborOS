@@ -88,6 +88,7 @@ class State(Enum):
     LOCALE = auto()
     USER = auto()
     DESKTOP = auto()
+    DOTS_PACK = auto()
     SECURE_BOOT = auto()
     PARTITION = auto()
     FORMAT = auto()
@@ -111,6 +112,7 @@ _STATE_ORDER: list[State] = [
     State.LOCALE,
     State.USER,
     State.DESKTOP,
+    State.DOTS_PACK,
     State.SECURE_BOOT,
     State.PARTITION,
     State.FORMAT,
@@ -127,8 +129,9 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
     State.LOCALE: (10, 14),
     State.USER: (14, 17),
     State.DESKTOP: (17, 21),
-    State.SECURE_BOOT: (21, 23),
-    State.PARTITION: (23, 30),
+    State.DOTS_PACK: (21, 23),
+    State.SECURE_BOOT: (23, 25),
+    State.PARTITION: (25, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
     State.CONFIGURE: (70, 90),
@@ -143,6 +146,7 @@ _STEP_LABELS: dict[State, str] = {
     State.LOCALE: "Configuring language",
     State.USER: "Creating user",
     State.DESKTOP: "Selecting desktop",
+    State.DOTS_PACK: "Selecting dotfiles pack",
     State.SECURE_BOOT: "Configuring Secure Boot",
     State.PARTITION: "Selecting disk",
     State.FORMAT: "Preparing disk",
@@ -238,6 +242,7 @@ class Installer:
             State.LOCALE: self._handle_locale,
             State.USER: self._handle_user,
             State.DESKTOP: self._handle_desktop,
+            State.DOTS_PACK: self._handle_dots_pack,
             State.SECURE_BOOT: self._handle_secure_boot,
             State.PARTITION: self._handle_partition,
             State.FORMAT: self._handle_format,
@@ -538,6 +543,31 @@ class Installer:
             self.config.desktop.kde_flavor,
         )
         self._update_progress(State.DESKTOP, 100)
+
+    def _handle_dots_pack(self) -> None:
+        """DOTS_PACK — optional dotfiles pack selection.
+
+        Skipped silently when the desktop profile is 'minimal'.
+        In unattended mode, reads from config.dots_pack directly.
+        """
+        self._update_progress(State.DOTS_PACK, 0)
+
+        if self.config.desktop.profile == "minimal":
+            log.info("DOTS_PACK: profile is minimal — skipping dotfiles pack selection.")
+            self._update_progress(State.DOTS_PACK, 100)
+            return
+
+        if self.tui:
+            result = self.tui.show_dots_pack_selection(self.config.desktop.profile)
+            self.config.dots_pack.pack = result.get("pack")
+            self.config.dots_pack.channel = result.get("channel", "stable")
+
+        log.info(
+            "Dots pack: %s (channel: %s)",
+            self.config.dots_pack.pack or "none",
+            self.config.dots_pack.channel,
+        )
+        self._update_progress(State.DOTS_PACK, 100)
 
     @staticmethod
     def _detect_existing_os(esp_path: str = "/boot") -> list[str]:
@@ -1056,6 +1086,8 @@ class Installer:
                 "ROOT_PASSWORD": self.config.security.root_password,
                 "ISO_VERSION": _read_iso_version(),
                 "OFFLINE_MODE": "true" if (not self._has_internet() and self._detect_offline_cache()) else "false",
+                "DOTS_PACK": self.config.dots_pack.pack or "",
+                "DOTS_CHANNEL": self.config.dots_pack.channel,
             }
         )
 

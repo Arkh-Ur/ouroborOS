@@ -51,6 +51,9 @@ set -euo pipefail
 : "${USER_PASSWORD:=''}"
 : "${ROOT_PASSWORD:=''}"
 : "${THUNDERBOLT_DETECTED:='0'}"
+: "${DOTS_PACK:=''}"
+: "${DOTS_CHANNEL:='stable'}"
+: "${LOG_FILE:='/tmp/ouroborOS-install.log'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -1419,6 +1422,16 @@ GREETD_EOF
         fi
     else
         log_warn "ouroboros-firstboot not found on live ISO — skipping."
+    fi
+
+    # ── Dotfiles pack ──────────────────────────────────────────────────────────────
+    if [[ -n "${DOTS_PACK:-}" ]]; then
+        log_info "Installing dotfiles pack: $DOTS_PACK (channel: ${DOTS_CHANNEL:-stable})"
+        CHANNEL_FLAG=""
+        [[ "${DOTS_CHANNEL:-stable}" == "git" ]] && CHANNEL_FLAG="--git"
+        arch-chroot "${TARGET}" our-dots -S "${DOTS_PACK}" ${CHANNEL_FLAG} --noconfirm 2>&1 \
+            | tee -a "${LOG_FILE}" \
+            || log_warn "Dotfiles pack install failed (non-fatal — continuing)"
     fi
 
     # /var/lib/extensions — required by systemd-sysext and our-aur.

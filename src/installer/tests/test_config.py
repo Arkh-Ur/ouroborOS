@@ -387,6 +387,59 @@ class TestSecurityConfig:
         cfg = load_config(path)
         assert cfg.security.dual_boot is True
 
+
+# ---------------------------------------------------------------------------
+# DotsPackConfig tests
+# ---------------------------------------------------------------------------
+
+
+class TestDotsPackConfig:
+    def test_defaults(self) -> None:
+        from installer.config import DotsPackConfig  # noqa: PLC0415
+        cfg = DotsPackConfig()
+        assert cfg.pack is None
+        assert cfg.channel == "stable"
+
+    def test_installer_config_has_dots_pack(self) -> None:
+        cfg = InstallerConfig()
+        from installer.config import DotsPackConfig  # noqa: PLC0415
+        assert isinstance(cfg.dots_pack, DotsPackConfig)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_dots_pack_loaded_from_yaml(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: noctalia\n  channel: git\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack == "noctalia"
+        assert cfg.dots_pack.channel == "git"
+
+    def test_missing_dots_pack_key_uses_defaults(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, VALID_CONFIG)
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_channel_defaults_to_stable_when_not_specified(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: ml4w\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack == "ml4w"
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_null_pack_loads_as_none(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: null\n  channel: stable\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
     def test_security_dual_boot_non_bool_raises(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
         data["security"] = {"dual_boot": "yes"}

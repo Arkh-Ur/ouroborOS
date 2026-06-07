@@ -1,0 +1,40 @@
+id: noctalia
+name: Noctalia v4
+description: |
+  A Quickshell-based desktop shell layer for Niri and Hyprland compositors.
+  Modular design: bar, notifications, clipboard history, night light, and
+  calendar. Noctalia has the broadest distribution support of any shell in
+  this catalog, available in official repos for Fedora, openSUSE, and Void,
+  and via AUR for Arch. The explicit stable/git split makes it one of the
+  safest choices for an immutable system.
+
+credits:
+  author: noctalia-dev team
+  homepage: https://github.com/noctalia-dev/noctalia-shell
+  docs: https://docs.noctalia.dev/v4/getting-started/installation/#arch
+  license: (see project repository)
+
+compatibility:
+  immutable: low
+  profiles: [hyprland, niri]
+  compatibility_note: AUR package, user-space config — no root writes required
+
+variants:
+  stable:
+    packages: []
+    aur: [noctalia-shell]
+    post_deploy: null
+    version_hint: "v4 (stable)"
+  git:
+    packages: []
+    aur: [noctalia-shell-git]
+    post_deploy: null
+    version_hint: "git (bleeding edge)"
+
+uninstall:
+  packages: []
+  aur: [noctalia-shell, noctalia-shell-git]
+  post_remove: null
+  remove_config: false
+
+signature: null
