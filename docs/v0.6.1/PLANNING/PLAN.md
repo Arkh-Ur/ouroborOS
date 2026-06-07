@@ -379,9 +379,14 @@ F1-02 (load_catalog) → F2-03 (cmd_install) → F4-01 (FSM handler) → F5-01 (
 | CU-15 (FSM) | F4-01/02/03 | Integración instalador |
 | CU-16 (--noconfirm) | F2-12 | Flags |
 | CU-19 (validación) | F1-07 | Schema validation |
-| CU-20 ([EXTERN]) | F3-11 | Marca visual |
+| CU-17 (fallo post_deploy) | F2-03 | Rollback en install |
+| CU-18 (reinstalación) | F2-03 | Idempotente |
+| CU-20 (filtrado perfil) | F4-05 | packs_for_profile() |
+| CU-21 (is_installed) | F2-09 | sysyaml_is_installed() |
 | CU-22 (concurrency) | F5-06 | Tests flock |
 | CU-23 (cleanup) | F2-11 | Trap cleanup |
+| CU-24 (canal git) | F2-14 | Autocorrección |
+| CU-25 (pack externo) | F3-09/11 | find_manifest + [EXTERN] |
 
 ### 14.2 TRD → PLAN
 
