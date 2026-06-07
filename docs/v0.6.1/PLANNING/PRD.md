@@ -779,6 +779,8 @@ Shell Wayland temática Material You con soporte de primera clase para Niri e Hy
 
 ### 6.8 Schema de Manifest
 
+> ⚠️ **Referencia histórica.** El schema autoritativo de manifests está en **TRD §2.3**. Ante cualquier discrepancia entre esta sección y el TRD, prevalece el TRD. Esta sección refleja el diseño original de producto y se mantiene por contexto.
+
 Cada pack del catálogo (built-in o externo) se describe en un archivo YAML con el siguiente schema. Los manifests externos son validados antes de ejecutar cualquier hook.
 
 #### Tabla de campos
