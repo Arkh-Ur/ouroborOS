@@ -99,38 +99,32 @@ Cada manifest sigue schema TRD §2.3:
 id: ml4w                    # Identificador único
 name: ML4W Dotfiles         # Nombre display
 description: "Stephan Raabe's Hyprland setup"
-compatibility: high          # low|medium|high|critical
+compatibility: medium          # low|medium|high|critical
 credits:
   author: Stephan Raabe
-  homepage: https://github.com/mylinuxforwork/dotfiles
-  license: GPL-3.0
+  homepage: https://ml4w.com
+  license: GPL-2.0
 has_stable: true
-has_git: true
+has_git: false
 variants:
   stable:
     packages: [hyprland, waybar, rofi-wayland]
     aur: [ml4w-hyprland]
     post_deploy: null
-    version_hint: "4.0"
-  git:
-    url: https://github.com/mylinuxforwork/dotfiles
-    packages: [hyprland, waybar, rofi-wayland]
-    aur: [ml4w-hyprland-git]
-    post_deploy: "cp -r ~/.config/hypr ~/.config/hypr.bak 2>/dev/null; echo 'ML4W deployed'"
-    version_hint: "rolling"
+    version_hint: "0.2.3"
 ```
 
 **Canales por pack:**
 
 | Pack | stable | git | Nivel |
 |------|--------|-----|-------|
-| ML4W | ✅ | ✅ | high |
-| Noctalia v4 | ✅ | ✅ | medium |
-| Caelestia Shell | ✅ | — | low |
-| illogical impulse | — | ✅ | medium |
-| Omarchy | — | ✅ | high |
-| Ambxst | — | ✅ | low |
-| DankMaterialShell | ✅ | — | low |
+| ML4W | ✅ | — | medium |
+| Noctalia v4 | ✅ | ✅ | low |
+| Caelestia Shell | ✅ | ✅ | medium |
+| illogical impulse | — | ✅ | critical |
+| Omarchy | — | ✅ | critical |
+| Ambxst | — | ✅ | medium |
+| DankMaterialShell | ✅ | — | high |
 
 ---
 
@@ -151,6 +145,7 @@ variants:
 | F2-07 | Implementar `cmd_query()` (-Q) | `src/our-dots` | 2h | CU-07 |
 | F2-08 | Implementar `cmd_search()` (-Qs) | `src/our-dots` | 3h | CU-08 |
 | F2-09 | Implementar `sysyaml_add_pack()` / `sysyaml_remove_pack()` | `src/our-dots` | 4h | CU-03/06 |
+| F2-09b | Implementar escritura atómica `flock` + `.tmp` + `os.replace` | `src/our-dots` | 2h | CU-22 |
 | F2-10 | Implementar logging + rotation | `src/our-dots` | 2h | — |
 | F2-11 | Implementar cleanup trap CRITICAL | `src/our-dots` | 2h | CU-05/23 |
 | F2-12 | Implementar `--noconfirm` + `OUROBOROS_ALLOW_CRITICAL` | `src/our-dots` | 2h | CU-16 |
