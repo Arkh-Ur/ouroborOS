@@ -18,7 +18,7 @@ credits:
 compatibility:
   immutable: high
   profiles: [hyprland, niri]
-  compatibility_note: |
+  note: |
     Installs dms-shell from extra repo + AUR builds (go, cmake, rustup).
     All via our-pac/our-aur — no direct pacman calls. Build time ~10 min.
 

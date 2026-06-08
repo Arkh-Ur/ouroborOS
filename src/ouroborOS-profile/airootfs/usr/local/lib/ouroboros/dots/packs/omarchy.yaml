@@ -20,8 +20,8 @@ credits:
 compatibility:
   immutable: critical
   profiles: [hyprland]
-  compatibility_note: Full system configuration takeover — modifies /etc, bootloader prefs, and global config
-  compatibility_warning: |
+  note: Full system configuration takeover — modifies /etc, bootloader prefs, and global config
+  warning: |
     Omarchy is a full system configuration takeover. It installs and configures
     Hyprland, Neovim, Tmux, terminal emulators, and global system settings.
     On ouroborOS, this requires multiple writes to /etc and system-wide package
@@ -36,16 +36,14 @@ compatibility:
     - "Set system-wide font and theme preferences"
     - "Configure system locale and keyboard settings in /etc"
 
-requires_root: true
-
 variants:
-  stable:
+  git:
     packages: [git, curl]
     aur: []
     post_deploy: |
       git clone https://github.com/basecamp/omarchy /tmp/omarchy
       cd /tmp/omarchy && bash install
-    version_hint: "rolling"
+    version_hint: "rolling (git)"
 
 uninstall:
   packages: []

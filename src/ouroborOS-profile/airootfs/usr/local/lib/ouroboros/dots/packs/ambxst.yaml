@@ -23,12 +23,12 @@ credits:
 compatibility:
   immutable: medium
   profiles: [hyprland]
-  compatibility_note: |
+  note: |
     Deps installed via our-pac; runtime is entirely user-space.
     Initial bootstrap requires root for package install only.
 
 variants:
-  stable:
+  git:
     packages: [quickshell, git]
     aur: []
     post_deploy: |

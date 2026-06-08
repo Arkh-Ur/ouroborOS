@@ -1429,7 +1429,8 @@ GREETD_EOF
         log_info "Installing dotfiles pack: $DOTS_PACK (channel: ${DOTS_CHANNEL:-stable})"
         CHANNEL_FLAG=""
         [[ "${DOTS_CHANNEL:-stable}" == "git" ]] && CHANNEL_FLAG="--git"
-        arch-chroot "${TARGET}" our-dots -S "${DOTS_PACK}" ${CHANNEL_FLAG} --noconfirm 2>&1 \
+        arch-chroot "${TARGET}" env OUROBOROS_ALLOW_CRITICAL=1 \
+            our-dots -S "${DOTS_PACK}" ${CHANNEL_FLAG} --noconfirm 2>&1 \
             | tee -a "${LOG_FILE}" \
             || log_warn "Dotfiles pack install failed (non-fatal — continuing)"
     fi

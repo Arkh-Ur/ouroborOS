@@ -18,7 +18,7 @@ credits:
 compatibility:
   immutable: medium
   profiles: [hyprland]
-  compatibility_note: git clone + make install — deps installed via our-pac/our-aur
+  note: git clone + make install — deps installed via our-pac/our-aur
 
 variants:
   stable:

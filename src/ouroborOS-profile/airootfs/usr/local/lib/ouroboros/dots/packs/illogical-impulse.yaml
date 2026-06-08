@@ -17,8 +17,8 @@ credits:
 compatibility:
   immutable: critical
   profiles: [hyprland]
-  compatibility_note: Requires /etc/pacman.conf modification on the live system
-  compatibility_warning: |
+  note: Requires /etc/pacman.conf modification on the live system
+  warning: |
     This pack requires modifying /etc/pacman.conf (adding IgnoreGroup=illogical-impulse)
     on a read-only root filesystem. ouroborOS will temporarily remount / as writable
     during the edit and restore read-only mode immediately after.
@@ -29,10 +29,8 @@ compatibility:
     - "Install dependencies via our-pac and our-aur"
     - "Clone dots-hyprland and run ./setup install as your user"
 
-requires_root: true
-
 variants:
-  stable:
+  git:
     packages: [git]
     aur: []
     post_deploy: |

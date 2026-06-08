@@ -547,13 +547,38 @@ class Installer:
     def _handle_dots_pack(self) -> None:
         """DOTS_PACK — optional dotfiles pack selection.
 
-        Skipped silently when the desktop profile is 'minimal'.
-        In unattended mode, reads from config.dots_pack directly.
+        Skipped silently under any of these conditions:
+        1. Desktop profile is 'minimal'.
+        2. No packs are available for the selected profile.
+        3. Unattended mode and no pack was configured.
+        4. Running offline (packs require internet).
         """
         self._update_progress(State.DOTS_PACK, 0)
 
+        # Condition 1: minimal profile has no desktop, so no packs apply
         if self.config.desktop.profile == "minimal":
-            log.info("DOTS_PACK: profile is minimal — skipping dotfiles pack selection.")
+            log.info("DOTS_PACK: profile is minimal — skipping.")
+            self._update_progress(State.DOTS_PACK, 100)
+            return
+
+        # Condition 2: no packs available for this profile (only when manifest dir exists)
+        from installer.dots_profiles import MANIFEST_DIR, packs_for_profile  # noqa: PLC0415
+        if MANIFEST_DIR.exists():
+            available = packs_for_profile(self.config.desktop.profile)
+            if not available:
+                log.info("DOTS_PACK: no packs available for profile '%s' — skipping.", self.config.desktop.profile)
+                self._update_progress(State.DOTS_PACK, 100)
+                return
+
+        # Condition 3: unattended mode with no pack selected
+        if not self.tui and not self.config.dots_pack.pack:
+            log.info("DOTS_PACK: unattended mode, no pack configured — skipping.")
+            self._update_progress(State.DOTS_PACK, 100)
+            return
+
+        # Condition 4: offline (packs require internet to clone/install)
+        if not self._has_internet():
+            log.info("DOTS_PACK: no internet connectivity — skipping dotfiles pack selection.")
             self._update_progress(State.DOTS_PACK, 100)
             return
 
@@ -561,6 +586,25 @@ class Installer:
             result = self.tui.show_dots_pack_selection(self.config.desktop.profile)
             self.config.dots_pack.pack = result.get("pack")
             self.config.dots_pack.channel = result.get("channel", "stable")
+
+        # F4-02: auto-correct channel for git-only packs (C-03)
+        if self.config.dots_pack.pack:
+            import yaml  # noqa: PLC0415
+            from installer.dots_profiles import MANIFEST_DIR  # noqa: PLC0415
+            mf_path = MANIFEST_DIR / f"{self.config.dots_pack.pack}.yaml"
+            if mf_path.exists():
+                try:
+                    with mf_path.open() as fh:
+                        mf_data = yaml.safe_load(fh) or {}
+                    variants = mf_data.get("variants") or {}
+                    if not variants.get("stable") and variants.get("git"):
+                        self.config.dots_pack.channel = "git"
+                        log.info(
+                            "DOTS_PACK: auto-corrected channel to 'git' for git-only pack '%s'.",
+                            self.config.dots_pack.pack,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("DOTS_PACK: could not read manifest for channel correction: %s", exc)
 
         log.info(
             "Dots pack: %s (channel: %s)",

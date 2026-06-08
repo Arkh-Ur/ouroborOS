@@ -17,7 +17,7 @@ credits:
 compatibility:
   immutable: low
   profiles: [hyprland, niri]
-  compatibility_note: AUR package, user-space config — no root writes required
+  note: AUR package, user-space config — no root writes required
 
 variants:
   stable:

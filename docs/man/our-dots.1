@@ -1,0 +1,240 @@
+.\" our-dots.1 — man page for our-dots v0.6.1
+.TH OUR-DOTS 1 "2026-06-08" "ouroborOS v0.6.1" "ouroborOS User Commands"
+.SH NAME
+our-dots \- dotfiles/config pack manager for ouroborOS
+.SH SYNOPSIS
+.B our-dots
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B our-dots
+installs and manages curated ricing packs (dotfiles, shell configs, and
+desktop environment configurations) on top of installed ouroborOS desktop
+profiles.
+Packs are YAML manifests shipped with the ISO or provided by external
+repositories.
+.PP
+The tool enforces compatibility with the immutable root filesystem
+(Btrfs, read-only).
+Packs marked
+.B CRITICAL
+require explicit confirmation or the
+.I OUROBOROS_ALLOW_CRITICAL=1
+environment variable for unattended installs.
+.SH COMMANDS
+.TP
+.B list
+Display all available packs in a tabular view (name, desktop environment,
+compatibility level, available channels, installed status).
+.TP
+.BI \-Si " pack"
+Show detailed information about
+.IR pack :
+description, author, homepage, compatibility level, and available channels.
+.TP
+.BI \-S " pack " [ \-\-git ] [ \-\-noconfirm ] [ \-\-force ]
+Install
+.IR pack .
+By default the
+.I stable
+channel is used.
+Pass
+.B \-\-git
+to install the git (rolling) channel.
+.TP
+.BI \-R " pack " [ \-\-noconfirm ] [ \-\-force ]
+Remove
+.IR pack
+and run its
+.I post_remove
+script if defined.
+.TP
+.B \-Q
+List all installed packs with their installed version and date.
+.TP
+.BI \-Qs " [pattern]"
+Search the full catalog by name or description.
+If
+.I pattern
+is omitted, all packs are listed.
+.TP
+.B \-Su
+Check installed packs for updates via the AUR API and reinstall any that have
+a newer version available.
+Packs with
+.I compatibility=critical
+are skipped and must be upgraded manually.
+.TP
+.BI repo\-add " name url"
+Register an external manifest repository.
+.I url
+must use HTTPS.
+Git repositories and HTTP index files are both supported.
+All fetched manifests are validated against the canonical schema before the
+repo is registered.
+.TP
+.BI repo\-remove " name"
+Remove an external repository and delete its cached manifests.
+.TP
+.B repo\-list
+List all configured repositories (built-in and external).
+.TP
+.B repo\-update
+Fetch the latest manifests from all registered external repositories.
+.SH OPTIONS
+.TP
+.B \-\-noconfirm
+Skip interactive confirmation prompts.
+Cannot bypass
+.B CRITICAL
+confirmation unless
+.I OUROBOROS_ALLOW_CRITICAL=1
+is also set.
+.TP
+.B \-\-git
+Install the git (rolling/development) channel variant of a pack.
+Automatically set for packs that only have a
+.I variants.git
+block (git-only packs).
+.TP
+.B \-\-force
+Skip "already installed" check during install or "not installed" check during removal.
+.TP
+.B \-\-version
+Print
+.I "our-dots <version>"
+and exit.
+.TP
+.BR \-h , " \-\-help"
+Print usage summary and exit.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+When set (to any value), disable ANSI color output.
+Follows the
+.I no-color.org
+convention.
+.TP
+.B OUROBOROS_ALLOW_CRITICAL=1
+Allow unattended installation of packs with
+.I compatibility=critical
+.
+When set,
+.B \-\-noconfirm
+is accepted without the interactive "yes" prompt.
+Used by the installer (configure.sh) and for scripted deployments.
+.SH COMPATIBILITY LEVELS
+.TP
+.B low
+Pack installs entirely in user space (AUR packages, \fI~/.config\fP).
+No system changes.
+.TP
+.B medium
+Pack modifies user config but may install pacman packages.
+.TP
+.B high
+Pack has significant system-level impact (long AUR builds, system font changes,
+etc.).
+Requires interactive confirmation.
+.TP
+.B CRITICAL
+Pack modifies read-only system files (\fI/etc/pacman.conf\fP,
+bootloader preferences, etc.).
+Requires typing
+.I yes
+or setting
+.IR OUROBOROS_ALLOW_CRITICAL=1 .
+A cleanup trap reverts system changes on failure and exits with code
+.IR 5 .
+.SH FILES
+.TP
+.I /usr/local/lib/ouroboros/dots/packs/
+Built-in pack manifest directory.
+Each \fI<id>.yaml\fP file defines a pack.
+.TP
+.I /var/lib/ouroboros/dots/repos/
+External repository cache directory.
+.TP
+.I /etc/ouroboros/dots\-repos.yaml
+Registered external repositories index.
+.TP
+.I /etc/ouroboros/system.yaml
+System state file.
+The
+.I dots_packs
+list records installed packs with version, channel, date, and origin.
+.TP
+.I /var/log/our-dots/
+Per-pack install logs.
+.SH EXIT CODES
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error (unknown command, cancelled by user, not found).
+.TP
+.B 2
+Root privileges required.
+.TP
+.B 3
+AUR package installation failed.
+.TP
+.B 4
+post_deploy script failed.
+.TP
+.B 5
+CRITICAL install failed; system changes were reverted by the cleanup trap.
+.SH EXAMPLES
+List available packs:
+.PP
+.RS
+.B our-dots list
+.RE
+.PP
+Show info for the ml4w pack:
+.PP
+.RS
+.B our-dots \-Si ml4w
+.RE
+.PP
+Install noctalia from the stable channel:
+.PP
+.RS
+.B sudo our-dots \-S noctalia
+.RE
+.PP
+Install illogical-impulse (git-only, CRITICAL):
+.PP
+.RS
+.B sudo our-dots \-S illogical-impulse
+.RE
+.PP
+Install with unattended CRITICAL bypass (for the installer):
+.PP
+.RS
+.B OUROBOROS_ALLOW_CRITICAL=1 sudo our-dots \-S illogical-impulse \-\-noconfirm
+.RE
+.PP
+Remove a pack:
+.PP
+.RS
+.B sudo our-dots \-R noctalia
+.RE
+.PP
+Add an external manifest repository:
+.PP
+.RS
+.B sudo our-dots repo-add myrepo https://github.com/example/dots-repo.git
+.RE
+.SH SEE ALSO
+.BR our-pac (1),
+.BR our-aur (1),
+.BR pacman (8)
+.SH AUTHORS
+ouroborOS dev team.
+Pack authors and credits are listed in each pack manifest
+.RI ( credits.author ,
+.IR credits.homepage ).
+.SH BUGS
+Report bugs at https://github.com/Arkh-Ur/ouroborOS-dev/issues

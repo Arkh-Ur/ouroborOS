@@ -111,6 +111,9 @@ class TUIBuffer:
     wifi_ssid: str = ""
     wifi_passphrase: str = ""
     enable_ssh: bool = False
+    # Dotfiles pack
+    dots_pack_id: str = ""           # empty string means "none selected"
+    dots_pack_channel: str = "stable"
     # Install progress tracking
     phase: str = ""
     phase_progress: dict[str, float] = field(default_factory=dict)
@@ -2285,6 +2288,17 @@ class TUI:
             return False  # Rich TUI has no sbctl_ms_keys screen
         val = self._get()
         return bool(val)
+
+    def show_dots_pack_selection(self, profile: str) -> dict[str, str | None]:
+        """Show dotfiles pack selection screen.
+
+        Returns {"pack": id_or_none, "channel": "stable"|"git"}.
+        """
+        if self._rich:
+            return self._delegate("show_dots_pack_selection", profile)
+        pack_id = self._buffer.dots_pack_id or None
+        channel = self._buffer.dots_pack_channel or "stable"
+        return {"pack": pack_id, "channel": channel}
 
     # ------------------------------------------------------------------
     # Legacy compatibility methods (used by state_machine.py)

@@ -17,7 +17,7 @@ credits:
 compatibility:
   immutable: medium
   profiles: [hyprland]
-  compatibility_note: AUR package (cmake build) — installs to system paths via AUR
+  note: AUR package (cmake build) — installs to system paths via AUR
 
 variants:
   stable:

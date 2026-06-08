@@ -6,9 +6,138 @@ import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 from pathlib import Path
 
 import pytest
+
+
+# ── Fixtures dots_profiles ────────────────────────────────────────────────────
+
+@pytest.fixture()
+def tmp_manifest_dir(tmp_path: Path) -> Path:
+    """Temporary directory that simulates MANIFEST_DIR."""
+    d = tmp_path / "packs"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture()
+def noctalia_yaml(tmp_manifest_dir: Path) -> Path:
+    """Canonical noctalia manifest (LOW, stable+git, hyprland+niri)."""
+    content = textwrap.dedent("""\
+        id: noctalia
+        name: Noctalia v4
+        description: |
+          Quickshell desktop shell for Niri and Hyprland.
+        credits:
+          author: noctalia-dev team
+          homepage: https://github.com/noctalia-dev/noctalia-shell
+          license: null
+        compatibility:
+          immutable: low
+          profiles: [hyprland, niri]
+          note: AUR package, user-space config
+        variants:
+          stable:
+            packages: []
+            aur: [noctalia-shell]
+            post_deploy: null
+            version_hint: "v4 (stable)"
+          git:
+            packages: []
+            aur: [noctalia-shell-git]
+            post_deploy: null
+            version_hint: "git (bleeding edge)"
+        uninstall:
+          packages: []
+          aur: [noctalia-shell, noctalia-shell-git]
+          post_remove: null
+          remove_config: false
+        signature: null
+    """)
+    p = tmp_manifest_dir / "noctalia.yaml"
+    p.write_text(content)
+    return p
+
+
+@pytest.fixture()
+def illogical_yaml(tmp_manifest_dir: Path) -> Path:
+    """Canonical illogical-impulse manifest (CRITICAL, git-only, hyprland)."""
+    content = textwrap.dedent("""\
+        id: illogical-impulse
+        name: illogical-impulse
+        description: end-4's Hyprland rice.
+        credits:
+          author: end-4
+          homepage: https://ii.clsty.link/en/ii-qs/01setup/
+          repo: https://github.com/end-4/dots-hyprland
+        compatibility:
+          immutable: critical
+          profiles: [hyprland]
+          warning: |
+            Requires modifying /etc/pacman.conf on read-only root.
+          critical_actions:
+            - "Remount / as read-write (temporary)"
+            - "Add IgnoreGroup=illogical-impulse to /etc/pacman.conf"
+        variants:
+          git:
+            packages: [git]
+            aur: []
+            post_deploy: |
+              git clone https://github.com/end-4/dots-hyprland /tmp/dots-hyprland
+            version_hint: "rolling (git)"
+        uninstall:
+          packages: []
+          aur: []
+          post_remove: null
+          remove_config: false
+        signature: null
+    """)
+    p = tmp_manifest_dir / "illogical-impulse.yaml"
+    p.write_text(content)
+    return p
+
+
+@pytest.fixture()
+def danklinux_yaml(tmp_manifest_dir: Path) -> Path:
+    """Canonical danklinux manifest (HIGH, stable-only, hyprland+niri)."""
+    content = textwrap.dedent("""\
+        id: danklinux
+        name: DankMaterialShell
+        description: Material You shell for Niri and Hyprland.
+        credits:
+          author: AvengeMedia
+          homepage: https://danklinux.com
+          repo: https://github.com/AvengeMedia/DankMaterialShell
+        compatibility:
+          immutable: high
+          profiles: [hyprland, niri]
+          note: AUR builds with Go/CMake/Rust. Build time ~10 min.
+        variants:
+          stable:
+            packages: [dms-shell, rustup, go, cmake, ninja]
+            aur: [quickshell, matugen-bin]
+            post_deploy: null
+            version_hint: "1.4"
+        uninstall:
+          packages: [dms-shell]
+          aur: [quickshell, matugen-bin]
+          post_remove: null
+          remove_config: false
+        signature: null
+    """)
+    p = tmp_manifest_dir / "danklinux.yaml"
+    p.write_text(content)
+    return p
+
+
+@pytest.fixture()
+def tmp_sysyaml(tmp_path: Path) -> Path:
+    """Empty temporary system.yaml."""
+    p = tmp_path / "system.yaml"
+    p.write_text("dots_packs: []\n")
+    return p
 
 # ---------------------------------------------------------------------------
 # Path helpers

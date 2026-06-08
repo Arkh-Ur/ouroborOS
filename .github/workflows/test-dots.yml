@@ -1,0 +1,170 @@
+name: our-dots Test Suite
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/installer/dots_profiles.py'
+      - 'src/installer/tests/test_dots_profiles.py'
+      - 'src/ouroborOS-profile/airootfs/usr/local/bin/our-dots'
+      - 'src/ouroborOS-profile/airootfs/usr/local/lib/ouroboros/dots/packs/**'
+      - 'tests/bash/test_our_dots.bats'
+      - '.github/workflows/test-dots.yml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'src/installer/dots_profiles.py'
+      - 'src/installer/tests/test_dots_profiles.py'
+      - 'src/ouroborOS-profile/airootfs/usr/local/bin/our-dots'
+      - 'src/ouroborOS-profile/airootfs/usr/local/lib/ouroboros/dots/packs/**'
+      - 'tests/bash/test_our_dots.bats'
+      - '.github/workflows/test-dots.yml'
+
+jobs:
+  python-unit-tests:
+    name: Python unit tests (dots_profiles)
+    runs-on: self-hosted
+    steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Run dots_profiles unit tests (coverage gate ≥93%)
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          cd "$WORKSPACE"
+          pytest src/installer/tests/test_dots_profiles.py \
+            -v \
+            --tb=short \
+            --cov=installer.dots_profiles \
+            --cov-report=term-missing \
+            --cov-fail-under=93 \
+            2>&1
+
+  shellcheck-our-dots:
+    name: Shellcheck our-dots
+    runs-on: self-hosted
+    steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Shellcheck our-dots
+        run: |
+          shellcheck -S style \
+            src/ouroborOS-profile/airootfs/usr/local/bin/our-dots
+
+      - name: Validate bash syntax
+        run: |
+          bash -n src/ouroborOS-profile/airootfs/usr/local/bin/our-dots
+
+  validate-manifests:
+    name: Validate pack manifests
+    runs-on: self-hosted
+    steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Validate all pack manifests against canonical schema
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          FAILED=0
+          for mf in src/ouroborOS-profile/airootfs/usr/local/lib/ouroboros/dots/packs/*.yaml; do
+            python3 - "$mf" <<'PYEOF'
+          import yaml, sys
+          VALID_IMMUTABLE = {"low", "medium", "high", "critical"}
+          with open(sys.argv[1]) as f:
+              d = yaml.safe_load(f) or {}
+          errors = []
+          for field in ("id", "name", "description", "credits", "compatibility", "variants", "uninstall", "signature"):
+              if field not in d:
+                  errors.append(f"missing required field: {field!r}")
+          compat = d.get("compatibility") or {}
+          if "immutable" not in compat:
+              errors.append("missing compatibility.immutable")
+          elif compat["immutable"] not in VALID_IMMUTABLE:
+              errors.append(f"invalid compatibility.immutable: {compat['immutable']!r}")
+          credits = d.get("credits") or {}
+          for cf in ("author", "homepage"):
+              if cf not in credits:
+                  errors.append(f"missing credits.{cf}")
+          variants = d.get("variants") or {}
+          if not variants.get("stable") and not variants.get("git"):
+              errors.append("variants must have at least one of 'stable' or 'git'")
+          if errors:
+              for e in errors:
+                  print(f"[schema] {sys.argv[1]}: {e}", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
+            rc=$?
+            if [[ $rc -ne 0 ]]; then
+              echo "FAIL: $mf"
+              FAILED=$((FAILED + 1))
+            else
+              echo "OK:   $mf"
+            fi
+          done
+          [[ $FAILED -eq 0 ]] && echo "All manifests valid." || { echo "$FAILED manifest(s) failed."; exit 1; }
+
+  bats-unit-tests:
+    name: Bash unit tests (bats)
+    runs-on: self-hosted
+    steps:
+      - name: Clean root-owned artifacts from previous run
+        run: sudo rm -rf "${GITHUB_WORKSPACE:?}/*" 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Check bats availability
+        id: bats-check
+        run: |
+          if command -v bats >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::bats-core not installed — skipping Bash unit tests"
+          fi
+
+      - name: Run bats unit tests
+        if: steps.bats-check.outputs.available == 'true'
+        run: |
+          bats tests/bash/test_our_dots.bats
+
+  report:
+    name: Dots test report
+    needs: [python-unit-tests, shellcheck-our-dots, validate-manifests, bats-unit-tests]
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Write job summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## our-dots Test Suite Results
+
+          | Suite | Status |
+          |-------|--------|
+          | Python unit tests (≥93% coverage) | ${{ needs.python-unit-tests.result }} |
+          | Shellcheck + syntax validation | ${{ needs.shellcheck-our-dots.result }} |
+          | Manifest schema validation | ${{ needs.validate-manifests.result }} |
+          | Bash unit tests (bats) | ${{ needs.bats-unit-tests.result }} |
+
+          **Triggered by:** `${{ github.event_name }}` on `${{ github.ref_name }}`
+          **Commit:** `${{ github.sha }}`
+          EOF
