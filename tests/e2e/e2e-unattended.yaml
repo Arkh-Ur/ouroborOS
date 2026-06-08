@@ -3,7 +3,7 @@
 user:
   username: e2e
   password: e2etest
-  shell: /bin/bash
+  shell: bash
   groups: [wheel, audio, video, input]
 
 network:
