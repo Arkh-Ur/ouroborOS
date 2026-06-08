@@ -19,19 +19,20 @@ compatibility:
   immutable: high
   profiles: [hyprland, niri]
   note: |
-    Installs dms-shell from extra repo + AUR builds (go, cmake, rustup).
-    All via our-pac/our-aur — no direct pacman calls. Build time ~10 min.
+    Installs dms-shell, quickshell, dgop from extra repo + AUR builds (matugen-bin,
+    dsearch-bin, go, cmake, rustup). All via our-pac/our-aur — no direct pacman calls.
+    Build time ~10 min.
 
 variants:
   stable:
-    packages: [dms-shell, rustup, go, cmake, ninja]
-    aur: [quickshell, matugen-bin, dgop, dsearch]
+    packages: [dms-shell, quickshell, dgop, rustup, go, cmake, ninja]
+    aur: [matugen-bin, dsearch-bin]
     post_deploy: null
     version_hint: "1.4"
 
 uninstall:
-  packages: [dms-shell]
-  aur: [quickshell, matugen-bin, dgop, dsearch]
+  packages: [dms-shell, quickshell, dgop]
+  aur: [matugen-bin, dsearch-bin]
   post_remove: null
   remove_config: false
 
