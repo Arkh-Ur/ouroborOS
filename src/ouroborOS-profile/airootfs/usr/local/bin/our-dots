@@ -30,6 +30,17 @@ log_error() { echo -e "${RED}[our-dots] ERROR:${RESET} $*" >&2; }
 
 die() { log_error "$*"; exit 1; }
 
+# ── Network connectivity check ────────────────────────────────────────────────
+
+# Returns 0 if internet is available, 1 otherwise.
+# Checks by resolving a known hostname (fast, no payload).
+has_network() {
+    if getent hosts archlinux.org >/dev/null 2>&1; then
+        return 0
+    fi
+    curl -sfS --connect-timeout 3 --max-time 5 -o /dev/null https://archlinux.org >/dev/null 2>&1
+}
+
 require_root() {
     [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "This operation requires root. Run with sudo."
 }
@@ -579,11 +590,20 @@ cmd_install() {
     logfile="${LOG_DIR}/${id}-$(date +%Y%m%d-%H%M%S).log"
     log_info "Installing $id (channel: $channel) — log: $logfile"
 
+    # ── Network gate & sync ──────────────────────────────────────────────────
+    if ! has_network; then
+        log_error "No internet connection. Cannot install packages."
+        log_error "Connect to the internet and try again."
+        exit 6
+    fi
+
     local pkgs aur_pkgs
     mapfile -t pkgs   < <(yaml_list "$mf" "variants.${channel}.packages" 2>/dev/null)
     mapfile -t aur_pkgs < <(yaml_list "$mf" "variants.${channel}.aur" 2>/dev/null)
 
     if [[ ${#pkgs[@]} -gt 0 ]] && [[ -n "${pkgs[0]:-}" ]]; then
+        log_info "Syncing package databases..."
+        our-pac -Sy --noconfirm 2>&1 | tee -a "$logfile" || true
         log_info "Installing pacman packages: ${pkgs[*]}"
         our-pac -S "${pkgs[@]}" --noconfirm 2>&1 | tee -a "$logfile"
     fi

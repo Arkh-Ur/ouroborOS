@@ -1,0 +1,45 @@
+# ouroborOS E2E unattended config — minimal profile, skip dots
+# Dots are tested separately via test_dots_e2e.sh after install
+user:
+  username: e2e
+  password: e2etest
+  shell: /bin/bash
+  groups: [wheel, audio, video, input]
+
+network:
+  hostname: ouroboros-e2e
+  enable_networkd: true
+  enable_iwd: true
+  enable_resolved: true
+  wifi:
+    ssid: ""
+    passphrase: ""
+  bluetooth:
+    enable: false
+
+security:
+  secure_boot: false
+  sbctl_include_ms_keys: false
+
+disk:
+  device: /dev/vda
+  use_luks: false
+  btrfs_label: ouroborOS
+  swap_type: zram
+
+locale:
+  locale: en_US.UTF-8
+  keymap: us
+  timezone: America/Santiago
+
+desktop:
+  profile: minimal
+  dm: none
+
+# Skip dots — we test them via test_dots_e2e.sh after install
+dots_pack:
+  pack: null
+  channel: stable
+
+extra_packages: []
+post_install_action: reboot

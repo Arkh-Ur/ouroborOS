@@ -2293,9 +2293,22 @@ class TUI:
         """Show dotfiles pack selection screen.
 
         Returns {"pack": id_or_none, "channel": "stable"|"git"}.
+        If no internet, returns None pack regardless of buffer.
         """
         if self._rich:
             return self._delegate("show_dots_pack_selection", profile)
+        # In pure Textual mode, check network before offering packs
+        import subprocess  # noqa: PLC0415
+        try:
+            subprocess.run(
+                ["getent", "hosts", "archlinux.org"],
+                check=True, capture_output=True, timeout=3,
+            )
+            has_net = True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            has_net = False
+        if not has_net:
+            return {"pack": None, "channel": "stable"}
         pack_id = self._buffer.dots_pack_id or None
         channel = self._buffer.dots_pack_channel or "stable"
         return {"pack": pack_id, "channel": channel}

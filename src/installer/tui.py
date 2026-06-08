@@ -549,11 +549,52 @@ class TUI:
         """Show dotfiles pack selection screen.
 
         Returns {"pack": id_or_none, "channel": "stable"|"git"}.
+        If no internet is available, only "Skip" is offered.
         """
+        import subprocess  # noqa: PLC0415
         from installer.dots_profiles import packs_for_profile  # noqa: PLC0415
+
+        # Check internet connectivity — if offline, skip pack selection entirely
+        def _has_network() -> bool:
+            try:
+                subprocess.run(
+                    ["getent", "hosts", "archlinux.org"],
+                    check=True,
+                    capture_output=True,
+                    timeout=3,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+            try:
+                subprocess.run(
+                    ["curl", "-sfS", "--connect-timeout", "3", "--max-time", "5",
+                     "-o", "/dev/null", "https://archlinux.org"],
+                    check=True,
+                    capture_output=True,
+                    timeout=8,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+                return False
+
+        has_net = _has_network()
 
         packs = packs_for_profile(profile)
         if not packs:
+            return {"pack": None, "channel": "stable"}
+
+        # If no internet, inform user and skip
+        if not has_net:
+            msg = "⚠ No internet connection detected. Dotfiles packs require internet to install."
+            if self._backend == "rich":
+                try:
+                    from rich.console import Console  # noqa: PLC0415
+                    Console().print(f"\n[yellow]{msg}[/yellow]\n")
+                except ImportError:
+                    print(msg)
+            else:
+                print(msg)
             return {"pack": None, "channel": "stable"}
 
         options: list[tuple[str, str]] = [

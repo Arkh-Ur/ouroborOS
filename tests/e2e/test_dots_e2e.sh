@@ -18,7 +18,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 readonly MANIFEST_DIR="/usr/local/lib/ouroboros/dots/packs"
 readonly OUR_DOTS="/usr/local/bin/our-dots"
-readonly ALL_PACKS=(noctilia ml4w caelestia danklinux illogical-impulse omarchy ambxst)
+readonly ALL_PACKS=(noctalia ml4w caelestia danklinux illogical-impulse omarchy ambxst)
 readonly RESULTS_DIR="/tmp/ouroboros-e2e-results"
 
 # ── Color output ──────────────────────────────────────────────────────────────
