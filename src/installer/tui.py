@@ -584,9 +584,19 @@ class TUI:
         if not packs:
             return {"pack": None, "channel": "stable"}
 
-        # If no internet, inform user and skip
+        # Always show the menu — packs are LOCAL manifests. Internet is only
+        # required at install-time to fetch the pack git/AUR packages.
+        # We tag offline packs so the user knows what they are committing to.
+        offline_tag = "" if has_net else " [⚠ offline — will skip package install]"
+        options: list[tuple[str, str]] = [
+            ("none", "Skip — keep default empty profile"),
+        ] + [
+            (p.id, p.name + " — " + p.description[:50] + offline_tag)
+            for p in packs
+        ]
+
         if not has_net:
-            msg = "⚠ No internet connection detected. Dotfiles packs require internet to install."
+            msg = "⚠ No internet detected. You can still SELECT a pack — its install will fail later without net."
             if self._backend == "rich":
                 try:
                     from rich.console import Console  # noqa: PLC0415
@@ -595,14 +605,6 @@ class TUI:
                     print(msg)
             else:
                 print(msg)
-            return {"pack": None, "channel": "stable"}
-
-        options: list[tuple[str, str]] = [
-            ("none", "Skip — keep default empty profile"),
-        ] + [
-            (p.id, p.name + " — " + p.description[:50])
-            for p in packs
-        ]
 
         if self._backend == "rich":
             selected_id = self._rich_select(
