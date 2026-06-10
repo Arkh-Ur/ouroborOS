@@ -340,13 +340,30 @@ class Installer:
             )
 
     def _handle_init(self) -> None:
-        """INIT — detect unattended mode or initialise TUI."""
+        """INIT — detect unattended mode or initialise TUI.
+
+        Bug B fix (2026-06-10): When an unattended config is detected AND a
+        TTY is available, the user is asked whether to use the config (silent
+        install) or proceed to the interactive TUI menu. If no TTY (true CI/E2E
+        boot), the config is used directly to preserve automation.
+        """
         config_path = self._config_path or find_unattended_config()
         if config_path:
             log.info("Unattended config found: %s", config_path)
-            self.config = load_config(config_path)
-            self.tui = None
-            return
+            # Ask user before going silent — only if a TTY is available
+            if sys.stdin.isatty() and not os.environ.get("OUROBOROS_FORCE_UNATTENDED"):
+                print(f"\n[unattended config detected at: {config_path}]")
+                try:
+                    answer = input("Use this config for silent install? [Y/n] (n = interactive menu): ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = "y"
+                if answer in ("n", "no"):
+                    log.info("User chose interactive mode — ignoring unattended config.")
+                    config_path = None
+            if config_path:
+                self.config = load_config(config_path)
+                self.tui = None
+                return
 
         # No config found — start interactive TUI
         self.tui = TUI(title="ouroborOS Installer")
