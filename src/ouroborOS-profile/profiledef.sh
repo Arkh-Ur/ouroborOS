@@ -45,23 +45,3 @@ file_permissions=(
   ["/usr/local/bin/ouroboros-health"]="0:0:755"
   ["/usr/local/bin/ouroboros-reinstall"]="0:0:755"
 )
-
-
-# ── customize_airootfs() — patch mkinitcpio init_functions (Bug A fix) ──
-# Bug: Live ISO boot emits "ERROR: device '' not found. Skipping fsck."
-# because the live ISO has no root= in its kernel cmdline, so fsck_root()
-# calls fsck_device "" with an empty string. The err() call writes the
-# warning to console (visible during boot). We patch fsck_device() to
-# silently skip when $1 is empty.
-customize_airootfs() {
-    local init_funcs="${1}/usr/lib/initcpio/init_functions"
-    if [[ -f "${init_funcs}" ]]; then
-        # Replace the err() line with an early return when $1 is empty.
-        # This keeps the fsck step functional for real devices but hides
-        # the cosmetic warning on live ISO boots.
-        if grep -qF "device '' not found. Skipping fsck." "${init_funcs}"; then
-            sed -i 's|^        err "device '"'"''"'"' not found\. Skipping fsck\."$|        [ -z "$1" ] && return 255 # ouroborOS patch: skip empty device silently|' "${init_funcs}"
-            echo "  ✓ Patched init_functions: skip empty fsck device (ouroborOS)"
-        fi
-    fi
-}
