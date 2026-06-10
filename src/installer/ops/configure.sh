@@ -1420,6 +1420,18 @@ GREETD_EOF
             echo "${DESKTOP_AUR_PACKAGES}" > "${TARGET}/var/lib/ouroborOS/firstboot-aur-packages.txt"
             log_ok "AUR packages queued for firstboot install: ${DESKTOP_AUR_PACKAGES}"
         fi
+
+        # F5: Persist installer-chosen terminal + filemanager for firstboot
+        # to materialise as ~/.config/hypr/hyprland.conf. The wizard AUR
+        # package would otherwise override these with foot/dolphin.
+        mkdir -p "${TARGET}/var/lib/ouroborOS"
+        cat > "${TARGET}/var/lib/ouroborOS/desktop-prefs.json" <<EOF
+{
+  "terminal": "${DESKTOP_PREFERRED_TERMINAL:-foot}",
+  "filemanager": "${DESKTOP_PREFERRED_FILEMANAGER:-thunar}"
+}
+EOF
+        log_ok "Hyprland defaults queued for firstboot: terminal=${DESKTOP_PREFERRED_TERMINAL:-foot}, filemanager=${DESKTOP_PREFERRED_FILEMANAGER:-thunar}"
     else
         log_warn "ouroboros-firstboot not found on live ISO — skipping."
     fi

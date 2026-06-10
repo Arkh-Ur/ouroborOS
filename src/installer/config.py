@@ -86,6 +86,37 @@ class DesktopConfig:
     # Populated by load_config() / _build_config() from desktop_profiles.
     # Passed to ouroboros-firstboot for lazy build via our-aur.
     aur_packages: list = field(default_factory=list)
+    # F5: Default terminal + filemanager per profile. Firstboot writes these
+    # into ~/.config/hypr/hyprland.conf so the hyprland-config-wizard runtime
+    # doesn't override them with foot/dolphin. Can be overridden by user
+    # editing the generated conf post-install.
+    preferred_terminal: str = "foot"
+    preferred_filemanager: str = "thunar"
+    _TERMINAL_DEFAULTS = {
+        "hyprland": "kitty",      # Kitty is the Hyprland ecosystem default
+        "niri": "foot",           # niri ships with foot in the wiki
+        "gnome": "gnome-terminal",
+        "kde": "konsole",
+        "cosmic": "cosmic-term",
+        "minimal": "bash",        # No GUI; use plain bash
+    }
+    _FILEMANAGER_DEFAULTS = {
+        "hyprland": "thunar",     # Thunar is lighter than dolphin
+        "niri": "nautilus",
+        "gnome": "nautilus",
+        "kde": "dolphin",
+        "cosmic": "cosmic-files",
+        "minimal": "ls",          # No GUI
+    }
+
+    def apply_profile_defaults(self) -> None:
+        """Set terminal/filemanager from profile (called after profile is set)."""
+        self.preferred_terminal = self._TERMINAL_DEFAULTS.get(
+            self.profile, "foot"
+        )
+        self.preferred_filemanager = self._FILEMANAGER_DEFAULTS.get(
+            self.profile, "thunar"
+        )
 
 
 @dataclass

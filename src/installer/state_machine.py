@@ -541,6 +541,8 @@ class Installer:
         if self.tui:
             profile = self.tui.show_desktop_selection()
             self.config.desktop.profile = profile
+            # F5: derive terminal + filemanager defaults from profile
+            self.config.desktop.apply_profile_defaults()
             dm_choice = self.tui.show_dm_selection(profile=profile)
             self.config.desktop.dm = dm_choice
             self.config.desktop.aur_packages = aur_packages_for(profile)
@@ -1135,6 +1137,9 @@ class Installer:
                 "DESKTOP_KDE_FLAVOR": self.config.desktop.kde_flavor,
                 "GPU_DRIVER": self.config.desktop.gpu_driver,
                 "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
+                # F5: persist installer-chosen terminal + filemanager to firstboot
+                "DESKTOP_PREFERRED_TERMINAL": self.config.desktop.preferred_terminal,
+                "DESKTOP_PREFERRED_FILEMANAGER": self.config.desktop.preferred_filemanager,
                 "HOMED_STORAGE": self.config.users[0].homed_storage if self.config.users else "subvolume",
                 "WIFI_SSID": self.config.network.wifi_ssid,
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
