@@ -18,17 +18,19 @@ credits:
 compatibility:
   immutable: medium
   profiles: [hyprland]
-  note: git clone + make install — deps installed via our-pac/our-aur
+  note: Clones dotfiles to ~/; user-space config only — no root writes required
 
 variants:
   stable:
-    packages: [git, make]
+    packages: [git]
     aur: []
     deploy: |
+      rm -rf /tmp/ml4w-dotfiles-installer
       git clone --depth 1 https://github.com/mylinuxforwork/dotfiles /tmp/ml4w-dotfiles-installer
     post_deploy: |
-      cd /tmp/ml4w-dotfiles-installer && make install
-    version_hint: "0.2.3"
+      cp -rn /tmp/ml4w-dotfiles-installer/dotfiles/. "${HOME}/"
+      rm -rf /tmp/ml4w-dotfiles-installer
+    version_hint: "2.13"
 
 uninstall:
   packages: []

@@ -434,6 +434,14 @@ PYEOF
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 _cmd_install() {
+    [[ $# -gt 0 ]] || _die "Especificá un paquete: our-aur -S <paquete>"
+    local pkg
+    for pkg in "$@"; do
+        _cmd_install_one "${pkg}"
+    done
+}
+
+_cmd_install_one() {
     local pkg="${1:-}"
     [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -S <paquete>"
 
@@ -555,6 +563,14 @@ _cmd_upgrade() {
 }
 
 _cmd_remove() {
+    [[ $# -gt 0 ]] || _die "Especificá un paquete: our-aur -R <paquete>"
+    local pkg
+    for pkg in "$@"; do
+        _cmd_remove_one "${pkg}"
+    done
+}
+
+_cmd_remove_one() {
     local pkg="${1:-}"
     [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -R <paquete>"
 

@@ -32,6 +32,7 @@ variants:
     packages: [quickshell, git]
     aur: []
     deploy: |
+      rm -rf /tmp/ambxst-dotfiles
       git clone --depth 1 https://github.com/Axenide/Ambxst /tmp/ambxst-dotfiles
     post_deploy: |
       cd /tmp/ambxst-dotfiles && bash install.sh --hyprland
