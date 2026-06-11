@@ -91,6 +91,17 @@ preflight() {
     # Ensure OUROBOROS_ALLOW_CRITICAL for unattended CRITICAL packs
     export OUROBOROS_ALLOW_CRITICAL=1
 
+    # When running as root without SUDO_USER, set SUDO_USER to first regular user
+    # so post_deploy scripts that refuse root can run as a normal user.
+    if [[ $EUID -eq 0 ]] && [[ -z "${SUDO_USER:-}" ]]; then
+        local regular_user
+        regular_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}')
+        if [[ -n "${regular_user}" ]]; then
+            export SUDO_USER="${regular_user}"
+            echo "E2E: running post_deploy as ${SUDO_USER} (detected regular user)"
+        fi
+    fi
+
     mkdir -p "$RESULTS_DIR"
 }
 
