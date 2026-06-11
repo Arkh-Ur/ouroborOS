@@ -103,6 +103,15 @@ preflight() {
     fi
 
     mkdir -p "$RESULTS_DIR"
+
+    # Ensure a clean slate: remove any packs left from prior test runs.
+    # This makes the suite idempotent when re-run on the same VM.
+    echo "Pre-test cleanup: removing any previously installed packs..."
+    local p
+    for p in "${ALL_PACKS[@]}"; do
+        our-dots -R "$p" --noconfirm &>/dev/null || true
+    done
+    echo ""
 }
 
 # ── Single test runner ────────────────────────────────────────────────────────
