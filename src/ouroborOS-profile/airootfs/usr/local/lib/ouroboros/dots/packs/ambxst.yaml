@@ -35,14 +35,24 @@ variants:
       rm -rf /tmp/ambxst-dotfiles
       git clone --depth 1 https://github.com/Axenide/Ambxst /tmp/ambxst-dotfiles
     post_deploy: |
-      cd /tmp/ambxst-dotfiles && bash install.sh --hyprland
+      mkdir -p "${HOME}/.local/src" "${HOME}/.local/bin"
+      rm -rf "${HOME}/.local/src/ambxst"
+      cp -r /tmp/ambxst-dotfiles "${HOME}/.local/src/ambxst"
+      cat > "${HOME}/.local/bin/ambxst" << 'EOF_LAUNCHER'
+      #!/usr/bin/env bash
+      export PATH="$HOME/.local/bin:$PATH"
+      export QML2_IMPORT_PATH="$HOME/.local/lib/qml:$QML2_IMPORT_PATH"
+      export QML_IMPORT_PATH="$QML2_IMPORT_PATH"
+      exec "$HOME/.local/src/ambxst/cli.sh" "$@"
+      EOF_LAUNCHER
+      chmod +x "${HOME}/.local/bin/ambxst"
     version_hint: "rolling"
 
 uninstall:
   packages: [quickshell]
   aur: []
   post_remove: |
-    ambxst uninstall 2>/dev/null || true
+    rm -rf "${HOME}/.local/src/ambxst" "${HOME}/.local/bin/ambxst" 2>/dev/null || true
   remove_config: false
 
 signature: null
