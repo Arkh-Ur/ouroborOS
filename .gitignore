@@ -50,3 +50,6 @@ src/ouroborOS-profile/airootfs/var/
 # Tool logs
 opencode.log
 .sudo
+
+# Claude Code local memory/settings
+.claude/

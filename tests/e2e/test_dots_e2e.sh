@@ -17,7 +17,6 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
 readonly MANIFEST_DIR="/usr/local/lib/ouroboros/dots/packs"
-readonly OUR_DOTS="/usr/local/bin/our-dots"
 readonly ALL_PACKS=(noctalia ml4w caelestia danklinux illogical-impulse omarchy ambxst)
 readonly RESULTS_DIR="/tmp/ouroboros-e2e-results"
 
@@ -63,7 +62,6 @@ log_info()  { $VERBOSE && echo -e "  ${BOLD}ℹ️ INFO${RESET} — $1" || true;
 total_pass=0
 total_fail=0
 total_skip=0
-json_results=()
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
 preflight() {
@@ -85,7 +83,7 @@ preflight() {
     version=$(our-dots --version 2>/dev/null || echo "unknown")
     echo "our-dots version: $version"
     echo "Packs to test: ${PACKS_TO_TEST[*]}"
-    echo "Manifests: $(ls "$MANIFEST_DIR"/*.yaml 2>/dev/null | wc -l) found"
+    echo "Manifests: $(find "$MANIFEST_DIR" -maxdepth 1 -name '*.yaml' 2>/dev/null | wc -l) found"
     echo ""
 
     # Ensure OUROBOROS_ALLOW_CRITICAL for unattended CRITICAL packs
@@ -142,7 +140,6 @@ run_test() {
 test_pack() {
     local id="$1"
     local manifest="$MANIFEST_DIR/${id}.yaml"
-    local pack_pass=0 pack_fail=0
 
     echo -e "${BOLD}━━━ Testing pack: $id ━━━${RESET}"
 
