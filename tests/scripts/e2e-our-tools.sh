@@ -193,6 +193,28 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
+section "9. our-dots — dotfiles pack lifecycle"
+if $SSH "test -x /usr/local/bin/our-dots" 2>/dev/null; then
+    check     "our-dots version"         "our-dots --version"
+    check     "our-dots list shows packs" "our-dots list | grep -q noctalia"
+    check     "our-dots -Si ml4w"        "our-dots -Si ml4w | grep -qi 'ml4w\|name'"
+    check_contains "our-dots -Q (empty ok)" "0\|packs installed\|No packs" \
+        "our-dots -Q 2>&1 || true"
+    # Lifecycle: install ml4w (git-clone only, no AUR deps — fastest pack)
+    check     "our-dots install ml4w"    \
+        "OUROBOROS_ALLOW_CRITICAL=0 our-dots -S ml4w --noconfirm"
+    check     "ml4w marked installed"    \
+        "our-dots list | grep -qE 'ml4w.*installed|installed.*ml4w' || \
+         grep -q ml4w /etc/ouroboros/system.yaml"
+    check     "our-dots uninstall ml4w"  "our-dots -R ml4w --noconfirm"
+    check     "ml4w removed from list"   \
+        "! our-dots list 2>&1 | grep -qE 'ml4w.*\[installed\]'"
+else
+    echo -e "  ${YELLOW}SKIP${RESET} our-dots — not found on this image"
+    SKIP=$((SKIP+8))
+fi
+
+# ─────────────────────────────────────────────────────────────
 section "RESULTS"
 TOTAL=$((PASS+FAIL))
 echo ""
