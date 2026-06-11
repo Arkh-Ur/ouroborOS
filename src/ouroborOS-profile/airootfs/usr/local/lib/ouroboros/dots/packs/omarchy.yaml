@@ -40,9 +40,13 @@ variants:
   git:
     packages: [git, curl]
     aur: []
+    deploy: |
+      rm -rf /tmp/omarchy
+      git clone --depth 1 https://github.com/basecamp/omarchy /tmp/omarchy
     post_deploy: |
-      git clone https://github.com/basecamp/omarchy /tmp/omarchy
-      cd /tmp/omarchy && bash install
+      mkdir -p "${HOME}/.config" "${HOME}/.local"
+      cp -rn /tmp/omarchy/.config/. "${HOME}/.config/" 2>/dev/null || true
+      cp -rn /tmp/omarchy/.local/. "${HOME}/.local/" 2>/dev/null || true
     version_hint: "rolling (git)"
 
 uninstall:

@@ -33,18 +33,19 @@ variants:
   git:
     packages: [git]
     aur: []
+    deploy: |
+      rm -rf /tmp/dots-hyprland
+      git clone --depth 1 https://github.com/end-4/dots-hyprland /tmp/dots-hyprland
     post_deploy: |
-      git clone https://github.com/end-4/dots-hyprland /tmp/dots-hyprland
-      cd /tmp/dots-hyprland && ./setup install
+      mkdir -p "${HOME}/.config" "${HOME}/.local"
+      cp -rn /tmp/dots-hyprland/.config/. "${HOME}/.config/" 2>/dev/null || true
+      cp -rn /tmp/dots-hyprland/.local/. "${HOME}/.local/" 2>/dev/null || true
     version_hint: "rolling (git)"
 
 uninstall:
   packages: []
   aur: []
-  post_remove: |
-    git clone --depth 1 https://github.com/end-4/dots-hyprland /tmp/dots-hyprland-uninstall 2>/dev/null || true
-    cd /tmp/dots-hyprland-uninstall && ./setup uninstall || true
-    rm -rf /tmp/dots-hyprland-uninstall
+  post_remove: null
   remove_config: false
 
 signature: null
