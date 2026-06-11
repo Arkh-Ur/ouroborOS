@@ -31,8 +31,10 @@ variants:
   git:
     packages: [quickshell, git]
     aur: []
+    deploy: |
+      git clone --depth 1 https://github.com/Axenide/Ambxst /tmp/ambxst-dotfiles
     post_deploy: |
-      ambxst install hyprland
+      cd /tmp/ambxst-dotfiles && bash install.sh --hyprland
     version_hint: "rolling"
 
 uninstall:

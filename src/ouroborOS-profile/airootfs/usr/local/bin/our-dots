@@ -329,8 +329,10 @@ if has_s and has_g:
     print("stable/git")
 elif has_s:
     print("stable")
-else:
+elif has_g:
     print("git")
+else:
+    print("")
 PYEOF
 }
 
@@ -762,13 +764,7 @@ cmd_upgrade() {
     log_info "Checking installed packs for updates..."
     local updated=0
 
-    python3 - "$SYSYAML" <<'PYEOF' 2>/dev/null | while read -r id channel; do
-import yaml, sys
-with open(sys.argv[1]) as f:
-    doc = yaml.safe_load(f) or {}
-for p in doc.get("dots_packs", []):
-    print(p.get("id", "") + " " + p.get("channel", "stable"))
-PYEOF
+    while read -r id channel; do
         [[ -z "$id" ]] && continue
         local mf
         mf=$(find_manifest "$id" 2>/dev/null) || { log_warn "$id: manifest not found, skipping"; continue; }
@@ -791,7 +787,9 @@ PYEOF
                 | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('results',[]); print(r[0].get('Version','') if r else '')" 2>/dev/null) || true
             if [[ -n "$available_ver" ]] && [[ "$available_ver" != "$current_ver" ]]; then
                 log_info "$id: update available ($current_ver → $available_ver)"
-                cmd_install "$id" "--${channel}" --noconfirm
+                local _flag=""
+                [[ "$channel" == "git" ]] && _flag="--git"
+                cmd_install "$id" ${_flag:+"$_flag"} --noconfirm
                 ((updated++)) || true
             else
                 echo "  $id: up to date ($current_ver)"
@@ -799,7 +797,14 @@ PYEOF
         else
             echo "  $id: update check not available for this pack — use 'our-dots -S $id' to reinstall"
         fi
-    done
+    done < <(python3 - "$SYSYAML" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for p in doc.get("dots_packs", []):
+    print(p.get("id", "") + " " + p.get("channel", "stable"))
+PYEOF
+    )
 
     log_info "Done. $updated pack(s) updated."
 }

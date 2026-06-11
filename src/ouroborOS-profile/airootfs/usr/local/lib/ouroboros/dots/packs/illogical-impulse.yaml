@@ -42,7 +42,9 @@ uninstall:
   packages: []
   aur: []
   post_remove: |
-    cd /tmp/dots-hyprland 2>/dev/null && ./setup uninstall 2>/dev/null || true
+    git clone --depth 1 https://github.com/end-4/dots-hyprland /tmp/dots-hyprland-uninstall 2>/dev/null || true
+    cd /tmp/dots-hyprland-uninstall && ./setup uninstall || true
+    rm -rf /tmp/dots-hyprland-uninstall
   remove_config: false
 
 signature: null

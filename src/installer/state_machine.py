@@ -598,6 +598,7 @@ class Installer:
         # Condition 4: offline (packs require internet to clone/install)
         if not self._has_internet():
             log.info("DOTS_PACK: no internet connectivity — skipping dotfiles pack selection.")
+            self.config.dots_pack.pack = None
             self._update_progress(State.DOTS_PACK, 100)
             return
 

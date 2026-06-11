@@ -24,6 +24,8 @@ variants:
   stable:
     packages: [git, make]
     aur: []
+    deploy: |
+      git clone --depth 1 https://github.com/mylinuxforwork/dotfiles /tmp/ml4w-dotfiles-installer
     post_deploy: |
       cd /tmp/ml4w-dotfiles-installer && make install
     version_hint: "0.2.3"

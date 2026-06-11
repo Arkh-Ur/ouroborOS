@@ -11,8 +11,14 @@
 #   bats tests/bash/test_our_dots.bats
 
 load 'helpers/setup_our_dots'
-load '/opt/bats-support/load'
-load '/opt/bats-assert/load'
+
+# Try common bats helper locations
+for dir in /opt/bats-support /usr/lib/bats-support /usr/local/lib/bats-support; do
+    [[ -f "$dir/load.bash" ]] && { load "$dir/load.bash"; break; }
+done
+for dir in /opt/bats-assert /usr/lib/bats-assert /usr/local/lib/bats-assert; do
+    [[ -f "$dir/load.bash" ]] && { load "$dir/load.bash"; break; }
+done
 
 SCRIPT="${BATS_TEST_DIRNAME}/../../src/ouroborOS-profile/airootfs/usr/local/bin/our-dots"
 
@@ -27,9 +33,9 @@ teardown() {
 
 # Helper: source script functions with overridden env vars
 _source_funcs() {
-    MANIFEST_DIR="${MANIFEST_DIR}" REPOS_DIR="${REPOS_DIR}" \
-    REPOS_INDEX="${REPOS_INDEX}" SYSYAML="${SYSYAML}" LOG_DIR="${LOG_DIR}"
     # shellcheck disable=SC1090
+    MANIFEST_DIR="${MANIFEST_DIR}" REPOS_DIR="${REPOS_DIR}" \
+    REPOS_INDEX="${REPOS_INDEX}" SYSYAML="${SYSYAML}" LOG_DIR="${LOG_DIR}" \
     source "${SCRIPT}"
 }
 
