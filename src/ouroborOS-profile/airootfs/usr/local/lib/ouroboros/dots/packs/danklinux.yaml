@@ -31,7 +31,7 @@ variants:
     version_hint: "1.4"
 
 uninstall:
-  packages: [dms-shell, dms-shell-hyprland, quickshell, dgop]
+  packages: [dms-shell, dms-shell-hyprland, quickshell, dgop, rustup, go, cmake, ninja]
   aur: [matugen-bin, dsearch-bin]
   post_remove: null
   remove_config: false

@@ -192,8 +192,8 @@ test_pack() {
 
     # T6: Verify packages from manifest exist in system
     local packages_missing=0
-    local pkg
-    for pkg in $(python3 - "$manifest" <<'PYEOF' 2>/dev/null
+    local pkg t6_pkgs
+    if ! t6_pkgs=$(python3 - "$manifest" <<'PYEOF'
 import yaml, sys
 d = yaml.safe_load(open(sys.argv[1])) or {}
 channel = "stable"
@@ -204,24 +204,32 @@ block = variants.get(channel, {})
 for p in block.get("packages", []):
     print(p)
 PYEOF
-    ); do
+    ); then
+        log_fail "T6: python3/PyYAML unavailable — cannot verify packages"
+        (( total_fail++ )) || true
+        t6_pkgs=""
+    fi
+    for pkg in $t6_pkgs; do
         if ! pacman -Q "$pkg" &>/dev/null; then
             log_info "T6: package '$pkg' not found in pacman"
             packages_missing=$(( packages_missing + 1 ))
         fi
     done
 
-    if [[ $packages_missing -eq 0 ]]; then
-        log_pass "T6: All packages installed"
-        (( total_pass++ )) || true
-    else
-        log_fail "T6: $packages_missing package(s) missing"
-        (( total_fail++ )) || true
+    if [[ -n "$t6_pkgs" ]]; then
+        if [[ $packages_missing -eq 0 ]]; then
+            log_pass "T6: All packages installed"
+            (( total_pass++ )) || true
+        else
+            log_fail "T6: $packages_missing package(s) missing"
+            (( total_fail++ )) || true
+        fi
     fi
 
     # T7: Verify AUR packages from manifest exist in system
     local aur_missing=0
-    for pkg in $(python3 - "$manifest" <<'PYEOF' 2>/dev/null
+    local t7_pkgs
+    if ! t7_pkgs=$(python3 - "$manifest" <<'PYEOF'
 import yaml, sys
 d = yaml.safe_load(open(sys.argv[1])) or {}
 channel = "stable"
@@ -232,7 +240,12 @@ block = variants.get(channel, {})
 for p in block.get("aur", []):
     print(p)
 PYEOF
-    ); do
+    ); then
+        log_fail "T7: python3/PyYAML unavailable — cannot verify AUR packages"
+        (( total_fail++ )) || true
+        t7_pkgs=""
+    fi
+    for pkg in $t7_pkgs; do
         if ! pacman -Q "$pkg" &>/dev/null && \
            ! [[ -f "/var/lib/our-aur/packages/${pkg}.json" ]]; then
             log_info "T7: AUR package '$pkg' not found"
@@ -240,12 +253,14 @@ PYEOF
         fi
     done
 
-    if [[ $aur_missing -eq 0 ]]; then
-        log_pass "T7: All AUR packages installed"
-        (( total_pass++ )) || true
-    else
-        log_fail "T7: $aur_missing AUR package(s) missing"
-        (( total_fail++ )) || true
+    if [[ -n "$t7_pkgs" ]]; then
+        if [[ $aur_missing -eq 0 ]]; then
+            log_pass "T7: All AUR packages installed"
+            (( total_pass++ )) || true
+        else
+            log_fail "T7: $aur_missing AUR package(s) missing"
+            (( total_fail++ )) || true
+        fi
     fi
 
     # T8: Uninstall succeeds
@@ -265,14 +280,18 @@ PYEOF
 
     # T10: Uninstall packages removed
     local uninstall_pkgs
-    uninstall_pkgs=$(python3 - "$manifest" <<'PYEOF' 2>/dev/null
+    if ! uninstall_pkgs=$(python3 - "$manifest" <<'PYEOF'
 import yaml, sys
 d = yaml.safe_load(open(sys.argv[1])) or {}
 uninstall = d.get("uninstall", {})
 for p in uninstall.get("packages", []):
     print(p)
 PYEOF
-    )
+    ); then
+        log_fail "T10: python3/PyYAML unavailable — cannot verify uninstall"
+        (( total_fail++ )) || true
+        uninstall_pkgs=""
+    fi
     local still_installed=0
     for pkg in $uninstall_pkgs; do
         if pacman -Q "$pkg" &>/dev/null; then
@@ -281,12 +300,14 @@ PYEOF
         fi
     done
 
-    if [[ $still_installed -eq 0 ]]; then
-        log_pass "T10: Uninstall packages removed"
-        (( total_pass++ )) || true
-    else
-        log_fail "T10: $still_installed package(s) still installed"
-        (( total_fail++ )) || true
+    if [[ -n "$uninstall_pkgs" ]]; then
+        if [[ $still_installed -eq 0 ]]; then
+            log_pass "T10: Uninstall packages removed"
+            (( total_pass++ )) || true
+        else
+            log_fail "T10: $still_installed package(s) still installed"
+            (( total_fail++ )) || true
+        fi
     fi
 
     # T11: Re-install (idempotent)

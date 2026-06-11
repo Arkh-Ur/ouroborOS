@@ -599,6 +599,7 @@ class Installer:
         if not self._has_internet():
             log.info("DOTS_PACK: no internet connectivity — skipping dotfiles pack selection.")
             self.config.dots_pack.pack = None
+            self.config.dots_pack.channel = "stable"
             self._update_progress(State.DOTS_PACK, 100)
             return
 
@@ -609,11 +610,11 @@ class Installer:
 
         # F4-02: auto-correct channel for git-only packs (C-03)
         if self.config.dots_pack.pack:
-            import yaml  # noqa: PLC0415
             from installer.dots_profiles import MANIFEST_DIR  # noqa: PLC0415
             mf_path = MANIFEST_DIR / f"{self.config.dots_pack.pack}.yaml"
             if mf_path.exists():
                 try:
+                    import yaml  # noqa: PLC0415
                     with mf_path.open() as fh:
                         mf_data = yaml.safe_load(fh) or {}
                     variants = mf_data.get("variants") or {}

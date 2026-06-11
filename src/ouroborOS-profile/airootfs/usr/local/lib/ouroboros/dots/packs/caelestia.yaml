@@ -42,7 +42,8 @@ variants:
     version_hint: "git (bleeding edge, may be unstable)"
 
 uninstall:
-  packages: []
+  packages: [ddcutil, brightnessctl, lm_sensors, fish, aubio, swappy,
+             libqalculate, power-profiles-daemon, qt6-imageformats]
   aur: [caelestia-shell, caelestia-shell-git, caelestia-cli, quickshell-git,
         app2unit, libcava]
   post_remove: null

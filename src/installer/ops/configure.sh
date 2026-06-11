@@ -956,6 +956,7 @@ STUB
         our-fido2
         our-flat
         our-aur
+        our-dots
         our-app
         our-box
         our-wall

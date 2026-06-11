@@ -506,7 +506,20 @@ _cmd_install_one() {
     pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-${pkg}-$$.txt"
 
     # 4. Build
-    _build_in_container "${container_name}" "${pkg}"
+    if [[ "${skip_sysext}" == "true" ]]; then
+        # Run build in a subshell so _die → exit 1 only kills the subshell,
+        # not the parent batch loop, and the shared container is preserved.
+        local _build_exit=0
+        ( _CLEANUP_CONTAINER=""; _build_in_container "${container_name}" "${pkg}" ) || _build_exit=$?
+        if [[ "${_build_exit}" -ne 0 ]]; then
+            _warn "Build de '${pkg}' en container compartido falló (exit ${_build_exit}) — continuando batch"
+            rm -f "/tmp/our-aur-baseline-${pkg}-$$.txt"
+            [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
+            return 1
+        fi
+    else
+        _build_in_container "${container_name}" "${pkg}"
+    fi
 
     # 5. Detectar paquetes nuevos
     pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-${pkg}-$$.txt"
@@ -516,6 +529,7 @@ _cmd_install_one() {
     # no new sysext or tracking needed; leave the container intact for the next package.
     if [[ "${skip_sysext}" == "true" ]]; then
         _msg "'${pkg}' disponible en container para deps. Sysext ya existente en host conservado."
+        rm -f "/tmp/our-aur-baseline-${pkg}-$$.txt" "/tmp/our-aur-after-${pkg}-$$.txt"
         [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
         return 0
     fi

@@ -532,10 +532,11 @@ cmd_install() {
             [[ "${answer,,}" == "yes" ]] || { log_info "Cancelled."; exit 1; }
         fi
 
-        # Set cleanup trap immediately after CRITICAL confirmation
+        # Backup pacman.conf for potential cleanup — trap installed after
+        # the network gate below so user-cancel / no-network exits don't
+        # trigger the CRITICAL rollback path before any change was made.
         _CRITICAL_PACMAN_CONF_BACKUP=$(mktemp /tmp/pacman.conf.bak.XXXXXX)
         cp /etc/pacman.conf "$_CRITICAL_PACMAN_CONF_BACKUP"
-        trap cleanup_critical ERR EXIT
 
     # ── HIGH flow ────────────────────────────────────────────────────────────
     elif [[ "$compat" == "high" ]]; then
@@ -598,6 +599,10 @@ cmd_install() {
         log_error "Connect to the internet and try again."
         exit 6
     fi
+
+    # Install CRITICAL cleanup trap only after network gate and final confirm
+    # so user-cancel (exit 1) and no-network (exit 6) don't trigger rollback.
+    [[ "${compat}" == "critical" ]] && trap cleanup_critical ERR EXIT
 
     local pkgs aur_pkgs
     mapfile -t pkgs   < <(yaml_list "$mf" "variants.${channel}.packages" 2>/dev/null)
@@ -779,6 +784,7 @@ cmd_search() {
 }
 
 cmd_upgrade() {
+    require_root
     log_info "Checking installed packs for updates..."
     local updated=0
 
@@ -852,7 +858,11 @@ dest, base = sys.argv[1], sys.argv[2].rstrip("/")
 with open(dest + "/index.yaml") as f:
     idx = yaml.safe_load(f) or {}
 for pack_id in idx.get("packs", []):
-    out = dest + "/" + pack_id + ".yaml"
+    # Reject pack_ids that would escape the destination directory.
+    out = os.path.normpath(os.path.join(dest, pack_id + ".yaml"))
+    if not out.startswith(os.path.normpath(dest) + os.sep):
+        print(f"  WARNING: skipping suspicious pack_id '{pack_id}'", file=sys.stderr)
+        continue
     urllib.request.urlretrieve(base + "/" + pack_id + ".yaml", out)
     print("  fetched", pack_id + ".yaml")
 PYEOF

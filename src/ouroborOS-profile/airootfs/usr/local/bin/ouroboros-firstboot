@@ -45,6 +45,11 @@ if [[ -f "$GUARD_FILE" ]]; then
     exit 0
 fi
 
+# Write guard first so a mid-run crash doesn't trigger an infinite re-run loop
+# on every subsequent boot. Sections below use || _warn to handle failures gracefully.
+mkdir -p "$GUARD_DIR"
+date -Iseconds > "$GUARD_FILE"
+
 _log "Starting first-boot setup..."
 
 # ── 1. Optimise pacman mirror list ───────────────────────────────────────────
@@ -199,7 +204,7 @@ if [[ -f "${AUR_QUEUE_FILE}" ]]; then
         while IFS= read -r aur_pkg; do
             [[ -z "${aur_pkg}" ]] && continue
             _log "Installing AUR package: ${aur_pkg}"
-            our-aur -S "${aur_pkg}" 2>&1 | _log || \
+            our-aur -S "${aur_pkg}" 2>&1 || \
                 _warn "Failed to install AUR package '${aur_pkg}' — try: sudo our-aur -S ${aur_pkg}"
         done <<< "$(tr ' ' '\n' < "${AUR_QUEUE_FILE}")"
         _log "AUR packages install complete."
@@ -210,6 +215,4 @@ if [[ -f "${AUR_QUEUE_FILE}" ]]; then
 fi
 
 # ── 5. Mark as done ──────────────────────────────────────────────────────────
-mkdir -p "$GUARD_DIR"
-date -Iseconds > "$GUARD_FILE"
-_log "First-boot setup complete. Guard written: ${GUARD_FILE}"
+_log "First-boot setup complete. Guard: ${GUARD_FILE}"

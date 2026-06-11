@@ -14,10 +14,14 @@ setup_our_dots_env() {
 
     export STUB_DIR="${TEST_DIR}/stubs"
     mkdir -p "$STUB_DIR"
+    # Save PATH before prepending stubs so teardown can fully restore it.
+    export _OUR_DOTS_SAVED_PATH="${PATH}"
     export PATH="${STUB_DIR}:${PATH}"
 }
 
 teardown_our_dots_env() {
+    [[ -n "${_OUR_DOTS_SAVED_PATH:-}" ]] && export PATH="${_OUR_DOTS_SAVED_PATH}"
+    unset _OUR_DOTS_SAVED_PATH
     rm -rf "${TEST_DIR:-/nonexistent_test_dir_safe}"
 }
 

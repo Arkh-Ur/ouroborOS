@@ -389,6 +389,7 @@ else
     # Writable root (live ISO or externally unlocked): no snapshot/lock needed,
     # but sysext may still overlay /usr as ro — unmerge before pacman writes.
     _sysext_unmerge_if_needed
+    trap '_sysext_remerge_if_needed 2>/dev/null || true' EXIT
     _msg "Running: pacman $* (writable root — live ISO or unlocked)"
     pac_exit=0
     /usr/bin/pacman "$@" || pac_exit=$?
