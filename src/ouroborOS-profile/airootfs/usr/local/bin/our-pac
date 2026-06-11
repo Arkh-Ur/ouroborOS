@@ -386,6 +386,12 @@ if is_immutable_root; then
 
     exit "$pacman_exit"
 else
+    # Writable root (live ISO or externally unlocked): no snapshot/lock needed,
+    # but sysext may still overlay /usr as ro — unmerge before pacman writes.
+    _sysext_unmerge_if_needed
     _msg "Running: pacman $* (writable root — live ISO or unlocked)"
-    exec /usr/bin/pacman "$@"
+    pac_exit=0
+    /usr/bin/pacman "$@" || pac_exit=$?
+    _sysext_remerge_if_needed
+    exit "$pac_exit"
 fi

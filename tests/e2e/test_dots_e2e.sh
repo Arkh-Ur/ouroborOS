@@ -132,7 +132,7 @@ run_test() {
         return 0
     else
         log_fail "$test_name (exit=$rc, $(( end - start ))s)"
-        $VERBOSE && cat /tmp/ouroboros-e2e-test.log 2>/dev/null
+        { $VERBOSE && cat /tmp/ouroboros-e2e-test.log 2>/dev/null; } || true
         (( total_fail++ )) || true
         return 1
     fi

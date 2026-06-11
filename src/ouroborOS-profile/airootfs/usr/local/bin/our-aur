@@ -471,14 +471,23 @@ _cmd_install_one() {
 
     # Verificar si ya está instalado
     local track_file="${DATA_DIR}/packages/${pkg}.json"
+    local skip_sysext=false
     if [[ -f "${track_file}" ]]; then
         local installed_ver
         installed_ver=$(python3 -c "import json; d=json.load(open('${track_file}')); print(d.get('version',''))" 2>/dev/null)
         if [[ "${installed_ver}" == "${aur_version}" ]]; then
-            _msg "'${pkg}' ya está instalado en la versión ${aur_version}. Nada que hacer."
-            return 0
+            if [[ -z "${ext_container}" ]]; then
+                # Single install: skip entirely
+                _msg "'${pkg}' ya está instalado en la versión ${aur_version}. Nada que hacer."
+                return 0
+            fi
+            # Batch install: still build in shared container so later packages can
+            # satisfy makedepends on this package — but skip sysext/tracking updates.
+            _msg "'${pkg}' ya instalado en host (${aur_version}). Construyendo en container para deps de batch..."
+            skip_sysext=true
+        else
+            _msg "Actualizando de ${installed_ver} → ${aur_version}"
         fi
-        _msg "Actualizando de ${installed_ver} → ${aur_version}"
     fi
 
     # 2. Container: reuse shared one if provided, else create a fresh one
@@ -502,6 +511,14 @@ _cmd_install_one() {
     # 5. Detectar paquetes nuevos
     pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-${pkg}-$$.txt"
     mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-${pkg}-$$.txt" "/tmp/our-aur-after-${pkg}-$$.txt")
+
+    # In batch mode with an already-installed package we built for dep resolution only —
+    # no new sysext or tracking needed; leave the container intact for the next package.
+    if [[ "${skip_sysext}" == "true" ]]; then
+        _msg "'${pkg}' disponible en container para deps. Sysext ya existente en host conservado."
+        [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
+        return 0
+    fi
 
     if [[ ${#new_pkgs[@]} -eq 0 ]]; then
         _warn "No se detectaron paquetes nuevos tras el build. Puede que ya estuvieran instalados."
