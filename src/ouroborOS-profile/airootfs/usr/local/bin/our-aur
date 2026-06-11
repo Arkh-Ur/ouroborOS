@@ -435,14 +435,29 @@ PYEOF
 
 _cmd_install() {
     [[ $# -gt 0 ]] || _die "Especificá un paquete: our-aur -S <paquete>"
+
+    if [[ $# -eq 1 ]]; then
+        _cmd_install_one "$1"
+        return
+    fi
+
+    # Multiple packages: share one container so earlier AUR packages satisfy
+    # makedepends of later ones (e.g. noctalia-qs needed by noctalia-shell).
+    local shared_name="batch-$$"
+    _create_build_container "${shared_name}"
+    _bootstrap_paru "${shared_name}"
+
     local pkg
     for pkg in "$@"; do
-        _cmd_install_one "${pkg}"
+        _cmd_install_one "${pkg}" "${shared_name}"
     done
+
+    _destroy_build_container "${shared_name}"
 }
 
 _cmd_install_one() {
     local pkg="${1:-}"
+    local ext_container="${2:-}"  # optional: pre-created shared container
     [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -S <paquete>"
 
     _msg "=== Instalando '${pkg}' desde AUR ==="
@@ -466,45 +481,49 @@ _cmd_install_one() {
         _msg "Actualizando de ${installed_ver} → ${aur_version}"
     fi
 
-    # 2. Crear contenedor efímero
-    local container_name="build-$$"
-    _create_build_container "${container_name}"
+    # 2. Container: reuse shared one if provided, else create a fresh one
+    local container_name own_container=false
+    if [[ -n "${ext_container}" ]]; then
+        container_name="${ext_container}"
+    else
+        container_name="build-$$"
+        _create_build_container "${container_name}"
+        _bootstrap_paru "${container_name}"
+        own_container=true
+    fi
 
-    # 3. Bootstrap paru
-    _bootstrap_paru "${container_name}"
-
-    # 4. Registrar baseline de paquetes
+    # 3. Registrar baseline de paquetes
     local container="${BUILD_ROOT}/${container_name}"
-    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-$$.txt"
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-${pkg}-$$.txt"
 
-    # 5. Build
+    # 4. Build
     _build_in_container "${container_name}" "${pkg}"
 
-    # 6. Detectar paquetes nuevos
-    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-$$.txt"
-    mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-$$.txt" "/tmp/our-aur-after-$$.txt")
+    # 5. Detectar paquetes nuevos
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-${pkg}-$$.txt"
+    mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-${pkg}-$$.txt" "/tmp/our-aur-after-${pkg}-$$.txt")
 
     if [[ ${#new_pkgs[@]} -eq 0 ]]; then
         _warn "No se detectaron paquetes nuevos tras el build. Puede que ya estuvieran instalados."
-        _destroy_build_container "${container_name}"
+        [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
         return 0
     fi
 
     _msg "Paquetes nuevos detectados: ${new_pkgs[*]}"
 
-    # 7. Crear sysext
+    # 6. Crear sysext
     _create_sysext "${pkg}" "${container_name}" "${new_pkgs[@]}"
 
-    # 8. Activar sysext
+    # 7. Activar sysext
     _sysext_refresh
 
-    # 9. Guardar tracking
+    # 8. Guardar tracking
     _save_tracking "${pkg}" "${aur_version}" "${new_pkgs[@]}"
 
-    # 10. Destruir contenedor
-    _destroy_build_container "${container_name}"
+    # 9. Destruir contenedor solo si lo creamos nosotros
+    [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
 
-    # 11. Registrar en el manifiesto declarativo
+    # 10. Registrar en el manifiesto declarativo
     update_system_yaml_packages "add" "${pkg}"
 
     _msg "=== '${pkg}' instalado correctamente como extensión sysext ==="

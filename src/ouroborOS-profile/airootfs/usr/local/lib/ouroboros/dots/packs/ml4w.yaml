@@ -29,7 +29,6 @@ variants:
       git clone --depth 1 https://github.com/mylinuxforwork/dotfiles /tmp/ml4w-dotfiles-installer
     post_deploy: |
       cp -rn /tmp/ml4w-dotfiles-installer/dotfiles/. "${HOME}/"
-      rm -rf /tmp/ml4w-dotfiles-installer
     version_hint: "2.13"
 
 uninstall:
