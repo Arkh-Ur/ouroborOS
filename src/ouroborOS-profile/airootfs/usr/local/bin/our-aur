@@ -65,7 +65,7 @@ _aur_search() {
     local encoded_query
     encoded_query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${query}")
     local response
-    response=$(curl --silent --fail --max-time 10 \
+    response=$(curl --silent --fail --max-time 30 \
         "${AUR_RPC}/search/${encoded_query}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
@@ -103,7 +103,7 @@ for pkg in sorted(results, key=lambda x: -x.get('NumVotes', 0))[:25]:
 _aur_info() {
     local pkg="$1"
     local response
-    response=$(curl --silent --fail --max-time 10 \
+    response=$(curl --silent --fail --max-time 30 \
         "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
@@ -145,15 +145,20 @@ if makedeps:
 # Retorna solo la versión de un paquete AUR (para upgrade check)
 _aur_version() {
     local pkg="$1"
-    curl --silent --fail --max-time 10 \
-        "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
-        2>/dev/null | python3 -c "
+    local result i
+    for i in 1 2 3; do
+        result=$(curl --silent --fail --max-time 30 \
+            "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
+            2>/dev/null | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 results = data.get('results', [])
 if results:
     print(results[0].get('Version', ''))
-" 2>/dev/null || echo ""
+" 2>/dev/null) && break
+        [[ $i -lt 3 ]] && sleep 3
+    done
+    echo "${result:-}"
 }
 
 # ── Container lifecycle ───────────────────────────────────────────────────────

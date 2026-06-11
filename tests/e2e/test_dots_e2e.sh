@@ -36,12 +36,12 @@ PACKS_TO_TEST=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --all)       PACKS_TO_TEST=("${ALL_PACKS[@]}"); shift ;;
-        --pack)      PACKS_TO_TEST=("$2"); shift 2 ;;
+        --pack)      PACKS_TO_TEST+=("$2"); shift 2 ;;
         --verbose)   VERBOSE=true; shift ;;
         --json)      JSON_OUTPUT=true; shift ;;
         -h|--help)
             echo "Usage: $0 --all [--verbose] [--json]"
-            echo "       $0 --pack <id> [--verbose] [--json]"
+            echo "       $0 --pack <id> [--pack <id2> ...] [--verbose] [--json]"
             echo ""
             echo "Packs: ${ALL_PACKS[*]}"
             exit 0 ;;
@@ -216,7 +216,8 @@ for p in block.get("aur", []):
     print(p)
 PYEOF
     ); do
-        if ! pacman -Q "$pkg" &>/dev/null; then
+        if ! pacman -Q "$pkg" &>/dev/null && \
+           ! [[ -f "/var/lib/our-aur/packages/${pkg}.json" ]]; then
             log_info "T7: AUR package '$pkg' not found"
             aur_missing=$(( aur_missing + 1 ))
         fi

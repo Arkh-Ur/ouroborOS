@@ -22,18 +22,18 @@ compatibility:
 variants:
   stable:
     packages: []
-    aur: [noctalia-shell]
+    aur: [noctalia-qs, noctalia-shell]
     post_deploy: null
     version_hint: "v4 (stable)"
   git:
     packages: []
-    aur: [noctalia-shell-git]
+    aur: [noctalia-qs, noctalia-shell-git]
     post_deploy: null
     version_hint: "git (bleeding edge)"
 
 uninstall:
   packages: []
-  aur: [noctalia-shell, noctalia-shell-git]
+  aur: [noctalia-shell, noctalia-shell-git, noctalia-qs]
   post_remove: null
   remove_config: false
 

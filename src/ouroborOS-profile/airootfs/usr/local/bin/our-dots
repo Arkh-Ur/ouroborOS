@@ -379,8 +379,8 @@ PYEOF
 # ── Commands ───────────────────────────────────────────────────────────────────
 
 cmd_list() {
-    printf "%-22s %-14s %-10s %-12s %s\n" "NAME" "DE" "COMPAT" "CHANNEL" "INSTALLED"
-    printf "%s\n" "------------------------------------------------------------------------------"
+    printf "%-22s %-22s %-14s %-10s %-12s %s\n" "ID" "NAME" "DE" "COMPAT" "CHANNEL" "INSTALLED"
+    printf "%s\n" "--------------------------------------------------------------------------------------------"
 
     local manifests=()
     while IFS= read -r -d '' f; do manifests+=("$f"); done \
@@ -406,7 +406,7 @@ cmd_list() {
         else
             installed="-"
         fi
-        printf "%-22s %-14s %-10s %-12s %s\n" "$display_name" "${profiles:-?}" "$compat" "$channel" "$installed"
+        printf "%-22s %-22s %-14s %-10s %-12s %s\n" "$id" "$display_name" "${profiles:-?}" "$compat" "$channel" "$installed"
     done
 }
 
@@ -615,6 +615,24 @@ cmd_install() {
         our-aur -S "${aur_pkgs[@]}" 2>&1 | tee -a "$logfile" || {
             log_error "AUR install failed. Check $logfile"
             exit 3
+        }
+    fi
+
+    # deploy script runs as root (git clone, downloads, system-level prep)
+    local deploy
+    deploy=$(python3 - "$mf" "$channel" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+v = (d.get("variants") or {}).get(sys.argv[2]) or {}
+print((v.get("deploy") or "").strip())
+PYEOF
+    )
+    if [[ -n "$deploy" ]]; then
+        log_info "Running deploy script..."
+        bash -c "$deploy" 2>&1 | tee -a "$logfile" || {
+            log_error "deploy script failed. Check $logfile"
+            exit 4
         }
     fi
 
