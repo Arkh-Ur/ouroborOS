@@ -49,7 +49,22 @@ _show_menu() {
 
 _launch_tui() {
     printf '\033[2J\033[H'
-    exec /usr/local/bin/ouroborOS-installer
+    # Run as child process (NOT exec) so if it crashes we fall back to
+    # the menu or a shell instead of ending the session and looping.
+    /usr/local/bin/ouroborOS-installer
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        printf '\n\n\033[31m[!] Installer exited with code %d.\033[0m\n' "$rc"
+        printf '\033[33m    Dropping to shell. Type "ouroboros-install" to retry.\033[0m\n\n'
+        export OUROBOROS_SHELL_SESSION=1
+        if [[ -r "$SHELL_RCFILE" ]]; then
+            exec /bin/bash --rcfile "$SHELL_RCFILE"
+        else
+            exec /bin/bash
+        fi
+    fi
+    # Success — exit cleanly
+    exit 0
 }
 
 _launch_shell() {
@@ -66,7 +81,14 @@ _launch_shell() {
 
 _launch_gui() {
     printf '\033[2J\033[H'
-    exec /usr/local/bin/ouroborOS-installer --gui
+    /usr/local/bin/ouroborOS-installer --gui
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        printf '\n\n\033[31m[!] Installer exited with code %d.\033[0m\n' "$rc"
+        export OUROBOROS_SHELL_SESSION=1
+        exec /bin/bash
+    fi
+    exit 0
 }
 
 # Terminal setup — restore on exit/signal.

@@ -431,16 +431,25 @@ class Installer:
         else:
             checks.append(("Internet connectivity", self._check_network))
 
+        # Connectivity is the ONLY non-fatal check — install works offline
+        # because all packages are available on the ISO's pacstrap cache.
+        _non_fatal_checks = {"Internet connectivity"}
+
         self._update_progress(State.PREFLIGHT, 0, "Iniciando verificación...")
 
         failed = []
+        warnings = []
         for i, (name, check_fn) in enumerate(checks):
             try:
                 check_fn()
                 log.info("Preflight check passed: %s", name)
             except InstallerError as exc:
-                log.warning("Preflight check failed: %s — %s", name, exc)
-                failed.append(f"{name}: {exc}")
+                if name in _non_fatal_checks:
+                    log.warning("Preflight warning (non-fatal): %s — %s", name, exc)
+                    warnings.append(f"{name}: {exc}")
+                else:
+                    log.warning("Preflight check failed: %s — %s", name, exc)
+                    failed.append(f"{name}: {exc}")
             self._update_progress(
                 State.PREFLIGHT,
                 int((i + 1) / len(checks) * 100),
@@ -449,6 +458,8 @@ class Installer:
 
         if failed:
             raise InstallerError("Preflight checks failed:\n" + "\n".join(failed))
+        if warnings:
+            log.warning("Continuing despite warnings: %s", "; ".join(warnings))
 
         # Thunderbolt auto-detect — silent, no UI, drives configure.sh
         try:
