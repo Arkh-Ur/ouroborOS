@@ -219,6 +219,13 @@ EOF
     trap '_cleanup_e2e' EXIT
     log_ok "E2E config injected from: ${E2E_CONFIG}"
     log_warn "This ISO is for testing only — NOT for production use."
+
+    # Inject ouroborOS.config= into boot cmdline for unattended boot.
+    _ENTRY="${PROFILE_DIR}/efiboot/loader/entries/01-ouroborOS.conf"
+    if [[ -f "${_ENTRY}" ]] && ! grep -q "ouroborOS.config=" "${_ENTRY}"; then
+        sed -i "/^options/s/$/ ouroborOS.config=\/etc\/ouroborOS\/e2e-config.yaml/" "${_ENTRY}"
+        log_ok "Boot cmdline: injected ouroborOS.config=e2e-config.yaml"
+    fi
 fi
 
 # ── Sync installer modules to profile ──────────────────────────────────────
@@ -287,6 +294,8 @@ inject_version() {
     if [[ -f "$entry1" ]]; then
         sed -i "s/^title   ouroborOS [^(]*/title   ouroborOS ${VERSION} /" "$entry1"
         sed -i 's/  $//' "$entry1"
+        # Clean stale ouroborOS.config= from previous test builds
+        sed -i '/ouroborOS.config=/d' "$entry1"
         log_ok "boot entry 01: title → ouroborOS ${VERSION}"
     fi
 
@@ -296,6 +305,16 @@ inject_version() {
     fi
 }
 inject_version
+
+# Re-inject ouroborOS.config= after version injection cleaned the cmdline.
+# This handles the case where --version and --e2e-config are both passed.
+if [[ -n "${E2E_CONFIG}" ]]; then
+    _ENTRY="${PROFILE_DIR}/efiboot/loader/entries/01-ouroborOS.conf"
+    if [[ -f "${_ENTRY}" ]] && ! grep -q "ouroborOS.config=" "${_ENTRY}"; then
+        sed -i "/^options/s/$/ ouroborOS.config=\/etc\/ouroborOS\/e2e-config.yaml/" "${_ENTRY}"
+        log_ok "Boot cmdline: re-injected ouroborOS.config=e2e-config.yaml after version stamp"
+    fi
+fi
 
 # ── Offline Package Cache ─────────────────────────────────────────────────────
 # Pre-downloads packages into the airootfs so the installer can work
