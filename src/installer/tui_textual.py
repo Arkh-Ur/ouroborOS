@@ -67,9 +67,9 @@ LOCALE_CATALOG: list[tuple[str, str, str]] = [
     ("Nederlands", "nl_NL", "nl_NL"),
     ("Polski", "pl_PL", "pl_PL"),
     ("Русский", "ru_RU", "ru_RU"),
-    ("中文 (简体)", "zh_CN", "zh_CN"),
-    ("中文 (繁體)", "zh_TW", "zh_CN"),
-    ("日本語", "ja_JP", "ja_JP"),
+    ("Chinese (Simplified)", "zh_CN", "zh_CN"),
+    ("Chinese (Traditional)", "zh_TW", "zh_CN"),
+    ("Japanese", "ja_JP", "ja_JP"),
     ("Türkçe", "tr_TR", "tr_TR"),
 ]
 
