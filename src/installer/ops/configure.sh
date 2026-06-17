@@ -566,12 +566,24 @@ configure_tpm2() {
 
     log_info "Enrolling LUKS partition ${LUKS_PARTITION} with TPM2 (PCR 7+14)..."
 
-    if ! arch-chroot "${TARGET}" \
+    # Check if TPM2 device is actually accessible from the host.
+    # Inside arch-chroot, /dev/tpm* may not be available, causing
+    # systemd-cryptenroll to hang indefinitely waiting for the device.
+    if [[ ! -e /dev/tpm0 ]] && [[ ! -e /dev/tpmrm0 ]]; then
+        log_warn "No TPM2 device found (/dev/tpm0, /dev/tpmrm0) — skipping enrollment."
+        log_warn "You can enroll manually after reboot:"
+        log_warn "  sudo ouroboros-secureboot tpm2-enroll"
+        return 0
+    fi
+
+    # Run with a 30-second timeout — if cryptenroll hangs (e.g. TPM2
+    # device exists but is unresponsive), abort gracefully.
+    if ! timeout --preserve-status 30 arch-chroot "${TARGET}" \
         systemd-cryptenroll \
             --tpm2-device=auto \
             --tpm2-pcrs=7+14 \
             "${LUKS_PARTITION}" 2>/dev/null; then
-        log_warn "systemd-cryptenroll failed — TPM2 may not be available in this environment."
+        log_warn "systemd-cryptenroll failed or timed out — TPM2 may not be available in this environment."
         log_warn "You can enroll manually after reboot:"
         log_warn "  sudo ouroboros-secureboot tpm2-enroll"
         return 0
