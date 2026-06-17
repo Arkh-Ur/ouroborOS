@@ -44,4 +44,5 @@ file_permissions=(
   ["/usr/local/bin/ouroboros-update"]="0:0:755"
   ["/usr/local/bin/ouroboros-health"]="0:0:755"
   ["/usr/local/bin/ouroboros-reinstall"]="0:0:755"
+  ["/usr/share/kbd/consolefonts/ouroborOS-unifont.psfu"]="0:0:644"
 )
