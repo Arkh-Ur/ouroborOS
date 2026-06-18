@@ -218,6 +218,18 @@ migrate() {
 {"userName":"${HOMED_USERNAME}","secret":{"password":["${HOMED_PASSWORD}"]}}
 IDENTITY_EOF
 
+    # Check if user exists as classic user in /etc/passwd
+    # homectl create fails if the username already exists in NSS database.
+    # We must remove the classic user entry first.
+    if id "$HOMED_USERNAME" &>/dev/null; then
+        log_warn "Classic user '$HOMED_USERNAME' exists in /etc/passwd. Removing before homed create..."
+        userdel -r "$HOMED_USERNAME" 2>/dev/null || {
+            log_error "Failed to remove classic user '$HOMED_USERNAME'."
+            rollback "after_backup"
+        }
+        log_ok "Classic user '$HOMED_USERNAME' removed. Proceeding with homed create."
+    fi
+
     log_info "Creating systemd-homed identity (non-interactive)..."
     local homectl_out
     if ! homectl_out=$(homectl "${homectl_args[@]}" --identity="$identity_json" 2>&1); then
