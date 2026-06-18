@@ -1127,6 +1127,8 @@ if HAS_TEXTUAL:
                               value=self._buffer.tpm2_unlock, id="radio-tpm2")
             yield NavRadioButton(_("FIDO2 PAM authentication"),
                               value=self._buffer.fido2_pam, id="radio-fido2")
+            yield NavRadioButton(_("Enable SSH server (openssh)"),
+                              value=self._buffer.enable_ssh, id="radio-ssh")
             yield Label("")
             with Horizontal(classes="button-row"):
                 yield NavButton(_("Back"), classes="btn-back")
@@ -1144,21 +1146,26 @@ if HAS_TEXTUAL:
         def _on_fido2(self, event: RadioButton.Changed) -> None:
             self._buffer.fido2_pam = event.value
 
+        @on(RadioButton.Changed, "#radio-ssh")
+        def _on_ssh(self, event: RadioButton.Changed) -> None:
+            self._buffer.enable_ssh = event.value
+
         @on(Button.Pressed, "#btn-security-apply")
         def _apply(self) -> None:
-            # Buffer-only: show_secure_boot/tpm2_unlock/fido2_pam read the buffer
+            # Buffer-only: show_secure_boot/tpm2_unlock/fido2_pam/enable_ssh read the buffer
             # (non-blocking). RadioButton.Changed already kept the buffer in sync;
             # this re-reads defensively in case an event was missed.
             try:
                 self._buffer.secure_boot = self.query_one("#radio-secure-boot", RadioButton).value
                 self._buffer.tpm2_unlock = self.query_one("#radio-tpm2", RadioButton).value
                 self._buffer.fido2_pam = self.query_one("#radio-fido2", RadioButton).value
+                self._buffer.enable_ssh = self.query_one("#radio-ssh", RadioButton).value
             except NoMatches:
                 return
             self.screen.action_focus_menu()
 
     class NetworkPane(Static):
-        """Edit pane for WiFi (scanned SSID + manual fallback), SSH, passphrase preview."""
+        """Edit pane for WiFi (scanned SSID + manual fallback) and passphrase preview."""
 
         DEFAULT_CSS = "NetworkPane { padding: 1 2; }"
 
@@ -1184,8 +1191,6 @@ if HAS_TEXTUAL:
             yield Label(_("WiFi passphrase:"))
             yield Input(value=self._buffer.wifi_passphrase, id="input-wifi-pass", password=True)
             yield NavRadioButton(_("Show passphrase"), value=False, id="radio-show-pass")
-            yield Label("")
-            yield NavRadioButton(_("Enable SSH"), value=self._buffer.enable_ssh, id="radio-ssh")
             yield Label("")
             with Horizontal(classes="button-row"):
                 yield NavButton(_("Back"), classes="btn-back")

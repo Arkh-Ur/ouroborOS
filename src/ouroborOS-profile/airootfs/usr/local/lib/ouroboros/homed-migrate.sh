@@ -221,8 +221,14 @@ IDENTITY_EOF
     # Check if user exists as classic user in /etc/passwd
     # homectl create fails if the username already exists in NSS database.
     # We must remove the classic user entry first.
+    # IMPORTANT: Save user info for rollback in case homectl create fails.
     if id "$HOMED_USERNAME" &>/dev/null; then
         log_warn "Classic user '$HOMED_USERNAME' exists in /etc/passwd. Removing before homed create..."
+        # Save user info for potential rollback
+        CLASSIC_USER_SHELL=$(getent passwd "$HOMED_USERNAME" | cut -d: -f7)
+        CLASSIC_USER_GROUPS=$(id -Gn "$HOMED_USERNAME" 2>/dev/null | tr ' ' ',')
+        export CLASSIC_USER_SHELL CLASSIC_USER_GROUPS
+
         userdel -r "$HOMED_USERNAME" 2>/dev/null || {
             log_error "Failed to remove classic user '$HOMED_USERNAME'."
             rollback "after_backup"
