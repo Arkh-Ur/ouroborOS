@@ -116,7 +116,11 @@ fi
 
 # systemd-sysext — merge AUR sysext extensions installed by our-aur
 # Extensions live in /var/lib/extensions/our-aur-*/
-if systemctl enable --now systemd-sysext 2>/dev/null; then
+# Enable systemd-sysext (may fail to start if no extensions exist yet)
+systemctl enable systemd-sysext 2>/dev/null || true
+# Start systemd-sysext explicitly (skip trigger conditions)
+systemctl start systemd-sysext 2>/dev/null || true
+if systemctl is-active systemd-sysext >/dev/null 2>&1; then
     _log "systemd-sysext enabled and started (AUR extensions merged)."
 else
     _warn "systemd-sysext not available — our-aur extensions won't auto-merge on boot."
