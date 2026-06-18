@@ -293,13 +293,16 @@ configure_bootloader() {
         return 1
     fi
 
-    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0 console=ttyS0,115200"
+    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
-        local luks_uuid=""
+        local luks_uuid="" local luks_name=""
         if [[ -f "${TARGET}/etc/crypttab" ]]; then
             luks_uuid=$(awk '{print $2}' "${TARGET}/etc/crypttab" | sed 's/UUID=//')
-            kernel_params="rd.luks.uuid=${luks_uuid} ${kernel_params}"
+            luks_name=$(awk '{print $1}' "${TARGET}/etc/crypttab")
+            # rd.luks.name maps UUID→mapper name so initramfs creates /dev/mapper/ouroboros-root
+            # matching crypttab — required for root=UUID= to find the btrfs volume.
+            kernel_params="rd.luks.uuid=${luks_uuid} rd.luks.name=${luks_uuid}=${luks_name} ${kernel_params}"
         fi
     fi
 
