@@ -261,14 +261,14 @@ _create_sysext() {
 
     _msg "Creando extensión sysext: ${sysext_name}"
 
-    # Extract /usr/* files for each new package.
+    # Extract /usr/* and /opt/* files for each new package.
     # pacman --root="${container}" -Ql returns FULL host paths (root-prefixed), not
     # container-relative paths. Strip the container prefix before checking /usr/*.
     for p in "${new_pkgs[@]}"; do
         _msg "  Extrayendo archivos de: ${p}"
         while IFS= read -r full_path; do
             local rel_path="${full_path#"${container}"}"
-            if [[ "${rel_path}" == /usr/* ]] && [[ -f "${full_path}" || -L "${full_path}" ]]; then
+            if [[ ("${rel_path}" == /usr/* || "${rel_path}" == /opt/*) ]] && [[ -f "${full_path}" || -L "${full_path}" ]]; then
                 local dest_dir
                 dest_dir="${staging}$(dirname "${rel_path}")"
                 mkdir -p "${dest_dir}"
