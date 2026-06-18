@@ -179,6 +179,11 @@ class SecurityConfig:
     #   our-fido2 pam register --system
     fido2_pam: bool = False
 
+    # SSH server (openssh) enablement.
+    # When true, installs and enables sshd.service for remote access.
+    # SSH key generation happens during first boot.
+    enable_ssh: bool = False
+
     # Dual-boot support.
     # When true, the installer scans the ESP for existing OS boot entries and
     # generates a systemd-boot entry for Windows (if found).
@@ -564,7 +569,6 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
     cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
     cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
-    cfg.network.enable_ssh = bool(net.get("enable_ssh", False))
     wifi_cfg = net.get("wifi", {}) or {}
     cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
     cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))
@@ -597,6 +601,7 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
     cfg.security.tpm2_unlock = bool(sec.get("tpm2_unlock", False))
     cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
+    cfg.security.enable_ssh = bool(sec.get("enable_ssh", False))
     cfg.security.dual_boot = bool(sec.get("dual_boot", False))
     cfg.security.root_password = str(data.get("root_password", ""))
 
