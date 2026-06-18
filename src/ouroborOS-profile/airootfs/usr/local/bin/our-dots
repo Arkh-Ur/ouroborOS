@@ -604,6 +604,26 @@ cmd_install() {
     # so user-cancel (exit 1) and no-network (exit 6) don't trigger rollback.
     [[ "${compat}" == "critical" ]] && trap cleanup_critical ERR EXIT
 
+    # Check for install_script (script-based installation)
+    local install_script
+    install_script=$(python3 - "$mf" "$channel" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+v = (d.get("variants") or {}).get(sys.argv[2]) or {}
+print((v.get("install_script") or "").strip())
+PYEOF
+    )
+
+    if [[ -n "$install_script" ]]; then
+        log_info "Installing pack via install_script..."
+        if ! bash -c "$install_script" 2>&1 | tee -a "$logfile"; then
+            log_error "install_script failed. Check $logfile"
+            exit 3
+        fi
+        log_info "install_script completed successfully"
+    fi
+
     local pkgs aur_pkgs
     mapfile -t pkgs   < <(yaml_list "$mf" "variants.${channel}.packages" 2>/dev/null)
     mapfile -t aur_pkgs < <(yaml_list "$mf" "variants.${channel}.aur" 2>/dev/null)
