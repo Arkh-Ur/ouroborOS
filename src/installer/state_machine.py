@@ -606,13 +606,10 @@ class Installer:
             self._update_progress(State.DOTS_PACK, 100)
             return
 
-        # Condition 4: offline (packs require internet to clone/install)
-        if not self._has_internet():
-            log.info("DOTS_PACK: no internet connectivity — skipping dotfiles pack selection.")
-            self.config.dots_pack.pack = None
-            self.config.dots_pack.channel = "stable"
-            self._update_progress(State.DOTS_PACK, 100)
-            return
+        # Condition 4 removed: the TUI (show_dots_pack_selection) already handles
+        # offline mode — it shows packs with a warning tag "[offline]" and the
+        # state_machine's install step will skip package install when offline.
+        # Skipping here hid the entire menu from users who simply weren't online.
 
         if self.tui:
             result = self.tui.show_dots_pack_selection(self.config.desktop.profile)
