@@ -1286,6 +1286,102 @@ if HAS_TEXTUAL:
             self._buffer.enable_ssh = ssh
             self.screen.action_focus_menu()
 
+    class DotsPane(Static):
+        """Dotfiles pack selection pane.
+
+        Shows available dotfiles packs from the catalog, filtered by the
+        selected desktop profile. Each pack has a compatibility level and
+        supports stable/git variants.
+        """
+
+        DEFAULT_CSS = "DotsPane { padding: 1 2; }"
+
+        def __init__(self, buffer: TUIBuffer, response_queue: queue.Queue[Any], **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self._buffer = buffer
+            self._q = response_queue
+            self._packs: list[Any] = []
+            self._load_packs()
+
+        def _load_packs(self) -> None:
+            """Load dotfiles packs compatible with current profile."""
+            from installer.dots_profiles import load_catalog, packs_for_profile  # noqa: PLC0415
+
+            profile = self._buffer.desktop_profile or "minimal"
+            self._packs = packs_for_profile(profile)
+            # Fallback: if no packs match, show all with a warning
+            if not self._packs:
+                self._packs = load_catalog()
+
+        @staticmethod
+        def _pack_label(pack: Any) -> str:
+            """Format a pack for the Select dropdown: name + description."""
+            compat_emoji = {
+                "critical": "🔴",
+                "high": "🟠",
+                "medium": "🟡",
+                "low": "🟢",
+            }.get(getattr(pack, "compatibility", "medium"), "⚪")
+            return f"{compat_emoji} {pack.name} — {pack.description}"
+
+        def compose(self) -> ComposeResult:
+            from installer.dots_profiles import DotsPack  # noqa: PLC0415
+
+            # Build options: (label, pack_id)
+            pack_options = [(self._pack_label(p), p.id) for p in self._packs]
+            # Add "None" option first
+            all_options = [("— Skip dotfiles —", "")] + pack_options
+
+            current_pack = self._buffer.dots_pack_id or ""
+            current_channel = self._buffer.dots_pack_channel or "stable"
+
+            yield Label(_("Dot/Packs"), classes="section-title")
+            yield Label("")
+            yield Label(_("Dotfiles pack (optional):"))
+            yield NavSelect(
+                all_options,
+                value=current_pack if current_pack in [v for _, v in all_options] else "",
+                allow_blank=True,
+                id="select-dots-pack",
+            )
+            yield Label(_("Channel:"))
+            yield NavSelect(
+                [
+                    ("Stable — Recommended for most users", "stable"),
+                    ("Git — Latest version from git repository", "git"),
+                ],
+                value=current_channel if current_channel in ["stable", "git"] else "stable",
+                allow_blank=False,
+                id="select-dots-channel",
+            )
+            yield Label("")
+            with Horizontal(classes="button-row"):
+                yield NavButton(_("Back"), classes="btn-back")
+                yield NavButton(_("Apply"), id="btn-dots-apply", classes="primary")
+
+        def _sync(self) -> None:
+            """Write current widget values to the buffer."""
+            try:
+                pack_sel = self.query_one("#select-dots-pack", Select)
+                channel_sel = self.query_one("#select-dots-channel", Select)
+            except NoMatches:
+                return
+            if pack_sel.value is Select.BLANK:
+                self._buffer.dots_pack_id = ""
+            else:
+                self._buffer.dots_pack_id = str(pack_sel.value)
+            self._buffer.dots_pack_channel = str(channel_sel.value)
+
+        @on(Select.Changed, "#select-dots-pack, #select-dots-channel")
+        def _on_select_changed(self, event: Select.Changed) -> None:
+            self._sync()
+
+        @on(Button.Pressed, "#btn-dots-apply")
+        def _apply(self) -> None:
+            self._sync()
+            self.screen.action_focus_menu()
+
+
     class PreviewPane(Static):
         """Default right-panel content: shows current buffer summary."""
 
@@ -1296,7 +1392,7 @@ if HAS_TEXTUAL:
             self._buffer = buffer
 
         # Order mirrors the menu: Localization, Disk, Hostname, Users,
-        # Environment, Network, Security.
+        # Environment, Dots, Network, Security.
         _ROWS = (
             "locale", "keymap", "timezone",
             "disk", "luks",
@@ -1304,6 +1400,7 @@ if HAS_TEXTUAL:
             "users", "root",
             "shell", "desktop", "dm", "gpu",
             "ssid", "ssh",
+            "dots",
             "secureboot", "tpm2", "fido2",
         )
 
@@ -1339,6 +1436,7 @@ if HAS_TEXTUAL:
                 "gpu": (f"GPU        : {b.gpu_driver}", True),
                 "ssid": (f"WiFi SSID  : {b.wifi_ssid or '(none)'}", bool(b.wifi_ssid)),
                 "ssh": (f"SSH        : {'Enabled' if b.enable_ssh else 'Disabled'}", b.enable_ssh),
+                "dots": (f"Dot/Packs  : {b.dots_pack_id or '(none)'}", bool(b.dots_pack_id)),
                 "secureboot": (f"Secure Boot: {'Yes' if b.secure_boot else 'No'}", b.secure_boot),
                 "tpm2": (f"TPM2 unlock: {'Yes' if b.tpm2_unlock else 'No'}", b.tpm2_unlock),
                 "fido2": (f"FIDO2 PAM  : {'Yes' if b.fido2_pam else 'No'}", b.fido2_pam),
@@ -1507,6 +1605,7 @@ if HAS_TEXTUAL:
             ("users", "Users & Authentication"),
             ("environment", "Environment"),
             ("network", "Network"),
+            ("dots", "Dot/Packs"),
             ("security", "Security"),
             ("separator", "───────────────────"),
             ("install", "Install"),
@@ -1559,6 +1658,7 @@ if HAS_TEXTUAL:
                         yield EnvironmentPane(self._buffer, self._q, id="pane-environment")
                         yield SecurityPane(self._buffer, self._q, id="pane-security")
                         yield NetworkPane(self._buffer, self._q, id="pane-network")
+                        yield DotsPane(self._buffer, self._q, id="pane-dots")
                         yield ProgressPane(id="pane-progress")
                         yield DonePane(self._buffer, self._q, id="pane-done")
             yield Footer()

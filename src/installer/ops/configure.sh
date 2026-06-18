@@ -994,6 +994,36 @@ STUB
     done
     unset _p3_tools _tool _src
 
+    # Copy our-dots manifests and catalog
+    # The our-dots tool requires YAML manifests to function (pack catalog).
+    # These live in /usr/local/lib/ouroboros/dots/ on the ISO and must be
+    # copied to the installed system; our-dots itself cannot work without them.
+    local _dots_src="/usr/local/lib/ouroboros/dots"
+    if [[ -d "${_dots_src}" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp -r "${_dots_src}" "${TARGET}/usr/local/lib/ouroboros/"
+        log_ok "our-dots manifests installed (pack catalog)."
+    else
+        log_warn "our-dots manifests not found at ${_dots_src} — our-dots will not work."
+    fi
+    unset _dots_src
+
+
+    # Copy our-dots manifests and catalog
+    # The our-dots tool requires YAML manifests to function (pack catalog).
+    # These live in /usr/local/lib/ouroboros/dots/ on the ISO and must be
+    # copied to the installed system; our-dots itself cannot work without them.
+    local _dots_src="/usr/local/lib/ouroboros/dots"
+    if [[ -d "${_dots_src}" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp -r "${_dots_src}" "${TARGET}/usr/local/lib/ouroboros/"
+        log_ok "our-dots manifests installed (pack catalog)."
+    else
+        log_warn "our-dots manifests not found at ${_dots_src} — our-dots will not work."
+    fi
+    unset _dots_src
+
+
     # our-app XDG integration snippet — prepends the @var AppImage share dir to
     # XDG_DATA_DIRS so installed .desktop files / icons are visible without
     # touching read-only /usr. Lives in /etc (writable) and must be copied

@@ -186,6 +186,17 @@ migrate() {
         rollback "before_backup"
     fi
 
+    # Check if user already exists as a systemd-homed identity
+    # If so, we cannot use "homectl create" — it will fail with "user exists in NSS".
+    # We use "homectl update" instead, or skip migration entirely if already homed.
+    if homectl list 2>/dev/null | grep -q "^${HOMED_USERNAME}"; then
+        log_warn "User '${HOMED_USERNAME}' is already a systemd-homed identity. Skipping migration."
+        log_ok "User '${HOMED_USERNAME}' remains as a homed-managed user (no action needed)."
+        rm -f "$FLAG_FILE" 2>/dev/null || true
+        systemctl disable ouroboros-homed-migration.service 2>/dev/null || true
+        exit 0
+    fi
+
     # Step 3: Create the homed identity with JSON identity (non-interactive)
     local homectl_args=(
         create "$HOMED_USERNAME"

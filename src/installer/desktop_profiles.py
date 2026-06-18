@@ -19,7 +19,7 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "hyprland",
         "xdg-desktop-portal-hyprland",
         "waybar",
-        "foot",
+        "kitty",                # terminal emulator (replaces foot)
         "hyprlauncher",         # Hypr ecosystem launcher (replaces wofi)
         "hyprpolkitagent",
         "hyprlock",             # lock screen — Hypr ecosystem (in extra)
@@ -30,14 +30,14 @@ PROFILE_PACKAGES: dict[str, list[str]] = {
         "dunst",                # notifications (no Hypr-native notif daemon in extra)
         "grim",                 # screenshot backend
         "slurp",                # region selector for screenshots
-        "thunar",               # file manager (lighter than dolphin, no KDE deps)
+        "dolphin",              # file manager (KDE, better than thunar)
         "qt5-wayland",
         "qt6-wayland",
     ],
     "niri": [
         "niri",
         "xdg-desktop-portal-gnome",
-        "foot",
+        "kitty",                # terminal emulator (replaces foot)
         "fuzzel",
         "polkit-gnome",
         "waybar",          # status bar — essential for a tiling WM
