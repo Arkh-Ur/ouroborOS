@@ -300,9 +300,9 @@ configure_bootloader() {
         if [[ -f "${TARGET}/etc/crypttab" ]]; then
             luks_uuid=$(awk '{print $2}' "${TARGET}/etc/crypttab" | sed 's/UUID=//')
             luks_name=$(awk '{print $1}' "${TARGET}/etc/crypttab")
-            # rd.luks.name maps UUID→mapper name so initramfs creates /dev/mapper/ouroboros-root
-            # matching crypttab — required for root=UUID= to find the btrfs volume.
-            kernel_params="rd.luks.uuid=${luks_uuid} rd.luks.name=${luks_uuid}=${luks_name} ${kernel_params}"
+            # mkinitcpio encrypt hook uses cryptdevice, not rd.luks.name (dracut)
+            # Format: cryptdevice=UUID=<luks_uuid>:<mapper_name>
+            kernel_params="cryptdevice=UUID=${luks_uuid}:${luks_name} rd.luks.uuid=${luks_uuid} ${kernel_params}"
         fi
     fi
 
