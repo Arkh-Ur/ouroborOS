@@ -199,7 +199,7 @@ configure_initramfs() {
 MODULES=(btrfs)
 BINARIES=()
 FILES=()
-HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)
+HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block encrypt btrfs filesystems fsck)
 EOF
 
     in_chroot mkinitcpio -P
