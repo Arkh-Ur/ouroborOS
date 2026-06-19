@@ -1026,10 +1026,17 @@ class Installer:
                 text=True,
             ) as proc:
                 assert proc.stdout is not None
-                for line in proc.stdout:
-                    stripped = line.rstrip()
-                    if stripped:
-                        log.debug("[pacstrap] %s", stripped)
+                try:
+                    output, _ = proc.communicate(timeout=900)  # 15 min timeout
+                    for line in output.splitlines():
+                        stripped = line.rstrip()
+                        if stripped:
+                            log.debug("[pacstrap] %s", stripped)
+                except subprocess.TimeoutExpired:
+                    log.error("pacstrap timed out after 15 minutes - killing process")
+                    proc.kill()
+                    proc.wait()
+                    raise InstallerError("pacstrap timeout: process hung (likely mkinitcpio 'Generating module dependencies')")
             returncode = proc.returncode
 
             if returncode == 0:
