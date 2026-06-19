@@ -21,6 +21,7 @@ security:
   secure_boot: false
   sbctl_include_ms_keys: false
   enable_ssh: true
+  root_password: "toor"
 
 disk:
   device: /dev/vda

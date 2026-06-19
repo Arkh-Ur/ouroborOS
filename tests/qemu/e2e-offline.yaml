@@ -42,6 +42,7 @@ security:
   sbctl_include_ms_keys: false
   fido2_pam: false
   enable_ssh: true
+  root_password: "toor"
 
 extra_packages:
   - openssh
