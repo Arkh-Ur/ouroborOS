@@ -36,6 +36,7 @@ security:
   secure_boot: false
   sbctl_include_ms_keys: false
   fido2_pam: false
+  enable_ssh: true
 
 extra_packages:
   - openssh

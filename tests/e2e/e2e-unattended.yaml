@@ -20,6 +20,7 @@ network:
 security:
   secure_boot: false
   sbctl_include_ms_keys: false
+  enable_ssh: true
 
 disk:
   device: /dev/vda
