@@ -199,8 +199,12 @@ configure_initramfs() {
 MODULES=(btrfs)
 BINARIES=()
 FILES=()
-HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block encrypt btrfs filesystems fsck)
+# kms is intentionally omitted: it embeds all GPU firmware from linux-firmware
+# (~150-200 MB) making the initramfs too large to boot in QEMU and wasting
+# ESP space. GPU modules load from rootfs after mount — no early KMS needed.
+HOOKS=(base udev microcode modconf keyboard keymap block encrypt btrfs filesystems fsck)
 COMPRESSION="zstd"
+COMPRESSION_OPTIONS=(-19)
 EOF
 
     in_chroot mkinitcpio -P
@@ -297,7 +301,8 @@ configure_bootloader() {
     local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
-        local luks_uuid="" local luks_name=""
+        local luks_uuid=""
+        local luks_name=""
         if [[ -f "${TARGET}/etc/crypttab" ]]; then
             luks_uuid=$(awk '{print $2}' "${TARGET}/etc/crypttab" | sed 's/UUID=//')
             luks_name=$(awk '{print $1}' "${TARGET}/etc/crypttab")

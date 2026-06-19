@@ -896,13 +896,18 @@ class Installer:
         #     would strip the module)
         mkinitcpio_path = Path(target) / "etc" / "mkinitcpio.conf"
         mkinitcpio_path.parent.mkdir(parents=True, exist_ok=True)
+        # kms hook intentionally omitted: embeds all GPU firmware (~150-200 MB)
+        # making the initramfs too large to boot in QEMU. GPU modules load from
+        # rootfs after mount. configure.sh regenerates this with the same set.
         mkinitcpio_path.write_text(
             "MODULES=(btrfs)\n"
             "BINARIES=()\n"
             "FILES=()\n"
-            "HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)\n"
+            "HOOKS=(base udev microcode modconf keyboard keymap block encrypt btrfs filesystems fsck)\n"
+            "COMPRESSION=\"zstd\"\n"
+            "COMPRESSION_OPTIONS=(-19)\n"
         )
-        log.info("Pre-seeded mkinitcpio.conf with btrfs support (no autodetect).")
+        log.info("Pre-seeded mkinitcpio.conf with btrfs support (no autodetect, no kms).")
 
         packages = [
             "base",

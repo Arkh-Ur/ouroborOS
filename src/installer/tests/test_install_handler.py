@@ -40,6 +40,8 @@ def _mock_popen(returncode: int = 0, lines: list[str] | None = None) -> tuple:
     proc = MagicMock()
     proc.returncode = returncode
     proc.stdout = iter(lines or [])
+    # communicate() returns (stdout, stderr); unpacking requires a proper 2-tuple
+    proc.communicate.return_value = ("\n".join(lines or []), None)
     proc.__enter__ = lambda s: s
     proc.__exit__ = MagicMock(return_value=False)
     return MagicMock(return_value=proc), proc
@@ -136,6 +138,7 @@ class TestHandleInstallHappyPath:
             proc = MagicMock()
             proc.returncode = 0
             proc.stdout = iter([])
+            proc.communicate.return_value = ("", None)
             proc.__enter__ = lambda s: s
             proc.__exit__ = MagicMock(return_value=False)
             if cmd and cmd[0] == "pacstrap":
@@ -177,6 +180,7 @@ class TestHandleInstallRetry:
             proc = MagicMock()
             proc.returncode = 1 if call_count < 3 else 0
             proc.stdout = iter([])
+            proc.communicate.return_value = ("", None)
             proc.__enter__ = lambda s: s
             proc.__exit__ = MagicMock(return_value=False)
             return proc
@@ -219,6 +223,7 @@ class TestHandleInstallRetry:
             proc = MagicMock()
             proc.returncode = 1 if call_count < 2 else 0
             proc.stdout = iter([])
+            proc.communicate.return_value = ("", None)
             proc.__enter__ = lambda s: s
             proc.__exit__ = MagicMock(return_value=False)
             return proc
