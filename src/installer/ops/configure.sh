@@ -1107,22 +1107,25 @@ STUB
 set -euo pipefail
 # ouroboros-post-upgrade — restore root immutability after a package transaction.
 #
-# Called by the 99-post-upgrade pacman hook (PostTransaction).
-#
+# Called by the zzz-post-upgrade pacman hook (PostTransaction).
+# No-op inside containers (systemd-nspawn, docker, etc.) or when / is not a
+# btrfs subvolume — pacstrap bootstraps containers using this hook too, and
+# the container root is never an immutable btrfs subvolume.
+if systemd-detect-virt --container &>/dev/null; then
+    exit 0
+fi
+if ! btrfs filesystem show / &>/dev/null 2>&1; then
+    exit 0
+fi
 # Strategy (belt-and-suspenders):
 #   1. btrfs property set ro=true: enforces immutability at the Btrfs subvolume
-#      level. This is the primary mechanism — it works even when other subvolumes
-#      from the same device are mounted rw (the mount-option ro alone is
-#      overridden by Btrfs superblock sharing).
-#   2. mount -o remount,ro: secondary VFS-layer enforcement. May fail if there
-#      are active SSH sessions or open file handles — that is expected and safe
-#      because btrfs property ro=true already protects the subvolume.
+#      level. This is the primary mechanism.
+#   2. mount -o remount,ro: secondary VFS-layer enforcement (best-effort).
 if btrfs property set / ro true 2>/dev/null; then
     echo "[ouroboros-post-upgrade] Root subvolume set read-only (Btrfs property)"
 else
     echo "[ouroboros-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
 fi
-# Best-effort VFS-layer remount (non-fatal)
 mount -o remount,ro / 2>/dev/null && echo "[ouroboros-post-upgrade] Root remounted ro (VFS)" || \
     echo "[ouroboros-post-upgrade] Root busy — Btrfs property protects immutability regardless"
 SCRIPT
