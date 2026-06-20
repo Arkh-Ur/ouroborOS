@@ -1,0 +1,58 @@
+# Maintainer: Arkh-Ur <h.buddenberg@gmail.com>
+pkgname=OUR_TOOL_NAME
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="OUR_TOOL_DESC"
+arch=('any')
+url="https://github.com/Arkh-Ur/OUR_TOOL_NAME"
+license=('GPL-3.0-only')
+depends=(OUR_TOOL_DEPS)
+optdepends=(OUR_TOOL_OPTDEPS)
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+b2sums=('SKIP')
+
+package() {
+    cd "${pkgname}-${pkgver}"
+
+    # Main binary
+    install -Dm755 "bin/${pkgname}" "${pkgdir}/usr/local/bin/${pkgname}"
+
+    # Shared library files (if any)
+    if [[ -d lib ]]; then
+        install -dm755 "${pkgdir}/usr/local/lib/ouroboros"
+        install -Dm755 lib/*.sh "${pkgdir}/usr/local/lib/ouroboros/" 2>/dev/null || true
+    fi
+
+    # Shell completions
+    if [[ -f "completions/${pkgname}.bash" ]]; then
+        install -Dm644 "completions/${pkgname}.bash" \
+            "${pkgdir}/usr/share/bash-completion/completions/${pkgname}"
+    fi
+    if [[ -f "completions/${pkgname}.fish" ]]; then
+        install -Dm644 "completions/${pkgname}.fish" \
+            "${pkgdir}/usr/share/fish/vendor_completions.d/${pkgname}.fish"
+    fi
+    if [[ -f "completions/${pkgname}.zsh" ]]; then
+        install -Dm644 "completions/${pkgname}.zsh" \
+            "${pkgdir}/usr/share/zsh/site-functions/_${pkgname}"
+    fi
+
+    # Man page
+    if [[ -f "man/${pkgname}.1" ]]; then
+        install -Dm644 "man/${pkgname}.1" \
+            "${pkgdir}/usr/share/man/man1/${pkgname}.1"
+    fi
+
+    # pacman hook (if the tool installs one)
+    if [[ -d hooks ]]; then
+        install -dm755 "${pkgdir}/etc/pacman.d/hooks"
+        install -Dm644 hooks/*.hook "${pkgdir}/etc/pacman.d/hooks/" 2>/dev/null || true
+    fi
+
+    # systemd units (if any)
+    if [[ -d units ]]; then
+        install -dm755 "${pkgdir}/usr/lib/systemd/system"
+        install -Dm644 units/*.service "${pkgdir}/usr/lib/systemd/system/" 2>/dev/null || true
+        install -Dm644 units/*.timer   "${pkgdir}/usr/lib/systemd/system/" 2>/dev/null || true
+    fi
+}

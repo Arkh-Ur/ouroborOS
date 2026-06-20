@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+    branches: [main, dev, "feature/**", "fix/**"]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint main binary
+        # SC2317 — unreachable code false-positives in case blocks; disable globally.
+        run: shellcheck -S style -e SC2317 bin/*
+
+      - name: Lint lib scripts
+        if: hashFiles('lib/*.sh') != ''
+        run: shellcheck -S style -e SC2317 lib/*.sh
+
+  unit:
+    name: bats unit tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats-core
+        run: |
+          sudo apt-get install -y bats
+
+      - name: Run unit tests
+        # Bats tests live in tests/bats/. Each file is a *.bats test suite.
+        # Tests that need real systemd/btrfs are tagged @e2e and skipped here.
+        run: |
+          if compgen -G "tests/bats/*.bats" > /dev/null; then
+            bats --filter-tags '!e2e' tests/bats/
+          else
+            echo "No bats tests found — skipping"
+          fi
+
+  # Optional job: run the tool's own --help / --version to catch import errors.
+  smoke:
+    name: smoke test (--version)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Smoke test
+        run: bash bin/* --version 2>&1 | grep -E '[0-9]+\.[0-9]'
