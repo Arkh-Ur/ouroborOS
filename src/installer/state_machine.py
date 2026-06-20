@@ -350,8 +350,17 @@ class Installer:
         config_path = self._config_path or find_unattended_config()
         if config_path:
             log.info("Unattended config found: %s", config_path)
-            # Ask user before going silent — only if a TTY is available
-            if sys.stdin.isatty() and not os.environ.get("OUROBOROS_FORCE_UNATTENDED"):
+            # Ask user before going silent — only when stdin is a TTY AND the
+            # config did NOT come from the kernel cmdline (which means E2E/CI
+            # automation) AND OUROBOROS_FORCE_UNATTENDED is not set.
+            from installer.config import _config_from_cmdline  # noqa: PLC0415
+            cmdline_path = _config_from_cmdline()
+            is_automated = (
+                cmdline_path is not None
+                or bool(os.environ.get("OUROBOROS_FORCE_UNATTENDED"))
+                or not sys.stdin.isatty()
+            )
+            if not is_automated:
                 print(f"\n[unattended config detected at: {config_path}]")
                 try:
                     answer = input("Use this config for silent install? [Y/n] (n = interactive menu): ").strip().lower()

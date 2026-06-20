@@ -603,7 +603,7 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
     cfg.security.enable_ssh = bool(sec.get("enable_ssh", False))
     cfg.security.dual_boot = bool(sec.get("dual_boot", False))
-    cfg.security.root_password = str(data.get("root_password", ""))
+    cfg.security.root_password = str(sec.get("root_password", ""))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
@@ -662,6 +662,20 @@ def load_config_from_url(url: str) -> InstallerConfig:
     return load_config(Path(tmp.name))
 
 
+def _config_from_cmdline() -> Path | None:
+    """Return config path from kernel cmdline, or None."""
+    try:
+        cmdline = Path("/proc/cmdline").read_text(encoding="utf-8")
+        for token in cmdline.split():
+            if token.startswith("ouroborOS.config="):
+                candidate = Path(token.split("=", 1)[1])
+                if candidate.exists():
+                    return candidate
+    except OSError:
+        pass
+    return None
+
+
 def find_unattended_config() -> Path | None:
     """Search standard locations for an unattended install config.
 
@@ -675,15 +689,9 @@ def find_unattended_config() -> Path | None:
         Path to a config file if found, else None.
     """
     # 1. Kernel cmdline
-    try:
-        cmdline = Path("/proc/cmdline").read_text(encoding="utf-8")
-        for token in cmdline.split():
-            if token.startswith("ouroborOS.config="):
-                candidate = Path(token.split("=", 1)[1])
-                if candidate.exists():
-                    return candidate
-    except OSError:
-        pass
+    candidate = _config_from_cmdline()
+    if candidate:
+        return candidate
 
     # 2 & 3. Known temp paths
     for candidate in (

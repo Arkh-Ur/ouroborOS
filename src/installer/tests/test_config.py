@@ -446,10 +446,11 @@ class TestDotsPackConfig:
         with pytest.raises(ConfigValidationError, match="boolean"):
             validate_config(data)
 
-    def test_root_password_loaded_from_top_level(self, tmp_path: Path) -> None:
-        content = textwrap.dedent(VALID_CONFIG) + '\nroot_password: "toor"\n'
+    def test_root_password_loaded_from_security_section(self, tmp_path: Path) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data.setdefault("security", {})["root_password"] = "toor"
         path = tmp_path / "cfg.yaml"
-        path.write_text(content, encoding="utf-8")
+        path.write_text(yaml.dump(data), encoding="utf-8")
         cfg = load_config(path)
         assert cfg.security.root_password == "toor"
 

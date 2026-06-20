@@ -4,12 +4,13 @@ user:
   username: e2e
   password: e2etest
   shell: bash
+  homed_storage: classic
   groups: [wheel, audio, video, input]
 
 network:
   hostname: ouroboros-e2e
   enable_networkd: true
-  enable_iwd: true
+  enable_iwd: false
   enable_resolved: true
   wifi:
     ssid: ""
@@ -44,4 +45,4 @@ dots_pack:
   channel: stable
 
 extra_packages: []
-post_install_action: reboot
+post_install_action: shutdown
