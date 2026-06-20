@@ -11,70 +11,72 @@ jobs:
     name: pre-release tests
     uses: ./.github/workflows/test.yml
 
-  # ── 2. Build the .pkg.tar.zst via makepkg ────────────────────────────────
-  build-pkg:
-    name: build PKGBUILD
-    runs-on: ubuntu-latest
-    needs: test
-    container:
-      image: archlinux:latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Update pacman and install build deps
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git sudo
-
-      - name: Create build user (makepkg refuses to run as root)
-        run: |
-          useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          chown -R builder:builder .
-
-      - name: Set package version from tag
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          sed -i "s/^pkgver=.*/pkgver=${TAG}/" PKGBUILD
-
-      - name: Build package
-        run: sudo -u builder makepkg -s --noconfirm
-
-      - name: Collect artifact
-        run: ls -lh *.pkg.tar.zst
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pkg
-          path: "*.pkg.tar.zst"
-
-  # ── 3. Create GitHub release (private repo) with the .pkg attached ────────
+  # ── 2. Attach raw binary + sha256 to a private-repo release ──────────────
+  # NOTE: .pkg.tar.zst is NOT built here — the ouroborOS ISO pipeline uses
+  # sync-tools.sh (raw binary sync), not pacman packages. PKGBUILD is provided
+  # separately for users who install on standard Arch systems.
   release-private:
     name: release (private)
     runs-on: ubuntu-latest
-    needs: build-pkg
+    needs: test
     permissions:
-      contents: write
+      contents: write   # required to create GitHub releases
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
         with:
-          name: pkg
+          fetch-depth: 0  # needed for git log / git describe (W2)
+
+      - name: Compute tool name and build artifacts
+        run: |
+          set -euo pipefail
+          # Strip the -dev suffix: Arkh-Ur/our-pac-dev → our-pac  (S5)
+          TOOL_NAME="${GITHUB_REPOSITORY##*/}"
+          TOOL_NAME="${TOOL_NAME%-dev}"
+
+          # Validate tool name — allowlist only (W4)
+          if ! echo "${TOOL_NAME}" | grep -qE '^[a-z][a-z0-9-]*[a-z0-9]$'; then
+            echo "ERROR: unexpected tool name format: ${TOOL_NAME}" >&2
+            exit 1
+          fi
+
+          cp "bin/${TOOL_NAME}" "${TOOL_NAME}"
+          sha256sum "${TOOL_NAME}" > "${TOOL_NAME}.sha256"
+          echo "TOOL_NAME=${TOOL_NAME}" >> "${GITHUB_ENV}"
 
       - name: Create release on private repo
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # minimum: Contents: Read and write on this repo
+          TAG: ${{ github.ref_name }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          set -euo pipefail
+          # W2: handle first-release case where HEAD^ has no prior tag.
+          # On a genuinely first release (single commit, no previous tag), fall
+          # back to listing ALL commits rather than an empty range from root..HEAD.
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [[ -n "${PREV}" ]]; then
+            NOTES=$(git log --format='%s' "${PREV}..HEAD" | sed 's/^/- /')
+          else
+            # First release — include all commits
+            NOTES=$(git log --format='%s' | sed 's/^/- /')
+          fi
+          # Guard: ensure notes are never empty
+          NOTES="${NOTES:-"- Release ${TAG}"}"
           gh release create "${TAG}" \
             --title "${TAG}" \
-            --notes "$(git log --format='%s' $(git describe --tags --abbrev=0 HEAD^)..HEAD | sed 's/^/- /')" \
-            *.pkg.tar.zst
+            --notes "${NOTES}" \
+            "${TOOL_NAME}" "${TOOL_NAME}.sha256"
 
-  # ── 4. Mirror to public repo ──────────────────────────────────────────────
-  # Requires a secret MIRROR_TOKEN with write access to the public repo.
-  # The public repo is named: Arkh-Ur/<tool-name> (without -dev suffix).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: |
+            ${{ env.TOOL_NAME }}
+            ${{ env.TOOL_NAME }}.sha256
+
+  # ── 3. Mirror tag to public repo and publish release there ───────────────
+  # MIRROR_TOKEN: fine-grained PAT — Contents: Read and write on Arkh-Ur/<tool> ONLY
+  # WARNING: only the tag ref is pushed — NOT HEAD:main.
+  # The public repo receives tagged releases only, never full branch history.  (S2)
   mirror-public:
     name: mirror to public repo
     runs-on: ubuntu-latest
@@ -82,29 +84,97 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Push to public mirror
-        env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
-        run: |
-          TOOL_NAME="${GITHUB_REPOSITORY##*/}"
-          git remote add public \
-            "https://x-access-token:${MIRROR_TOKEN}@github.com/Arkh-Ur/${TOOL_NAME}.git"
-          git push public HEAD:main --tags
+          fetch-depth: 0  # needed for git log / git describe (W2)
 
       - uses: actions/download-artifact@v4
         with:
-          name: pkg
+          name: binary
+
+      - name: Push tag to public mirror
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}  # minimum: Contents: Read and write on Arkh-Ur/<tool> only
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Strip the -dev suffix: Arkh-Ur/our-pac-dev → our-pac  (S5)
+          TOOL_NAME="${GITHUB_REPOSITORY##*/}"
+          TOOL_NAME="${TOOL_NAME%-dev}"
+
+          # Validate tool name — allowlist only (W4)
+          if ! echo "${TOOL_NAME}" | grep -qE '^[a-z][a-z0-9-]*[a-z0-9]$'; then
+            echo "ERROR: unexpected tool name format: ${TOOL_NAME}" >&2
+            exit 1
+          fi
+
+          git remote add public \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/Arkh-Ur/${TOOL_NAME}.git"
+          # Push ONLY the tag ref — never branches; public repo shows releases, not history (S2)
+          git push public "refs/tags/${TAG}:refs/tags/${TAG}"
+          echo "PUBLIC_TOOL=${TOOL_NAME}" >> "${GITHUB_ENV}"
 
       - name: Create release on public repo
         env:
-          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}  # minimum: Contents: Read and write on Arkh-Ur/<tool> only
+          TAG: ${{ github.ref_name }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          TOOL_NAME="${GITHUB_REPOSITORY##*/}"
+          set -euo pipefail
+          # W2: handle first-release case where HEAD^ has no prior tag
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [[ -n "${PREV}" ]]; then
+            NOTES=$(git log --format='%s' "${PREV}..HEAD" | sed 's/^/- /')
+          else
+            NOTES=$(git log --format='%s' | sed 's/^/- /')
+          fi
+          NOTES="${NOTES:-"- Release ${TAG}"}"
           gh release create "${TAG}" \
-            --repo "Arkh-Ur/${TOOL_NAME}" \
+            --repo "Arkh-Ur/${PUBLIC_TOOL}" \
             --title "${TAG}" \
-            --notes "$(git log --format='%s' $(git describe --tags --abbrev=0 HEAD^)..HEAD | sed 's/^/- /')" \
-            *.pkg.tar.zst
+            --notes "${NOTES}" \
+            "${PUBLIC_TOOL}" "${PUBLIC_TOOL}.sha256"
+
+  # ── 4. Notify monorepo to sync this tool ─────────────────────────────────
+  # MONOREPO_DISPATCH_TOKEN: fine-grained PAT — Contents: Read and write on
+  # Arkh-Ur/ouroborOS-dev ONLY.
+  # The monorepo's tools-sync.yml MUST use MONOREPO_DISPATCH_TOKEN (not
+  # GITHUB_TOKEN) when creating its PR, so that PR CI checks are triggered.  (S3)
+  notify-monorepo:
+    name: notify monorepo
+    runs-on: ubuntu-latest
+    needs: mirror-public
+    steps:
+      - name: Send repository_dispatch to ouroborOS-dev
+        env:
+          MONOREPO_DISPATCH_TOKEN: ${{ secrets.MONOREPO_DISPATCH_TOKEN }}  # minimum: Contents: Read and write on Arkh-Ur/ouroborOS-dev only
+          # All github context values are placed in env to prevent RCE via ${{ }} injection (W4)
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Strip the -dev suffix: Arkh-Ur/our-pac-dev → our-pac  (S5)
+          TOOL_NAME="${REPOSITORY##*/}"
+          TOOL_NAME="${TOOL_NAME%-dev}"
+
+          # Validate tool name — allowlist only (W4)
+          if ! echo "${TOOL_NAME}" | grep -qE '^[a-z][a-z0-9-]*[a-z0-9]$'; then
+            echo "ERROR: unexpected tool name format: ${TOOL_NAME}" >&2
+            exit 1
+          fi
+
+          # Build payload via jq to prevent JSON injection (hardening)
+          PAYLOAD=$(jq -n \
+            --arg event_type "tool-updated" \
+            --arg tool "${TOOL_NAME}" \
+            --arg commit_sha "${COMMIT_SHA}" \
+            '{event_type: $event_type, client_payload: {tool: $tool, commit_sha: $commit_sha}}')
+
+          # Send commit SHA (immutable pointer) — NOT sha256 (C2, S1).
+          # The monorepo fetches the binary using the Contents API and computes
+          # sha256 itself. Never trust a hash received in a dispatch payload.
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${MONOREPO_DISPATCH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Arkh-Ur/ouroborOS-dev/dispatches" \
+            -d "${PAYLOAD}"

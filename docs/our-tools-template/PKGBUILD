@@ -1,3 +1,4 @@
+# For users installing on standard Arch systems. NOT used by the ouroborOS ISO build pipeline.
 # Maintainer: Arkh-Ur <h.buddenberg@gmail.com>
 pkgname=OUR_TOOL_NAME
 pkgver=0.1.0
@@ -14,13 +15,13 @@ b2sums=('SKIP')
 package() {
     cd "${pkgname}-${pkgver}"
 
-    # Main binary
-    install -Dm755 "bin/${pkgname}" "${pkgdir}/usr/local/bin/${pkgname}"
+    # Main binary — Arch FHS: /usr/bin (not /usr/local/bin)
+    install -Dm755 "bin/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
 
-    # Shared library files (if any)
+    # Shared library files (if any) — Arch FHS: /usr/lib/ouroboros
     if [[ -d lib ]]; then
-        install -dm755 "${pkgdir}/usr/local/lib/ouroboros"
-        install -Dm755 lib/*.sh "${pkgdir}/usr/local/lib/ouroboros/" 2>/dev/null || true
+        install -dm755 "${pkgdir}/usr/lib/ouroboros"
+        install -Dm755 lib/*.sh "${pkgdir}/usr/lib/ouroboros/"
     fi
 
     # Shell completions
@@ -46,13 +47,13 @@ package() {
     # pacman hook (if the tool installs one)
     if [[ -d hooks ]]; then
         install -dm755 "${pkgdir}/etc/pacman.d/hooks"
-        install -Dm644 hooks/*.hook "${pkgdir}/etc/pacman.d/hooks/" 2>/dev/null || true
+        install -Dm644 hooks/*.hook "${pkgdir}/etc/pacman.d/hooks/"
     fi
 
     # systemd units (if any)
     if [[ -d units ]]; then
         install -dm755 "${pkgdir}/usr/lib/systemd/system"
-        install -Dm644 units/*.service "${pkgdir}/usr/lib/systemd/system/" 2>/dev/null || true
-        install -Dm644 units/*.timer   "${pkgdir}/usr/lib/systemd/system/" 2>/dev/null || true
+        install -Dm644 units/*.service "${pkgdir}/usr/lib/systemd/system/"
+        install -Dm644 units/*.timer   "${pkgdir}/usr/lib/systemd/system/"
     fi
 }
