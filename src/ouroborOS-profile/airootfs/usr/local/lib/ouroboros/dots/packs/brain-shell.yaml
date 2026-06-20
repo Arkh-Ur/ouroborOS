@@ -1,0 +1,39 @@
+id: brain-shell
+name: Brain Shell
+description: |
+  Brain Shell is a modular desktop shell layer for Wayland compositors.
+  Installed via one-line script from the official GitHub repository.
+  Includes bar, notifications, clipboard management, and more.
+
+credits:
+  author: Brainitech
+  homepage: https://github.com/Brainitech/Brain_Shell
+  docs: https://github.com/Brainitech/Brain_Shell
+  license: (see project repository)
+
+compatibility:
+  immutable: low
+  profiles: [hyprland, niri]
+  note: User-space shell installed via script, no root writes required
+
+variants:
+  stable:
+    packages: []
+    aur: []
+    install_script: "curl -fsSL https://raw.githubusercontent.com/Brainitech/Brain_Shell/refs/heads/main/install.sh | bash"
+    post_deploy: null
+    version_hint: "stable (from GitHub)"
+  git:
+    packages: []
+    aur: []
+    install_script: "curl -fsSL https://raw.githubusercontent.com/Brainitech/Brain_Shell/refs/heads/main/install.sh | bash"
+    post_deploy: null
+    version_hint: "latest (from GitHub)"
+
+uninstall:
+  packages: []
+  aur: []
+  post_remove: null
+  remove_config: false
+
+signature: null

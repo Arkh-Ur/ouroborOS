@@ -1,0 +1,1009 @@
+#!/usr/bin/env bash
+# our-dots — Dotfiles/config pack manager for ouroborOS
+# Installs and manages curated ricing packs on top of installed desktop profiles.
+# Usage: our-dots <command> [options]
+set -euo pipefail
+
+readonly MANIFEST_DIR="/usr/local/lib/ouroboros/dots/packs"
+readonly REPOS_DIR="/var/lib/ouroboros/dots/repos"
+readonly REPOS_INDEX="/etc/ouroboros/dots-repos.yaml"
+readonly SYSYAML="/etc/ouroboros/system.yaml"
+readonly LOG_DIR="/var/log/our-dots"
+readonly VERSION="0.6.1"
+
+# Color output — respects NO_COLOR (https://no-color.org/)
+if [[ -n "${NO_COLOR:-}" ]]; then
+    RED='' YELLOW='' GREEN='' BOLD='' RESET=''
+else
+    RED='\033[0;31m'
+    YELLOW='\033[1;33m'
+    GREEN='\033[0;32m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+fi
+
+# ── Basic helpers ──────────────────────────────────────────────────────────────
+
+log_info()  { echo -e "${GREEN}[our-dots]${RESET} $*"; }
+log_warn()  { echo -e "${YELLOW}[our-dots] WARNING:${RESET} $*" >&2; }
+log_error() { echo -e "${RED}[our-dots] ERROR:${RESET} $*" >&2; }
+
+die() { log_error "$*"; exit 1; }
+
+# ── Network connectivity check ────────────────────────────────────────────────
+
+# Returns 0 if internet is available, 1 otherwise.
+# Checks by resolving a known hostname (fast, no payload).
+has_network() {
+    if getent hosts archlinux.org >/dev/null 2>&1; then
+        return 0
+    fi
+    curl -sfS --connect-timeout 3 --max-time 5 -o /dev/null https://archlinux.org >/dev/null 2>&1
+}
+
+require_root() {
+    [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "This operation requires root. Run with sudo."
+}
+
+# ── YAML helpers (injection-safe, heredoc + sys.argv) ─────────────────────────
+
+# Parse a scalar value from a YAML manifest using Python safe_load.
+# Uses heredoc + sys.argv to avoid shell injection (C-01).
+yaml_get() {
+    local file="$1" key="$2"
+    python3 - "$file" "$key" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+keys = sys.argv[2].split('.')
+val = d
+for k in keys:
+    if isinstance(val, dict):
+        val = val.get(k)
+    else:
+        val = None
+    if val is None:
+        sys.exit(1)
+print(str(val).strip())
+PYEOF
+}
+
+# Parse a YAML list into newline-separated items.
+# Uses heredoc + sys.argv to avoid shell injection (C-01).
+yaml_list() {
+    local file="$1" key="$2"
+    python3 - "$file" "$key" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+keys = sys.argv[2].split('.')
+val = d
+for k in keys:
+    if isinstance(val, dict):
+        val = val.get(k)
+    else:
+        val = None
+    if val is None:
+        break
+for item in (val if isinstance(val, list) else []):
+    print(item)
+PYEOF
+}
+
+# Validate a manifest file against the canonical TRD §2.3 schema.
+# Prints errors to stderr and returns 1 if invalid.
+validate_manifest_schema() {
+    local mf="$1"
+    python3 - "$mf" <<'PYEOF' 2>&1
+import yaml, sys
+
+VALID_IMMUTABLE = {"low", "medium", "high", "critical"}
+
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+
+errors = []
+
+for field in ("id", "name", "description", "credits", "compatibility", "variants", "uninstall", "signature"):
+    if field not in d:
+        errors.append(f"missing required field: {field!r}")
+
+compat = d.get("compatibility") or {}
+if "immutable" not in compat:
+    errors.append("missing compatibility.immutable")
+elif compat["immutable"] not in VALID_IMMUTABLE:
+    errors.append(f"compatibility.immutable must be one of {sorted(VALID_IMMUTABLE)}, got {compat['immutable']!r}")
+
+credits = d.get("credits") or {}
+for cf in ("author", "homepage"):
+    if cf not in credits:
+        errors.append(f"missing credits.{cf}")
+
+variants = d.get("variants") or {}
+if not variants.get("stable") and not variants.get("git"):
+    errors.append("variants must have at least one of 'stable' or 'git'")
+
+if errors:
+    for e in errors:
+        print(f"[schema] {sys.argv[1]}: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+}
+
+# ── sysyaml helpers (flock + atomic write) ────────────────────────────────────
+
+# Add or update a pack entry in system.yaml dots_packs (atomic, with flock).
+sysyaml_add_pack() {
+    local id="$1" channel="$2" version="$3" origin="${4:-builtin}"
+    require_root
+    (
+        flock -w 5 200 || { log_error "Could not acquire system.yaml lock"; exit 1; }
+        python3 - "$SYSYAML" "$id" "$channel" "$version" "$origin" <<'PYEOF'
+import yaml, sys, os, datetime
+path, pack_id, channel, version, origin = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+with open(path) as f:
+    doc = yaml.safe_load(f) or {}
+packs = doc.setdefault("dots_packs", [])
+packs[:] = [p for p in packs if p.get("id") != pack_id]
+packs.append({
+    "id": pack_id,
+    "channel": channel,
+    "installed_version": version,
+    "installed_at": datetime.date.today().isoformat(),
+    "origin": origin,
+})
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    yaml.dump(doc, f, default_flow_style=False, allow_unicode=True)
+os.replace(tmp, path)
+PYEOF
+    ) 200>"${SYSYAML}.lock"
+}
+
+# Remove a pack entry from system.yaml dots_packs (atomic, with flock).
+sysyaml_remove_pack() {
+    local id="$1"
+    require_root
+    (
+        flock -w 5 200 || { log_error "Could not acquire system.yaml lock"; exit 1; }
+        python3 - "$SYSYAML" "$id" <<'PYEOF'
+import yaml, sys, os
+path, pack_id = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    doc = yaml.safe_load(f) or {}
+doc["dots_packs"] = [p for p in doc.get("dots_packs", []) if p.get("id") != pack_id]
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    yaml.dump(doc, f, default_flow_style=False, allow_unicode=True)
+os.replace(tmp, path)
+PYEOF
+    ) 200>"${SYSYAML}.lock"
+}
+
+# Return 0 if the pack is in dots_packs, 1 otherwise.
+sysyaml_is_installed() {
+    local id="$1"
+    python3 - "$SYSYAML" "$id" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+ids = [p.get("id") for p in doc.get("dots_packs", [])]
+sys.exit(0 if sys.argv[2] in ids else 1)
+PYEOF
+}
+
+# Print "version  installed_at" for an installed pack.
+sysyaml_installed_info() {
+    local id="$1"
+    python3 - "$SYSYAML" "$id" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for p in doc.get("dots_packs", []):
+    if p.get("id") == sys.argv[2]:
+        print(p.get("installed_version", "?") + "  " + p.get("installed_at", "?"))
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
+# Get a specific field from the installed pack entry.
+sysyaml_get_field() {
+    local id="$1" field="$2"
+    python3 - "$SYSYAML" "$id" "$field" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for p in doc.get("dots_packs", []):
+    if p.get("id") == sys.argv[2]:
+        val = p.get(sys.argv[3])
+        if val is not None:
+            print(val)
+            sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
+# Get the installed_version for a pack.
+sysyaml_get_version() {
+    sysyaml_get_field "$1" "installed_version"
+}
+
+# Upsert a repo entry in dots-repos.yaml (atomic, with flock).
+sysyaml_append_repo() {
+    local name="$1" url="$2"
+    require_root
+    mkdir -p "$(dirname "$REPOS_INDEX")"
+    (
+        flock -w 5 200 || { log_error "Could not acquire repos index lock"; exit 1; }
+        python3 - "$REPOS_INDEX" "$name" "$url" <<'PYEOF'
+import yaml, sys, os
+path, name, url = sys.argv[1], sys.argv[2], sys.argv[3]
+doc = {}
+if os.path.exists(path):
+    with open(path) as f:
+        doc = yaml.safe_load(f) or {}
+repos = doc.setdefault("repos", [])
+repos[:] = [r for r in repos if r.get("name") != name]
+repos.append({"name": name, "url": url})
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    yaml.dump(doc, f, default_flow_style=False, allow_unicode=True)
+os.replace(tmp, path)
+PYEOF
+    ) 200>"${REPOS_INDEX}.lock"
+}
+
+# Remove a repo entry from dots-repos.yaml (atomic, with flock).
+sysyaml_remove_repo() {
+    local name="$1"
+    require_root
+    [[ ! -f "$REPOS_INDEX" ]] && return 0
+    (
+        flock -w 5 200 || { log_error "Could not acquire repos index lock"; exit 1; }
+        python3 - "$REPOS_INDEX" "$name" <<'PYEOF'
+import yaml, sys, os
+path, name = sys.argv[1], sys.argv[2]
+if not os.path.exists(path):
+    sys.exit(0)
+with open(path) as f:
+    doc = yaml.safe_load(f) or {}
+doc["repos"] = [r for r in doc.get("repos", []) if r.get("name") != name]
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    yaml.dump(doc, f, default_flow_style=False, allow_unicode=True)
+os.replace(tmp, path)
+PYEOF
+    ) 200>"${REPOS_INDEX}.lock"
+}
+
+# ── Pack discovery ─────────────────────────────────────────────────────────────
+
+# Find a manifest file by pack id.
+# Priority: built-in first, then external repos in registration order (F3-09).
+find_manifest() {
+    local id="$1"
+    local f="${MANIFEST_DIR}/${id}.yaml"
+    [[ -f "$f" ]] && { echo "$f"; return 0; }
+    if [[ -f "$REPOS_INDEX" ]]; then
+        local repo_name
+        while IFS= read -r repo_name; do
+            [[ -z "$repo_name" ]] && continue
+            local rf="${REPOS_DIR}/${repo_name}/${id}.yaml"
+            [[ -f "$rf" ]] && { echo "$rf"; return 0; }
+        done < <(python3 - "$REPOS_INDEX" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as fh:
+    doc = yaml.safe_load(fh) or {}
+for r in doc.get("repos", []):
+    n = r.get("name", "")
+    if n:
+        print(n)
+PYEOF
+        )
+    fi
+    return 1
+}
+
+compat_badge() {
+    case "$1" in
+        low)      echo -e "${GREEN}low${RESET}" ;;
+        medium)   echo -e "${YELLOW}medium${RESET}" ;;
+        high)     echo -e "${YELLOW}⚠ high${RESET}" ;;
+        critical) echo -e "${RED}⚠ CRITICAL${RESET}" ;;
+        *)        echo "$1" ;;
+    esac
+}
+
+# Derives available channels string from a manifest.
+# Returns: "stable" | "git" | "stable/git"
+derive_channels() {
+    local mf="$1"
+    python3 - "$mf" <<'PYEOF' 2>/dev/null
+import yaml, sys
+d = yaml.safe_load(open(sys.argv[1])) or {}
+v = d.get("variants") or {}
+has_s = bool(v.get("stable"))
+has_g = bool(v.get("git"))
+if has_s and has_g:
+    print("stable/git")
+elif has_s:
+    print("stable")
+elif has_g:
+    print("git")
+else:
+    print("")
+PYEOF
+}
+
+# ── CRITICAL cleanup trap ──────────────────────────────────────────────────────
+
+_CRITICAL_PACMAN_CONF_BACKUP=""
+
+# Trap handler installed after CRITICAL confirmation.
+# Reverts pacman.conf and remounts / as read-only on error. Exits with code 5.
+cleanup_critical() {
+    local rc=$?
+    [[ $rc -eq 0 ]] && return 0
+    log_warn "CRITICAL install failed (exit $rc) — reverting system changes"
+    if [[ -n "$_CRITICAL_PACMAN_CONF_BACKUP" ]] && [[ -f "$_CRITICAL_PACMAN_CONF_BACKUP" ]]; then
+        cp "$_CRITICAL_PACMAN_CONF_BACKUP" /etc/pacman.conf 2>/dev/null \
+            && log_warn "Restored /etc/pacman.conf from backup" || true
+        rm -f "$_CRITICAL_PACMAN_CONF_BACKUP" 2>/dev/null || true
+    fi
+    if findmnt -n -o OPTIONS / 2>/dev/null | grep -qw rw; then
+        mount -o remount,ro / 2>/dev/null && log_warn "Remounted / as read-only" || true
+    fi
+    exit 5
+}
+
+# ── Channel handling ───────────────────────────────────────────────────────────
+
+# Auto-correct channel: git-only packs always use "git" regardless of requested channel (C-03).
+_autocorrect_channel() {
+    local mf="$1" channel="$2"
+    local has_stable
+    has_stable=$(python3 - "$mf" <<'PYEOF' 2>/dev/null
+import yaml, sys
+d = yaml.safe_load(open(sys.argv[1])) or {}
+print("1" if (d.get("variants") or {}).get("stable") else "0")
+PYEOF
+    ) || has_stable="0"
+    if [[ "$has_stable" == "0" ]]; then
+        echo "git"
+    else
+        echo "$channel"
+    fi
+}
+
+# ── Commands ───────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    printf "%-22s %-22s %-14s %-10s %-12s %s\n" "ID" "NAME" "DE" "COMPAT" "CHANNEL" "INSTALLED"
+    printf "%s\n" "--------------------------------------------------------------------------------------------"
+
+    local manifests=()
+    while IFS= read -r -d '' f; do manifests+=("$f"); done \
+        < <(find "$MANIFEST_DIR" -name "*.yaml" -print0 2>/dev/null | sort -z)
+    if [[ -d "$REPOS_DIR" ]]; then
+        while IFS= read -r -d '' f; do manifests+=("$f"); done \
+            < <(find "$REPOS_DIR" -name "*.yaml" -print0 2>/dev/null | sort -z)
+    fi
+
+    for mf in "${manifests[@]:-}"; do
+        [[ -z "$mf" ]] && continue
+        local id name profiles compat channel installed display_name
+        id=$(yaml_get "$mf" "id" 2>/dev/null) || continue
+        name=$(yaml_get "$mf" "name" 2>/dev/null) || name="$id"
+        profiles=$(yaml_list "$mf" "compatibility.profiles" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+        compat=$(yaml_get "$mf" "compatibility.immutable" 2>/dev/null) || compat="?"
+        channel=$(derive_channels "$mf")
+        # F3-11: mark external packs (non-suppressible)
+        display_name="$name"
+        [[ "$mf" == "${REPOS_DIR}/"* ]] && display_name="[EXTERN] $name"
+        if sysyaml_is_installed "$id" 2>/dev/null; then
+            installed=$(sysyaml_installed_info "$id" 2>/dev/null | awk '{print $1}')
+        else
+            installed="-"
+        fi
+        printf "%-22s %-22s %-14s %-10s %-12s %s\n" "$id" "$display_name" "${profiles:-?}" "$compat" "$channel" "$installed"
+    done
+}
+
+cmd_info() {
+    local id="$1"
+    local mf
+    mf=$(find_manifest "$id") || die "Pack not found: $id"
+
+    # F3-11: non-suppressible EXTERN warning
+    if [[ "$mf" == "${REPOS_DIR}/"* ]]; then
+        echo -e "${YELLOW}${BOLD}[EXTERN]${RESET}${YELLOW} This pack is from an external repository. Review post_deploy scripts before installing.${RESET}"
+        echo ""
+    fi
+
+    local name description author homepage docs compat note hint_s hint_g
+    name=$(yaml_get "$mf" "name")
+    description=$(python3 - "$mf" <<'PYEOF' 2>/dev/null
+import yaml, textwrap, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+desc = (d.get("description") or "").strip()
+for line in textwrap.wrap(desc, width=60):
+    print("  " + line)
+PYEOF
+    )
+    author=$(yaml_get "$mf" "credits.author" 2>/dev/null) || author="unknown"
+    homepage=$(yaml_get "$mf" "credits.homepage" 2>/dev/null) || homepage="-"
+    docs=$(yaml_get "$mf" "credits.docs" 2>/dev/null) || docs="-"
+    compat=$(yaml_get "$mf" "compatibility.immutable" 2>/dev/null) || compat="?"
+    note=$(yaml_get "$mf" "compatibility.note" 2>/dev/null) || note=""
+    hint_s=$(yaml_get "$mf" "variants.stable.version_hint" 2>/dev/null) || hint_s=""
+    hint_g=$(yaml_get "$mf" "variants.git.version_hint" 2>/dev/null) || hint_g=""
+
+    echo ""
+    echo -e "${BOLD}Pack         :${RESET} $id"
+    echo -e "${BOLD}Name         :${RESET} $name"
+    echo -e "${BOLD}Description  :${RESET}"
+    echo "$description"
+    echo ""
+    echo -e "${BOLD}Creator      :${RESET} $author"
+    echo -e "${BOLD}Homepage     :${RESET} $homepage"
+    [[ "$docs" != "-" ]] && echo -e "${BOLD}Docs         :${RESET} $docs"
+    echo -e "${BOLD}Immutability :${RESET} $(compat_badge "$compat")"
+    [[ -n "$note" ]] && echo -e "${BOLD}Note         :${RESET} $note"
+    echo ""
+    echo -e "${BOLD}Channels     :${RESET}"
+    [[ -n "$hint_s" ]] && echo "  stable  — $hint_s"
+    [[ -n "$hint_g" ]] && echo "  git     — $hint_g"
+    [[ -z "$hint_s" ]] && [[ -z "$hint_g" ]] && echo "  (see manifest)"
+
+    echo ""
+    if sysyaml_is_installed "$id" 2>/dev/null; then
+        local info
+        info=$(sysyaml_installed_info "$id")
+        echo -e "${BOLD}Installed    :${RESET} ${GREEN}yes${RESET}  ($info)"
+    else
+        echo -e "${BOLD}Installed    :${RESET} not installed"
+    fi
+    echo ""
+}
+
+cmd_install() {
+    require_root
+
+    local id="" channel="stable" noconfirm=false force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --git)        channel="git" ;;
+            --noconfirm)  noconfirm=true ;;
+            --force)      force=true ;;
+            -*)           die "Unknown option: $1" ;;
+            *)            if [[ -z "$id" ]]; then id="$1"; else die "Unexpected argument: $1"; fi ;;
+        esac
+        shift
+    done
+    [[ -z "$id" ]] && die "Usage: our-dots -S <pack> [--git] [--noconfirm]"
+
+    local mf
+    mf=$(find_manifest "$id") || die "Pack not found: $id"
+
+    validate_manifest_schema "$mf" || die "Manifest schema invalid: $id"
+
+    # F3-11: non-suppressible EXTERN warning
+    if [[ "$mf" == "${REPOS_DIR}/"* ]]; then
+        echo -e "${YELLOW}${BOLD}[EXTERN]${RESET}${YELLOW} This pack is from an external repository. Review post_deploy scripts before installing.${RESET}"
+        echo ""
+    fi
+
+    # Auto-correct channel for git-only packs (C-03)
+    channel=$(_autocorrect_channel "$mf" "$channel")
+
+    local compat
+    compat=$(yaml_get "$mf" "compatibility.immutable")
+
+    # ── CRITICAL flow ────────────────────────────────────────────────────────
+    if [[ "$compat" == "critical" ]]; then
+        if [[ "$noconfirm" == true ]] && [[ -z "${OUROBOROS_ALLOW_CRITICAL:-}" ]]; then
+            die "--noconfirm cannot bypass CRITICAL confirmation; use OUROBOROS_ALLOW_CRITICAL=1 for unattended installs"
+        fi
+
+        if [[ -z "${OUROBOROS_ALLOW_CRITICAL:-}" ]]; then
+            local warning
+            warning=$(yaml_get "$mf" "compatibility.warning" 2>/dev/null) || warning=""
+            echo ""
+            echo -e "${RED}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
+            echo -e "${RED}${BOLD}║  ⚠  CRITICAL COMPATIBILITY WARNING — ${id}${RESET}"
+            echo -e "${RED}${BOLD}╠══════════════════════════════════════════════════════════════╣${RESET}"
+            echo ""
+            echo "$warning" | fold -s -w 62 | sed 's/^/  /'
+            echo ""
+            echo -e "  ${BOLD}Actions that will be taken on your system:${RESET}"
+            local i=1
+            while IFS= read -r action; do
+                [[ -z "$action" ]] && continue
+                echo "    $i. $action"
+                ((i++))
+            done < <(yaml_list "$mf" "compatibility.critical_actions" 2>/dev/null)
+            echo ""
+            echo -e "${RED}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
+            echo ""
+            printf "  Type 'yes' to proceed, anything else to cancel: "
+            read -r answer
+            [[ "${answer,,}" == "yes" ]] || { log_info "Cancelled."; exit 1; }
+        fi
+
+        # Backup pacman.conf for potential cleanup — trap installed after
+        # the network gate below so user-cancel / no-network exits don't
+        # trigger the CRITICAL rollback path before any change was made.
+        _CRITICAL_PACMAN_CONF_BACKUP=$(mktemp /tmp/pacman.conf.bak.XXXXXX)
+        cp /etc/pacman.conf "$_CRITICAL_PACMAN_CONF_BACKUP"
+
+    # ── HIGH flow ────────────────────────────────────────────────────────────
+    elif [[ "$compat" == "high" ]]; then
+        if [[ "$noconfirm" == false ]]; then
+            local note
+            note=$(yaml_get "$mf" "compatibility.note" 2>/dev/null) || note=""
+            echo ""
+            echo -e "${YELLOW}${BOLD}⚠  HIGH compatibility impact: ${RESET}$note"
+            printf "  Continue? [y/N] "
+            read -r answer
+            [[ "${answer,,}" == "y" ]] || { log_info "Cancelled."; exit 1; }
+        fi
+    fi
+
+    # Credits panel
+    cmd_info "$id"
+
+    # Channel selection: offer only if both variants exist and not already forced to git
+    local channels_available
+    channels_available=$(derive_channels "$mf")
+
+    if [[ "$noconfirm" == false ]] && \
+       [[ "$channels_available" == "stable/git" ]] && \
+       [[ "$channel" == "stable" ]]; then
+        local hint_s hint_g
+        hint_s=$(yaml_get "$mf" "variants.stable.version_hint" 2>/dev/null) || hint_s="stable"
+        hint_g=$(yaml_get "$mf" "variants.git.version_hint" 2>/dev/null) || hint_g="git"
+        echo -e "${BOLD}  Channel:${RESET}"
+        echo "    1  stable  — $hint_s  (recommended)"
+        echo "    2  git     — $hint_g"
+        printf "  Select [1-2, default 1]: "
+        read -r ch_choice
+        [[ "$ch_choice" == "2" ]] && channel="git"
+    fi
+
+    # Final confirm (skip for noconfirm and OUROBOROS_ALLOW_CRITICAL auto path)
+    if [[ "$noconfirm" == false ]]; then
+        printf "  Install %s (%s channel)? [y/N] " "$id" "$channel"
+        read -r confirm
+        [[ "${confirm,,}" == "y" ]] || { log_info "Cancelled."; exit 1; }
+    fi
+
+    # Determine origin for system.yaml
+    local origin
+    if [[ "$(dirname "$mf")" == "$MANIFEST_DIR" ]]; then
+        origin="builtin"
+    else
+        origin="extern"
+    fi
+
+    # Install
+    mkdir -p "$LOG_DIR"
+    local logfile
+    logfile="${LOG_DIR}/${id}-$(date +%Y%m%d-%H%M%S).log"
+    log_info "Installing $id (channel: $channel) — log: $logfile"
+
+    # ── Network gate & sync ──────────────────────────────────────────────────
+    if ! has_network; then
+        log_error "No internet connection. Cannot install packages."
+        log_error "Connect to the internet and try again."
+        exit 6
+    fi
+
+    # Install CRITICAL cleanup trap only after network gate and final confirm
+    # so user-cancel (exit 1) and no-network (exit 6) don't trigger rollback.
+    [[ "${compat}" == "critical" ]] && trap cleanup_critical ERR EXIT
+
+    # Check for install_script (script-based installation)
+    local install_script
+    install_script=$(python3 - "$mf" "$channel" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+v = (d.get("variants") or {}).get(sys.argv[2]) or {}
+print((v.get("install_script") or "").strip())
+PYEOF
+    )
+
+    if [[ -n "$install_script" ]]; then
+        log_info "Installing pack via install_script..."
+        if ! bash -c "$install_script" 2>&1 | tee -a "$logfile"; then
+            log_error "install_script failed. Check $logfile"
+            exit 3
+        fi
+        log_info "install_script completed successfully"
+    fi
+
+    local pkgs aur_pkgs
+    mapfile -t pkgs   < <(yaml_list "$mf" "variants.${channel}.packages" 2>/dev/null)
+    mapfile -t aur_pkgs < <(yaml_list "$mf" "variants.${channel}.aur" 2>/dev/null)
+
+    if [[ ${#pkgs[@]} -gt 0 ]] && [[ -n "${pkgs[0]:-}" ]]; then
+        log_info "Syncing package databases..."
+        our-pac -Sy --noconfirm 2>&1 | tee -a "$logfile" || true
+        log_info "Installing pacman packages: ${pkgs[*]}"
+        our-pac -S "${pkgs[@]}" --noconfirm 2>&1 | tee -a "$logfile"
+    fi
+
+    if [[ ${#aur_pkgs[@]} -gt 0 ]] && [[ -n "${aur_pkgs[0]:-}" ]]; then
+        log_info "Installing AUR packages: ${aur_pkgs[*]}"
+        our-aur -S "${aur_pkgs[@]}" 2>&1 | tee -a "$logfile" || {
+            log_error "AUR install failed. Check $logfile"
+            exit 3
+        }
+    fi
+
+    # deploy script runs as root (git clone, downloads, system-level prep)
+    local deploy
+    deploy=$(python3 - "$mf" "$channel" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+v = (d.get("variants") or {}).get(sys.argv[2]) or {}
+print((v.get("deploy") or "").strip())
+PYEOF
+    )
+    if [[ -n "$deploy" ]]; then
+        log_info "Running deploy script..."
+        bash -c "$deploy" 2>&1 | tee -a "$logfile" || {
+            log_error "deploy script failed. Check $logfile"
+            exit 4
+        }
+    fi
+
+    # post_deploy as calling user (not root)
+    local post_deploy
+    post_deploy=$(python3 - "$mf" "$channel" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+v = (d.get("variants") or {}).get(sys.argv[2]) or {}
+print((v.get("post_deploy") or "").strip())
+PYEOF
+    )
+    if [[ -n "$post_deploy" ]]; then
+        log_info "Running post-deploy script as ${SUDO_USER:-$USER}..."
+        local run_user="${SUDO_USER:-$USER}"
+        if [[ "$run_user" == "root" ]]; then
+            bash -c "$post_deploy" 2>&1 | tee -a "$logfile" || {
+                log_error "post_deploy failed. Check $logfile"
+                exit 4
+            }
+        else
+            sudo -u "$run_user" bash -c "$post_deploy" 2>&1 | tee -a "$logfile" || {
+                log_error "post_deploy failed. Check $logfile"
+                exit 4
+            }
+        fi
+    fi
+
+    # Clear CRITICAL trap on success
+    if [[ "$compat" == "critical" ]]; then
+        trap - ERR EXIT
+        rm -f "${_CRITICAL_PACMAN_CONF_BACKUP:-}" 2>/dev/null || true
+        _CRITICAL_PACMAN_CONF_BACKUP=""
+        # Ensure root is remounted RO after CRITICAL install
+        if findmnt -n -o OPTIONS / 2>/dev/null | grep -qw rw; then
+            mount -o remount,ro / 2>/dev/null || true
+        fi
+    fi
+
+    local version_hint
+    version_hint=$(yaml_get "$mf" "variants.${channel}.version_hint" 2>/dev/null) || version_hint="$channel"
+    sysyaml_add_pack "$id" "$channel" "$version_hint" "$origin"
+    log_info "${GREEN}${BOLD}$id installed successfully.${RESET}"
+}
+
+cmd_remove() {
+    require_root
+
+    local id="" noconfirm=false force=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --noconfirm)  noconfirm=true ;;
+            --force)      force=true ;;
+            -*)           die "Unknown option: $1" ;;
+            *)            if [[ -z "$id" ]]; then id="$1"; else die "Unexpected argument: $1"; fi ;;
+        esac
+        shift
+    done
+    [[ -z "$id" ]] && die "Usage: our-dots -R <pack> [--force] [--noconfirm]"
+
+    if ! sysyaml_is_installed "$id" 2>/dev/null; then
+        [[ "$force" == true ]] && { log_warn "Pack not installed: $id — skipping (--force)"; exit 0; }
+        die "Pack not installed: $id"
+    fi
+
+    local mf
+    mf=$(find_manifest "$id") || {
+        [[ "$force" == true ]] && {
+            log_warn "Manifest not found for $id — removing system.yaml entry only"
+            sysyaml_remove_pack "$id"
+            log_info "$id removed from system.yaml."
+            exit 0
+        }
+        die "Manifest not found for $id — remove entry from system.yaml manually or use --force"
+    }
+
+    if [[ "$noconfirm" == false ]]; then
+        printf "  Remove %s? [y/N] " "$id"
+        read -r confirm
+        [[ "${confirm,,}" == "y" ]] || { log_info "Cancelled."; exit 1; }
+    fi
+
+    mkdir -p "$LOG_DIR"
+    local logfile
+    logfile="${LOG_DIR}/${id}-remove-$(date +%Y%m%d-%H%M%S).log"
+    log_info "Removing $id — log: $logfile"
+
+    local pkgs aur_pkgs
+    mapfile -t pkgs     < <(yaml_list "$mf" "uninstall.packages" 2>/dev/null)
+    mapfile -t aur_pkgs < <(yaml_list "$mf" "uninstall.aur" 2>/dev/null)
+
+    if [[ ${#aur_pkgs[@]} -gt 0 ]] && [[ -n "${aur_pkgs[0]:-}" ]]; then
+        log_info "Removing AUR packages: ${aur_pkgs[*]}"
+        our-aur -R "${aur_pkgs[@]}" --noconfirm 2>&1 | tee -a "$logfile" \
+            || log_warn "Some AUR packages could not be removed"
+    fi
+    if [[ ${#pkgs[@]} -gt 0 ]] && [[ -n "${pkgs[0]:-}" ]]; then
+        log_info "Removing pacman packages: ${pkgs[*]}"
+        our-pac -R "${pkgs[@]}" --noconfirm 2>&1 | tee -a "$logfile" \
+            || log_warn "Some packages could not be removed"
+    fi
+
+    local post_remove
+    post_remove=$(python3 - "$mf" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+print(((d.get("uninstall") or {}).get("post_remove") or "").strip())
+PYEOF
+    )
+    if [[ -n "$post_remove" ]]; then
+        log_info "Running post-remove script..."
+        local run_user="${SUDO_USER:-$USER}"
+        if [[ "$run_user" == "root" ]]; then
+            bash -c "$post_remove" 2>&1 | tee -a "$logfile" || true
+        else
+            sudo -u "$run_user" bash -c "$post_remove" 2>&1 | tee -a "$logfile" || true
+        fi
+    fi
+
+    sysyaml_remove_pack "$id"
+    log_info "$id removed."
+}
+
+cmd_query() {
+    python3 - "$SYSYAML" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+packs = doc.get("dots_packs", [])
+if not packs:
+    print("  (no packs installed)")
+else:
+    for p in packs:
+        print(f"  {p.get('id','?'):<22} {p.get('channel','?'):<10} installed {p.get('installed_at','?')}")
+PYEOF
+}
+
+cmd_search() {
+    local pattern="${1:-}"
+    [[ -z "$pattern" ]] && { cmd_list; return; }
+    cmd_list | grep -i "$pattern" || true
+}
+
+cmd_upgrade() {
+    require_root
+    log_info "Checking installed packs for updates..."
+    local updated=0
+
+    while read -r id channel; do
+        [[ -z "$id" ]] && continue
+        local mf
+        mf=$(find_manifest "$id" 2>/dev/null) || { log_warn "$id: manifest not found, skipping"; continue; }
+
+        # F3-03: CRITICAL packs are never auto-upgraded (require manual confirmation)
+        local pack_compat
+        pack_compat=$(yaml_get "$mf" "compatibility.immutable" 2>/dev/null) || pack_compat="medium"
+        if [[ "$pack_compat" == "critical" ]]; then
+            log_warn "$id: CRITICAL pack skipped — upgrade manually: our-dots -S $id"
+            continue
+        fi
+
+        # AUR-based update check
+        local aur_pkg
+        aur_pkg=$(yaml_list "$mf" "variants.${channel}.aur" 2>/dev/null | head -1)
+        if [[ -n "$aur_pkg" ]]; then
+            local current_ver available_ver
+            current_ver=$(pacman -Q "$aur_pkg" 2>/dev/null | awk '{print $2}') || { log_info "$id [$aur_pkg]: not installed via pacman"; continue; }
+            available_ver=$(curl -sf "https://aur.archlinux.org/rpc/?v=5&type=info&arg=${aur_pkg}" \
+                | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('results',[]); print(r[0].get('Version','') if r else '')" 2>/dev/null) || true
+            if [[ -n "$available_ver" ]] && [[ "$available_ver" != "$current_ver" ]]; then
+                log_info "$id: update available ($current_ver → $available_ver)"
+                local _flag=""
+                [[ "$channel" == "git" ]] && _flag="--git"
+                cmd_install "$id" ${_flag:+"$_flag"} --noconfirm
+                ((updated++)) || true
+            else
+                echo "  $id: up to date ($current_ver)"
+            fi
+        else
+            echo "  $id: update check not available for this pack — use 'our-dots -S $id' to reinstall"
+        fi
+    done < <(python3 - "$SYSYAML" <<'PYEOF' 2>/dev/null
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for p in doc.get("dots_packs", []):
+    print(p.get("id", "") + " " + p.get("channel", "stable"))
+PYEOF
+    )
+
+    log_info "Done. $updated pack(s) updated."
+}
+
+# ── Repository management ──────────────────────────────────────────────────────
+
+cmd_repo_add() {
+    local name="$1" url="$2"
+    [[ -z "$name" || -z "$url" ]] && die "Usage: our-dots repo-add <name> <url>"
+    [[ "$url" == https://* ]] || die "Repository URL must use HTTPS"
+    require_root
+
+    local dest="${REPOS_DIR}/${name}"
+    mkdir -p "$dest"
+
+    if [[ "$url" == *.git ]] || git ls-remote "$url" HEAD &>/dev/null 2>&1; then
+        log_info "Cloning manifest repository: $url"
+        git clone --depth=1 "$url" "$dest" 2>&1 || die "Failed to clone $url"
+    else
+        log_info "Fetching manifest index from: $url"
+        curl -sfL "${url%/}/index.yaml" -o "${dest}/index.yaml" \
+            || die "Failed to fetch index.yaml from $url"
+        # Fetch individual manifests listed in index
+        python3 - "$dest" "$url" <<'PYEOF'
+import yaml, urllib.request, sys, os
+dest, base = sys.argv[1], sys.argv[2].rstrip("/")
+with open(dest + "/index.yaml") as f:
+    idx = yaml.safe_load(f) or {}
+for pack_id in idx.get("packs", []):
+    # Reject pack_ids that would escape the destination directory.
+    out = os.path.normpath(os.path.join(dest, pack_id + ".yaml"))
+    if not out.startswith(os.path.normpath(dest) + os.sep):
+        print(f"  WARNING: skipping suspicious pack_id '{pack_id}'", file=sys.stderr)
+        continue
+    urllib.request.urlretrieve(base + "/" + pack_id + ".yaml", out)
+    print("  fetched", pack_id + ".yaml")
+PYEOF
+    fi
+
+    # F3-10: Validate all fetched manifests against the canonical schema
+    local invalid=0 mf_f
+    while IFS= read -r -d '' mf_f; do
+        validate_manifest_schema "$mf_f" || { log_warn "  invalid manifest: $(basename "$mf_f")"; invalid=$((invalid+1)); }
+    done < <(find "$dest" -name "*.yaml" -print0 2>/dev/null)
+    if [[ $invalid -gt 0 ]]; then
+        rm -rf "${dest:?}"
+        die "Repository '$name': $invalid manifest(s) failed schema validation — repo not added."
+    fi
+
+    sysyaml_append_repo "$name" "$url"
+    log_info "Repository '$name' added."
+}
+
+cmd_repo_remove() {
+    local name="$1"
+    [[ -z "$name" ]] && die "Usage: our-dots repo-remove <name>"
+    require_root
+
+    rm -rf "${REPOS_DIR:?}/${name}"
+    sysyaml_remove_repo "$name"
+    log_info "Repository '$name' removed."
+}
+
+cmd_repo_list() {
+    printf "%-20s %-50s %s\n" "NAME" "URL" "PACKS"
+    printf "%s\n" "--------------------------------------------------------------------------"
+    local n
+    n=$(find "$MANIFEST_DIR" -name "*.yaml" 2>/dev/null | wc -l)
+    printf "%-20s %-50s %s\n" "built-in" "(shipped with ISO)" "$n"
+
+    if [[ -f "$REPOS_INDEX" ]]; then
+        python3 - "$REPOS_INDEX" "$REPOS_DIR" <<'PYEOF' 2>/dev/null
+import yaml, sys, glob
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for r in doc.get("repos", []):
+    name = r.get("name", "?")
+    url  = r.get("url", "?")
+    count = len(glob.glob(sys.argv[2] + "/" + name + "/*.yaml"))
+    print(f"{name:<20} {url:<50} {count}")
+PYEOF
+    fi
+}
+
+cmd_repo_update() {
+    require_root
+    [[ ! -f "$REPOS_INDEX" ]] && { log_info "No external repositories configured."; return; }
+
+    python3 - "$REPOS_INDEX" <<'PYEOF' 2>/dev/null | while read -r name url; do
+import yaml, sys
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f) or {}
+for r in doc.get("repos", []):
+    print(r.get("name", "") + " " + r.get("url", ""))
+PYEOF
+        [[ -z "$name" ]] && continue
+        log_info "Updating repo: $name ($url)"
+        local dest="${REPOS_DIR}/${name}"
+        if [[ -d "${dest}/.git" ]]; then
+            git -C "$dest" pull --ff-only 2>&1 || log_warn "Failed to update $name"
+        else
+            cmd_repo_add "$name" "$url" 2>/dev/null || log_warn "Failed to re-fetch $name"
+        fi
+    done
+    log_info "Repository update complete."
+}
+
+# ── Usage ──────────────────────────────────────────────────────────────────────
+
+usage() {
+    cat <<EOF
+our-dots v${VERSION} — Dotfiles/config pack manager for ouroborOS
+
+Pack management:
+  our-dots list              Show full pack catalog
+  our-dots -Si <pack>        Show pack info and credits
+  our-dots -S  <pack>        Install pack (stable channel)
+  our-dots -S  <pack> --git  Install git/development channel
+  our-dots -R  <pack>        Remove installed pack
+  our-dots -Q                List installed packs
+  our-dots -Qs <pattern>     Search catalog
+  our-dots -Su               Update all installed packs
+
+Repository management:
+  our-dots repo-add    <name> <url>   Add external manifest repository
+  our-dots repo-remove <name>         Remove external repository
+  our-dots repo-list                  List all repositories
+  our-dots repo-update                Fetch latest manifests from all repos
+
+Environment:
+  NO_COLOR=1                  Disable color output
+  OUROBOROS_ALLOW_CRITICAL=1  Allow unattended CRITICAL pack install
+
+EOF
+}
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+# Guard: when sourced (e.g. for testing), stop here and expose functions only.
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
+
+[[ $# -eq 0 ]] && { usage; exit 0; }
+
+case "$1" in
+    list)              cmd_list ;;
+    -Si)               shift; cmd_info "$@" ;;
+    -S)                shift; cmd_install "$@" ;;
+    -R)                shift; cmd_remove "$@" ;;
+    -Q)                cmd_query ;;
+    -Qs)               shift; cmd_search "$@" ;;
+    -Su)               cmd_upgrade ;;
+    repo-add)          shift; cmd_repo_add "$@" ;;
+    repo-remove)       shift; cmd_repo_remove "$@" ;;
+    repo-list)         cmd_repo_list ;;
+    repo-update)       cmd_repo_update ;;
+    --help|-h|help)    usage ;;
+    --version)         echo "our-dots $VERSION" ;;
+    *)                 die "Unknown command: $1. Run 'our-dots --help' for usage." ;;
+esac

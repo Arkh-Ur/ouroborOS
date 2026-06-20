@@ -99,6 +99,27 @@ En una sesión previa se describió el auto-rollback de `pending-verification` c
 
 ---
 
+## v0.6.1 — our-dots (dotfiles pack manager)
+
+**Branch:** `docs/v0.6.1-docs` → PR #17 → `dev`
+**Estado:** ✅ Implementado y verificado en E2E
+
+| Feature | Estado | Tag |
+|---------|--------|-----|
+| `our-dots` CLI (list, -S, -R, -Q, -Si, -Su) | ✅ | v0.6.1 |
+| 7 pack manifests (noctalia, ml4w, caelestia, danklinux, illogical-impulse, omarchy, ambxst) | ✅ | v0.6.1 |
+| CRITICAL/HIGH confirmation flows | ✅ | v0.6.1 |
+| system.yaml wiring (`dots_packs`) | ✅ | v0.6.1 |
+| Installer DOTS_PACK state | ✅ | v0.6.1 |
+| E2E test suite (11 tests × pack) | ✅ | v0.6.1 |
+| our-pac sysext-aware path (bug fix) | ✅ | v0.6.1 |
+| our-aur shared container batch (bug fix) | ✅ | v0.6.1 |
+
+**E2E results (QEMU VM):** ml4w/danklinux/illogical-impulse/omarchy/ambxst = 11/11.
+noctalia and caelestia require C++ builds (60-90 min) — documented as known limitations.
+
+---
+
 ## Scope real de Phase 6 (post-puente)
 
 | Feature | Estado |

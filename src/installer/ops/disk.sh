@@ -17,7 +17,7 @@ set -euo pipefail
 #   @snapshots → /.snapshots
 #
 # Partition layout (GPT):
-#   1: ESP  — 512 MiB  — FAT32
+#   1: ESP  — 1 GiB   — FAT32
 #   2: root — remaining — Btrfs
 #
 set -euo pipefail
@@ -96,14 +96,14 @@ partition_auto() {
     check_root
     assert_block_device "$disk"
 
-    _log_info "Partitioning ${disk} (GPT: 512M ESP + remaining root)..."
+    _log_info "Partitioning ${disk} (GPT: 1G ESP + remaining root)..."
 
     # Zap all existing partition data
     sgdisk --zap-all "$disk"
 
-    # Create ESP (512 MiB, type EF00)
+    # Create ESP (1 GiB, type EF00)
     sgdisk \
-        --new=1:0:+512M \
+        --new=1:0:+1024M \
         --typecode=1:EF00 \
         --change-name=1:"ESP" \
         "$disk"
@@ -125,7 +125,7 @@ partition_auto() {
 # partition_manual DISK TARGET [--luks PASS] --part SPEC [--part SPEC ...]
 #   archinstall-style manual layout. Each SPEC is colon-delimited:
 #       NUMBER:SIZE:TYPE:MOUNTPOINT:FS
-#   e.g. "1:512MiB:esp:/boot:fat32"  "2:100%:btrfs:/:btrfs"
+#   e.g. "1:1GiB:esp:/boot:fat32"  "2:100%:btrfs:/:btrfs"
 #   TYPE   : esp | btrfs | swap | linux
 #   SIZE   : "512MiB", "20GiB", or "rest"/"0"/"100%" for the remaining space
 #

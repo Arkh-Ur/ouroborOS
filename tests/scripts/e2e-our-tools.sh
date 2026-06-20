@@ -9,16 +9,18 @@
 #
 # Variables (all have defaults):
 #   E2E_ROOT_PASS  — root SSH password (default: toor)
+#   E2E_USER_PASS  — regular user SSH password (default: e2etest)
+#   E2E_USER       — regular username for user-context tests (default: e2e)
 #   E2E_SSH_PORT   — SSH port on localhost (default: 2225)
 set -euo pipefail
 
 ROOT_PASS="${E2E_ROOT_PASS:-toor}"
+USER_PASS="${E2E_USER_PASS:-e2etest}"
+E2E_USER="${E2E_USER:-e2e}"
 SSH_PORT="${E2E_SSH_PORT:-2225}"
-SSH_BASE="sshpass -p ${ROOT_PASS} ssh -p ${SSH_PORT} \
-  -o StrictHostKeyChecking=no \
-  -o UserKnownHostsFile=/dev/null \
-  -o PasswordAuthentication=yes \
-  root@localhost"
+_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PasswordAuthentication=yes"
+SSH_BASE="sshpass -p ${ROOT_PASS} ssh -p ${SSH_PORT} ${_SSH_OPTS} root@localhost"
+SSH_USER="sshpass -p ${USER_PASS} ssh -p ${SSH_PORT} ${_SSH_OPTS} ${E2E_USER}@localhost"
 SSH="$SSH_BASE"
 PASS=0; FAIL=0; SKIP=0
 
@@ -112,6 +114,12 @@ check      "sync-boot-entries idempotent" "our-snapshot sync-boot-entries"
 
 # ─────────────────────────────────────────────────────────────
 section "4. our-rollback — try / promote / undo"
+# Ensure root is locked and no stale pacman DB lock before rollback tests.
+# A previous our-pac operation may leave root rw or a stale db.lck if pacman
+# post-transaction hooks spawned background processes that held the lock briefly.
+$SSH "btrfs property set / ro true 2>/dev/null || true; rm -f /var/lib/pacman/db.lck 2>/dev/null || true" \
+  2>/dev/null && true
+sleep 1
 check          "list shows snapshots"   "our-rollback list"
 check_contains "status: no pending"    "no\|pending\|rollback\|not" "our-rollback status"
 check          "install nano (creates snapshot)" "our-pac -S nano --noconfirm"
@@ -176,20 +184,47 @@ section "8. our-container — nspawn lifecycle"
 if $SSH "which machinectl &>/dev/null && btrfs filesystem show / &>/dev/null" 2>/dev/null; then
     check  "container list (empty ok)"   "our-container list"
     check  "engine show"                 "our-container engine show"
-    $SSH "our-container remove mybox 2>/dev/null; our-container remove arch 2>/dev/null" \
+    # Clean up any leftover containers from previous runs
+    $SSH "our-container remove mybox 2>/dev/null; our-container remove mybox2 2>/dev/null; our-container remove arch 2>/dev/null" \
       2>/dev/null && true
     check  "create mybox from arch"      "our-container create mybox arch"
-    check  "list shows mybox"            "our-container list | grep -q mybox"
+    check  "list shows mybox"            "our-container list | grep -qw mybox"
     check  "start mybox"                 "our-container start mybox"
     check  "enter runs command"          "our-container enter mybox -- uname -a"
     check  "stop mybox"                  "our-container stop mybox"
     check  "snapshot create snap1"       "our-container snapshot create mybox snap1"
     check  "snapshot list mybox"         "our-container snapshot list mybox | grep -q snap1"
     check  "remove mybox"                "our-container remove mybox"
-    check  "list no longer shows mybox"  "! our-container list 2>&1 | grep -q mybox"
+    check  "list no longer shows mybox"  "! our-container list 2>&1 | grep -qw mybox"
 else
     echo -e "  ${YELLOW}SKIP${RESET} our-container — machinectl or btrfs not available"
     SKIP=$((SKIP+11))
+fi
+
+# ─────────────────────────────────────────────────────────────
+section "9. our-dots — dotfiles pack lifecycle"
+if $SSH "test -x /usr/local/bin/our-dots" 2>/dev/null; then
+    # Read-only queries run as root (always safe)
+    check     "our-dots version"          "our-dots --version"
+    check     "our-dots list shows packs" "our-dots list | grep -q noctalia"
+    check     "our-dots -Si ml4w"         "our-dots -Si ml4w | grep -qi 'ml4w\|name'"
+    check_contains "our-dots -Q (empty ok)" "0\|packs installed\|No packs" \
+        "our-dots -Q 2>&1 || true"
+    # Lifecycle tests need root (our-pac needs root to install packages) but
+    # our-dots writes dotfiles to $HOME which is /root — read-only in ouroborOS.
+    # Override HOME to the writable e2e user home so deploy scripts can write.
+    _e2e_home="/home/${E2E_USER}"
+    check     "our-dots install ml4w"    \
+        "HOME=${_e2e_home} OUROBOROS_ALLOW_CRITICAL=0 our-dots -S ml4w --noconfirm"
+    check     "ml4w marked installed"    \
+        "our-dots list | grep -qE 'ml4w.*installed|installed.*ml4w' || \
+         grep -q ml4w /etc/ouroboros/system.yaml"
+    check     "our-dots uninstall ml4w"  "HOME=${_e2e_home} our-dots -R ml4w --noconfirm"
+    check     "ml4w removed from list"   \
+        "! our-dots list 2>&1 | grep -qE 'ml4w.*\[installed\]'"
+else
+    echo -e "  ${YELLOW}SKIP${RESET} our-dots — not found on this image"
+    SKIP=$((SKIP+8))
 fi
 
 # ─────────────────────────────────────────────────────────────

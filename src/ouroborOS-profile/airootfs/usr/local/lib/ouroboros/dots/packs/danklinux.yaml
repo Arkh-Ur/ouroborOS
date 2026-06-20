@@ -1,0 +1,39 @@
+id: danklinux
+name: DankMaterialShell
+description: |
+  A Material You-themed Wayland shell supporting both Niri and Hyprland
+  compositors, with automatic color generation from wallpapers via matugen.
+  Includes Ghostty terminal, Quickshell framework, dgop (system monitor),
+  dsearch (filesystem search), and cliphist (clipboard history). One of the
+  few projects in this catalog with explicit first-class Niri support alongside
+  Hyprland.
+
+credits:
+  author: AvengeMedia
+  homepage: https://danklinux.com/docs/dankinstall
+  repo: https://github.com/AvengeMedia/DankMaterialShell
+  docs: https://danklinux.com/docs/dankinstall
+  license: (see project repository)
+
+compatibility:
+  immutable: high
+  profiles: [hyprland, niri]
+  note: |
+    Installs dms-shell, quickshell, dgop from extra repo + AUR builds (matugen-bin,
+    dsearch-bin, go, cmake, rustup). All via our-pac/our-aur — no direct pacman calls.
+    Build time ~10 min.
+
+variants:
+  stable:
+    packages: [dms-shell, quickshell, dgop, rustup, go, cmake, ninja]
+    aur: [matugen-bin, dsearch-bin]
+    post_deploy: null
+    version_hint: "1.4"
+
+uninstall:
+  packages: [dms-shell, dms-shell-hyprland, quickshell, dgop, rustup, go, cmake, ninja]
+  aur: [matugen-bin, dsearch-bin]
+  post_remove: null
+  remove_config: false
+
+signature: null

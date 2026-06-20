@@ -1,0 +1,52 @@
+id: caelestia
+name: Caelestia Shell
+description: |
+  The highest-profile Quickshell shell in this catalog (9,800+ GitHub stars),
+  designed as a full Waybar replacement for Hyprland. Caelestia provides a
+  bar, dashboard, app launcher, lock screen, and system utilities, built in
+  QML and C++. The AUR package installs like a proper compiled application.
+  20+ versioned releases on GitHub with clear stable/git separation.
+
+credits:
+  author: soramane
+  homepage: https://github.com/caelestia-dots/shell
+  docs: https://github.com/caelestia-dots/shell#installation
+  support: https://ko-fi.com/soramane
+  license: (see project repository)
+
+compatibility:
+  immutable: high
+  profiles: [hyprland]
+  note: |
+    caelestia-shell depends on quickshell-git (AUR, C++ build ~60+ min) and
+    networkmanager (conflicts with ouroborOS systemd-networkd setup). Install
+    time is 90+ minutes on first run due to AUR dep chain compilation. All AUR
+    deps are listed below in dependency order for our-aur's shared container.
+  warning: |
+    Requires networkmanager as a runtime dependency. On ouroborOS (which uses
+    systemd-networkd instead), networkmanager will be installed but inactive.
+    Disable NetworkManager.service to avoid conflicts.
+
+variants:
+  stable:
+    packages: [ddcutil, brightnessctl, lm_sensors, fish, aubio, swappy,
+               libqalculate, power-profiles-daemon, qt6-imageformats]
+    aur: [ttf-rubik-vf, app2unit, libcava, caelestia-cli, quickshell-git, caelestia-shell]
+    post_deploy: null
+    version_hint: "stable (AUR)"
+  git:
+    packages: [ddcutil, brightnessctl, lm_sensors, fish, aubio, swappy,
+               libqalculate, power-profiles-daemon, qt6-imageformats]
+    aur: [ttf-rubik-vf, app2unit, libcava, caelestia-cli, quickshell-git, caelestia-shell-git]
+    post_deploy: null
+    version_hint: "git (bleeding edge, may be unstable)"
+
+uninstall:
+  packages: [ddcutil, brightnessctl, lm_sensors, fish, aubio, swappy,
+             libqalculate, power-profiles-daemon, qt6-imageformats]
+  aur: [caelestia-shell, caelestia-shell-git, caelestia-cli, quickshell-git,
+        app2unit, libcava]
+  post_remove: null
+  remove_config: false
+
+signature: null

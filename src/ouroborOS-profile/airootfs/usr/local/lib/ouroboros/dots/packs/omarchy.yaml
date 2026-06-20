@@ -1,0 +1,58 @@
+id: omarchy
+name: Omarchy
+description: |
+  DHH's opinionated "omakase" Arch Linux configuration — you get his curated
+  stack without choices. Omarchy is the most comprehensive and opinionated of
+  the seven projects, functioning more like a distribution than a dotfiles
+  pack: it configures the entire system from bootloader preferences to editor
+  setup. The result is a fully configured Hyprland + Neovim + Tmux environment
+  with 19 built-in themes, Alacritty/Ghostty terminal, Lazygit, Lazydocker,
+  Btop, Obsidian, and Claude Code/OpenCode AI integration.
+  Backed by 37signals (the company behind Basecamp and Ruby on Rails).
+
+credits:
+  author: DHH (David Heinemeier Hansson) / 37signals
+  homepage: https://omarchy.org
+  docs: https://learn.omacom.io/2/the-omarchy-manual/96/manual-installation
+  repo: https://github.com/basecamp/omarchy
+  license: MIT
+
+compatibility:
+  immutable: critical
+  profiles: [hyprland]
+  note: Full system configuration takeover — modifies /etc, bootloader prefs, and global config
+  warning: |
+    Omarchy is a full system configuration takeover. It installs and configures
+    Hyprland, Neovim, Tmux, terminal emulators, and global system settings.
+    On ouroborOS, this requires multiple writes to /etc and system-wide package
+    installation. The root filesystem will be temporarily remounted as writable
+    for each system-level change. This is the most invasive pack in the catalog.
+  critical_actions:
+    - "Install ~40 packages via our-pac (neovim, tmux, alacritty, lazygit, etc.)"
+    - "Install AUR packages (obsidian, btop, and others)"
+    - "Deploy Hyprland configuration to ~/.config/hypr/"
+    - "Deploy Neovim configuration to ~/.config/nvim/"
+    - "Deploy Tmux configuration to ~/.config/tmux/"
+    - "Set system-wide font and theme preferences"
+    - "Configure system locale and keyboard settings in /etc"
+
+variants:
+  git:
+    packages: [git, curl]
+    aur: []
+    deploy: |
+      rm -rf /tmp/omarchy
+      git clone --depth 1 https://github.com/basecamp/omarchy /tmp/omarchy
+    post_deploy: |
+      mkdir -p "${HOME}/.config" "${HOME}/.local"
+      cp -rn /tmp/omarchy/.config/. "${HOME}/.config/" 2>/dev/null || true
+      cp -rn /tmp/omarchy/.local/. "${HOME}/.local/" 2>/dev/null || true
+    version_hint: "rolling (git)"
+
+uninstall:
+  packages: []
+  aur: []
+  post_remove: null
+  remove_config: false
+
+signature: null

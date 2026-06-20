@@ -387,16 +387,70 @@ class TestSecurityConfig:
         cfg = load_config(path)
         assert cfg.security.dual_boot is True
 
+
+# ---------------------------------------------------------------------------
+# DotsPackConfig tests
+# ---------------------------------------------------------------------------
+
+
+class TestDotsPackConfig:
+    def test_defaults(self) -> None:
+        from installer.config import DotsPackConfig  # noqa: PLC0415
+        cfg = DotsPackConfig()
+        assert cfg.pack is None
+        assert cfg.channel == "stable"
+
+    def test_installer_config_has_dots_pack(self) -> None:
+        cfg = InstallerConfig()
+        from installer.config import DotsPackConfig  # noqa: PLC0415
+        assert isinstance(cfg.dots_pack, DotsPackConfig)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_dots_pack_loaded_from_yaml(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: noctalia\n  channel: git\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack == "noctalia"
+        assert cfg.dots_pack.channel == "git"
+
+    def test_missing_dots_pack_key_uses_defaults(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, VALID_CONFIG)
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_channel_defaults_to_stable_when_not_specified(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: ml4w\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack == "ml4w"
+        assert cfg.dots_pack.channel == "stable"
+
+    def test_null_pack_loads_as_none(self, tmp_path: Path) -> None:
+        base = textwrap.dedent(VALID_CONFIG)
+        content = base + "\ndots_pack:\n  pack: null\n  channel: stable\n"
+        path = tmp_path / "cfg.yaml"
+        path.write_text(content, encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.dots_pack.pack is None
+        assert cfg.dots_pack.channel == "stable"
+
     def test_security_dual_boot_non_bool_raises(self) -> None:
         data = yaml.safe_load(VALID_CONFIG)
         data["security"] = {"dual_boot": "yes"}
         with pytest.raises(ConfigValidationError, match="boolean"):
             validate_config(data)
 
-    def test_root_password_loaded_from_top_level(self, tmp_path: Path) -> None:
-        content = textwrap.dedent(VALID_CONFIG) + '\nroot_password: "toor"\n'
+    def test_root_password_loaded_from_security_section(self, tmp_path: Path) -> None:
+        data = yaml.safe_load(VALID_CONFIG)
+        data.setdefault("security", {})["root_password"] = "toor"
         path = tmp_path / "cfg.yaml"
-        path.write_text(content, encoding="utf-8")
+        path.write_text(yaml.dump(data), encoding="utf-8")
         cfg = load_config(path)
         assert cfg.security.root_password == "toor"
 
@@ -1138,3 +1192,82 @@ class TestHardwareConfig:
         result = cfg.to_system_yaml()
         assert "hardware" in result
         assert result["hardware"]["thunderbolt_detected"] is False
+
+
+# ---------------------------------------------------------------------------
+# _config_from_labeled_media tests
+# ---------------------------------------------------------------------------
+
+
+class TestConfigFromLabeledMedia:
+    """Tests for _config_from_labeled_media()."""
+
+    def test_no_device_returns_none(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        with patch("installer.config.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="", returncode=1)
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", tmp_path / "mnt"):
+                result = _config_from_labeled_media()
+        assert result is None
+
+    def test_blkid_not_found_returns_none(self, tmp_path: Path) -> None:
+        from installer.config import _config_from_labeled_media
+
+        with patch("installer.config.subprocess.run", side_effect=FileNotFoundError):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", tmp_path / "mnt"):
+                result = _config_from_labeled_media()
+        assert result is None
+
+    def test_mount_and_config_found(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        (mnt / "unattended.yaml").write_text("user:\n  username: test\n", encoding="utf-8")
+
+        blkid_result = MagicMock(stdout="/dev/sr1\n", returncode=0)
+        mount_result = MagicMock(returncode=0)
+
+        with patch("installer.config.subprocess.run", side_effect=[blkid_result, mount_result]):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=False):
+                    result = _config_from_labeled_media()
+
+        assert result is not None
+        assert result.name == "unattended.yaml"
+
+    def test_already_mounted_no_blkid_call(self, tmp_path: Path) -> None:
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        (mnt / "unattended.yaml").write_text("user:\n  username: test\n", encoding="utf-8")
+
+        with patch("installer.config.subprocess.run") as mock_run:
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=True):
+                    result = _config_from_labeled_media()
+
+        mock_run.assert_not_called()
+        assert result is not None
+
+    def test_mount_succeeds_but_no_config_file(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        # Mount point exists but unattended.yaml absent
+
+        blkid_result = MagicMock(stdout="/dev/sr1\n", returncode=0)
+        mount_result = MagicMock(returncode=0)
+
+        with patch("installer.config.subprocess.run", side_effect=[blkid_result, mount_result]):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=False):
+                    result = _config_from_labeled_media()
+
+        assert result is None

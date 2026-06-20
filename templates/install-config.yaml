@@ -68,6 +68,14 @@ desktop:
   kde_flavor: plasma-meta
   gpu_driver: auto
 
+# Optional dotfiles/config pack — install a curated ricing pack
+# Available packs: noctalia, caelestia, ml4w, ambxst, danklinux,
+#                  illogical-impulse, omarchy
+# Run 'our-dots list' on an installed system to see all options.
+# dots_pack:
+#   pack: null        # pack id, or null to skip
+#   channel: stable   # stable | git (if the pack supports both)
+
 # Security settings. All optional; defaults to false.
 # tpm2_unlock: bind LUKS to TPM2 PCR 7+14 for auto-unlock at boot.
 #   Requires disk.use_luks: true. Falls back to passphrase if TPM2 absent.

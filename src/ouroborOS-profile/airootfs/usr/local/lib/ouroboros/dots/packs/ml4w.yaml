@@ -1,0 +1,40 @@
+id: ml4w
+name: ML4W Dotfiles
+description: |
+  A Hyprland-focused dotfiles installer framework by Stephan Raabe, well-known
+  in the Linux ricing community for his YouTube tutorials on desktop
+  customization. Rather than imposing a single look, ML4W provides a structured
+  installer that handles profile deployment, making it easy to maintain and
+  update dotfiles across systems. Pacman and AUR are explicitly supported as
+  first-class targets alongside Fedora and openSUSE.
+
+credits:
+  author: Stephan Raabe
+  homepage: https://ml4w.com/dotfiles-installer/getting-started/install
+  repo: https://github.com/mylinuxforwork/ml4w-dotfiles-installer
+  docs: https://ml4w.com/dotfiles-installer/getting-started/install
+  license: GPL-2.0
+
+compatibility:
+  immutable: medium
+  profiles: [hyprland]
+  note: Clones dotfiles to ~/; user-space config only — no root writes required
+
+variants:
+  stable:
+    packages: [git]
+    aur: []
+    deploy: |
+      rm -rf /tmp/ml4w-dotfiles-installer
+      git clone --depth 1 https://github.com/mylinuxforwork/dotfiles /tmp/ml4w-dotfiles-installer
+    post_deploy: |
+      cp -rn /tmp/ml4w-dotfiles-installer/dotfiles/. "${HOME}/"
+    version_hint: "2.13"
+
+uninstall:
+  packages: []
+  aur: []
+  post_remove: null
+  remove_config: false
+
+signature: null

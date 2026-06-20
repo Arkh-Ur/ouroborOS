@@ -86,6 +86,45 @@ class DesktopConfig:
     # Populated by load_config() / _build_config() from desktop_profiles.
     # Passed to ouroboros-firstboot for lazy build via our-aur.
     aur_packages: list = field(default_factory=list)
+    # F5: Default terminal + filemanager per profile. Firstboot writes these
+    # into ~/.config/hypr/hyprland.conf so the hyprland-config-wizard runtime
+    # doesn't override them with foot/dolphin. Can be overridden by user
+    # editing the generated conf post-install.
+    preferred_terminal: str = "foot"
+    preferred_filemanager: str = "thunar"
+    _TERMINAL_DEFAULTS = {
+        "hyprland": "kitty",      # Kitty is the Hyprland ecosystem default
+        "niri": "foot",           # niri ships with foot in the wiki
+        "gnome": "gnome-terminal",
+        "kde": "konsole",
+        "cosmic": "cosmic-term",
+        "minimal": "bash",        # No GUI; use plain bash
+    }
+    _FILEMANAGER_DEFAULTS = {
+        "hyprland": "thunar",     # Thunar is lighter than dolphin
+        "niri": "nautilus",
+        "gnome": "nautilus",
+        "kde": "dolphin",
+        "cosmic": "cosmic-files",
+        "minimal": "ls",          # No GUI
+    }
+
+    def apply_profile_defaults(self) -> None:
+        """Set terminal/filemanager from profile (called after profile is set)."""
+        self.preferred_terminal = self._TERMINAL_DEFAULTS.get(
+            self.profile, "foot"
+        )
+        self.preferred_filemanager = self._FILEMANAGER_DEFAULTS.get(
+            self.profile, "thunar"
+        )
+
+
+@dataclass
+class DotsPackConfig:
+    """Dotfiles/config pack selection."""
+
+    pack: str | None = None      # pack id or None
+    channel: str = "stable"      # "stable" | "git"
 
 
 @dataclass
@@ -140,6 +179,11 @@ class SecurityConfig:
     #   our-fido2 pam register --system
     fido2_pam: bool = False
 
+    # SSH server (openssh) enablement.
+    # When true, installs and enables sshd.service for remote access.
+    # SSH key generation happens during first boot.
+    enable_ssh: bool = False
+
     # Dual-boot support.
     # When true, the installer scans the ESP for existing OS boot entries and
     # generates a systemd-boot entry for Windows (if found).
@@ -174,6 +218,7 @@ class InstallerConfig:
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
+    dots_pack: DotsPackConfig = field(default_factory=DotsPackConfig)
 
     # Runtime state — not persisted to YAML config
     install_target: str = "/mnt"
@@ -524,7 +569,6 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.network.enable_networkd = bool(net.get("enable_networkd", True))
     cfg.network.enable_iwd = bool(net.get("enable_iwd", True))
     cfg.network.enable_resolved = bool(net.get("enable_resolved", True))
-    cfg.network.enable_ssh = bool(net.get("enable_ssh", False))
     wifi_cfg = net.get("wifi", {}) or {}
     cfg.network.wifi_ssid = str(wifi_cfg.get("ssid", ""))
     cfg.network.wifi_passphrase = str(wifi_cfg.get("passphrase", ""))
@@ -546,14 +590,20 @@ def load_config(path: Path) -> InstallerConfig:
     cfg.desktop.gpu_driver = str(desk.get("gpu_driver", "auto"))
     cfg.desktop.aur_packages = aur_packages_for(cfg.desktop.profile)
 
+    # Dots pack (optional)
+    raw_dots = data.get("dots_pack") or {}
+    cfg.dots_pack.pack = raw_dots.get("pack") or None
+    cfg.dots_pack.channel = raw_dots.get("channel") or "stable"
+
     # Security (optional)
     sec = data.get("security", {}) or {}
     cfg.security.secure_boot = bool(sec.get("secure_boot", False))
     cfg.security.sbctl_include_ms_keys = bool(sec.get("sbctl_include_ms_keys", False))
     cfg.security.tpm2_unlock = bool(sec.get("tpm2_unlock", False))
     cfg.security.fido2_pam = bool(sec.get("fido2_pam", False))
+    cfg.security.enable_ssh = bool(sec.get("enable_ssh", False))
     cfg.security.dual_boot = bool(sec.get("dual_boot", False))
-    cfg.security.root_password = str(data.get("root_password", ""))
+    cfg.security.root_password = str(sec.get("root_password", ""))
 
     # Extra packages
     cfg.extra_packages = list(data.get("extra_packages", []))
@@ -612,6 +662,70 @@ def load_config_from_url(url: str) -> InstallerConfig:
     return load_config(Path(tmp.name))
 
 
+OUROBOROS_CFG_LABEL = "OUROBOROS_CFG"
+OUROBOROS_CFG_MOUNT = Path("/run/ouroboros-config")
+OUROBOROS_CFG_FILE  = "unattended.yaml"
+
+
+def _config_from_cmdline() -> Path | None:
+    """Return config path from kernel cmdline, or None."""
+    try:
+        cmdline = Path("/proc/cmdline").read_text(encoding="utf-8")
+        for token in cmdline.split():
+            if token.startswith("ouroborOS.config="):
+                candidate = Path(token.split("=", 1)[1])
+                if candidate.exists():
+                    return candidate
+    except OSError:
+        pass
+    return None
+
+
+def _config_from_labeled_media() -> Path | None:
+    """Mount the first block device labeled OUROBOROS_CFG and return its config path.
+
+    Scans for a block device (USB, CDROM, partition) with LABEL=OUROBOROS_CFG.
+    If found, mounts it read-only to /run/ouroboros-config/ and returns
+    the path to unattended.yaml if present.
+
+    Safe to call as non-root — returns None if blkid is unavailable or fails.
+    Idempotent: if the mount point is already mounted, returns the config path
+    directly without attempting a second mount.
+    """
+    import subprocess  # noqa: PLC0415
+
+    # Idempotent: if already mounted, return config path directly
+    if OUROBOROS_CFG_MOUNT.is_mount():
+        config_path = OUROBOROS_CFG_MOUNT / OUROBOROS_CFG_FILE
+        return config_path if config_path.exists() else None
+
+    try:
+        result = subprocess.run(
+            ["blkid", "-t", f"LABEL={OUROBOROS_CFG_LABEL}", "-o", "device"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+    devices = result.stdout.strip().splitlines()
+    if not devices:
+        return None
+
+    device = devices[0]
+    OUROBOROS_CFG_MOUNT.mkdir(parents=True, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["mount", "-o", "ro", device, str(OUROBOROS_CFG_MOUNT)],
+            check=True, capture_output=True, timeout=10,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+
+    config_path = OUROBOROS_CFG_MOUNT / OUROBOROS_CFG_FILE
+    return config_path if config_path.exists() else None
+
+
 def find_unattended_config() -> Path | None:
     """Search standard locations for an unattended install config.
 
@@ -625,17 +739,16 @@ def find_unattended_config() -> Path | None:
         Path to a config file if found, else None.
     """
     # 1. Kernel cmdline
-    try:
-        cmdline = Path("/proc/cmdline").read_text(encoding="utf-8")
-        for token in cmdline.split():
-            if token.startswith("ouroborOS.config="):
-                candidate = Path(token.split("=", 1)[1])
-                if candidate.exists():
-                    return candidate
-    except OSError:
-        pass
+    candidate = _config_from_cmdline()
+    if candidate:
+        return candidate
 
-    # 2 & 3. Known temp paths
+    # 2. Labeled config media (device/ISO with LABEL=OUROBOROS_CFG containing unattended.yaml)
+    candidate = _config_from_labeled_media()
+    if candidate:
+        return candidate
+
+    # 3 & 4. Known temp paths
     for candidate in (
         Path("/tmp/ouroborOS-config.yaml"),
         Path("/run/ouroborOS-config.yaml"),

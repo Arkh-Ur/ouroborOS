@@ -542,6 +542,119 @@ class TUI:
         return self._select_from_list(label, prompt, self._GPU_OPTIONS, default="auto")
 
     # ------------------------------------------------------------------
+    # Dotfiles pack selection
+    # ------------------------------------------------------------------
+
+    def show_dots_pack_selection(self, profile: str) -> dict[str, str | None]:
+        """Show dotfiles pack selection screen.
+
+        Returns {"pack": id_or_none, "channel": "stable"|"git"}.
+        If no internet is available, only "Skip" is offered.
+        """
+        import subprocess  # noqa: PLC0415
+        from installer.dots_profiles import packs_for_profile  # noqa: PLC0415
+
+        # Check internet connectivity — if offline, skip pack selection entirely
+        def _has_network() -> bool:
+            try:
+                subprocess.run(
+                    ["getent", "hosts", "archlinux.org"],
+                    check=True,
+                    capture_output=True,
+                    timeout=3,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+            try:
+                subprocess.run(
+                    ["curl", "-sfS", "--connect-timeout", "3", "--max-time", "5",
+                     "-o", "/dev/null", "https://archlinux.org"],
+                    check=True,
+                    capture_output=True,
+                    timeout=8,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+                return False
+
+        has_net = _has_network()
+
+        packs = packs_for_profile(profile)
+        if not packs:
+            return {"pack": None, "channel": "stable"}
+
+        # Always show the menu — packs are LOCAL manifests. Internet is only
+        # required at install-time to fetch the pack git/AUR packages.
+        # We tag offline packs so the user knows what they are committing to.
+        offline_tag = "" if has_net else " [⚠ offline — will skip package install]"
+        options: list[tuple[str, str]] = [
+            ("none", "Skip — keep default empty profile"),
+        ] + [
+            (p.id, p.name + " — " + p.description[:50] + offline_tag)
+            for p in packs
+        ]
+
+        if not has_net:
+            msg = "⚠ No internet detected. You can still SELECT a pack — its install will fail later without net."
+            if self._backend == "rich":
+                try:
+                    from rich.console import Console  # noqa: PLC0415
+                    Console().print(f"\n[yellow]{msg}[/yellow]\n")
+                except ImportError:
+                    print(msg)
+            else:
+                print(msg)
+
+        if self._backend == "rich":
+            selected_id = self._rich_select(
+                "Dotfiles Pack",
+                f"Select a dotfiles pack for your {profile} profile (optional):",
+                options,
+                default="none",
+            )
+        else:
+            selected_id = self._select_from_list(
+                "Dotfiles Pack",
+                f"Select a dotfiles pack for your {profile} profile (optional):",
+                options,
+                default="none",
+            )
+
+        if selected_id == "none":
+            return {"pack": None, "channel": "stable"}
+
+        # Find the selected pack to check channel availability
+        selected_pack = next((p for p in packs if p.id == selected_id), None)
+        if selected_pack is None:
+            return {"pack": selected_id, "channel": "stable"}
+
+        # If pack has both stable and git channels, ask which to use
+        if selected_pack.has_stable and selected_pack.has_git:
+            channel_options: list[tuple[str, str]] = [
+                ("stable", f"Stable ({selected_pack.stable_version_hint or 'latest release'})"),
+                ("git", f"Git ({selected_pack.git_version_hint or 'latest commit'})"),
+            ]
+            if self._backend == "rich":
+                channel = self._rich_select(
+                    "Pack Channel",
+                    f"Select the channel for '{selected_pack.name}':",
+                    channel_options,
+                    default="stable",
+                )
+            else:
+                channel = self._select_from_list(
+                    "Pack Channel",
+                    f"Select the channel for '{selected_pack.name}':",
+                    channel_options,
+                    default="stable",
+                )
+        else:
+            channel = "git" if selected_pack.has_git and not selected_pack.has_stable else "stable"
+
+        return {"pack": selected_id, "channel": channel}
+
+    # ------------------------------------------------------------------
     # Shell selection
     # ------------------------------------------------------------------
 

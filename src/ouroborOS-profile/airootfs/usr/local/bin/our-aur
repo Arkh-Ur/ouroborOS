@@ -65,7 +65,7 @@ _aur_search() {
     local encoded_query
     encoded_query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${query}")
     local response
-    response=$(curl --silent --fail --max-time 10 \
+    response=$(curl --silent --fail --max-time 30 \
         "${AUR_RPC}/search/${encoded_query}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
@@ -103,7 +103,7 @@ for pkg in sorted(results, key=lambda x: -x.get('NumVotes', 0))[:25]:
 _aur_info() {
     local pkg="$1"
     local response
-    response=$(curl --silent --fail --max-time 10 \
+    response=$(curl --silent --fail --max-time 30 \
         "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
         2>/dev/null) || _die "No se pudo conectar a la AUR RPC. ¿Hay conexión?"
 
@@ -145,15 +145,20 @@ if makedeps:
 # Retorna solo la versión de un paquete AUR (para upgrade check)
 _aur_version() {
     local pkg="$1"
-    curl --silent --fail --max-time 10 \
-        "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
-        2>/dev/null | python3 -c "
+    local result i
+    for i in 1 2 3; do
+        result=$(curl --silent --fail --max-time 30 \
+            "${AUR_RPC}/info?arg%5B%5D=${pkg}" \
+            2>/dev/null | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 results = data.get('results', [])
 if results:
     print(results[0].get('Version', ''))
-" 2>/dev/null || echo ""
+" 2>/dev/null) && break
+        [[ $i -lt 3 ]] && sleep 3
+    done
+    echo "${result:-}"
 }
 
 # ── Container lifecycle ───────────────────────────────────────────────────────
@@ -256,14 +261,14 @@ _create_sysext() {
 
     _msg "Creando extensión sysext: ${sysext_name}"
 
-    # Extract /usr/* files for each new package.
+    # Extract /usr/* and /opt/* files for each new package.
     # pacman --root="${container}" -Ql returns FULL host paths (root-prefixed), not
     # container-relative paths. Strip the container prefix before checking /usr/*.
     for p in "${new_pkgs[@]}"; do
         _msg "  Extrayendo archivos de: ${p}"
         while IFS= read -r full_path; do
             local rel_path="${full_path#"${container}"}"
-            if [[ "${rel_path}" == /usr/* ]] && [[ -f "${full_path}" || -L "${full_path}" ]]; then
+            if [[ ("${rel_path}" == /usr/* || "${rel_path}" == /opt/*) ]] && [[ -f "${full_path}" || -L "${full_path}" ]]; then
                 local dest_dir
                 dest_dir="${staging}$(dirname "${rel_path}")"
                 mkdir -p "${dest_dir}"
@@ -429,7 +434,30 @@ PYEOF
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 _cmd_install() {
+    [[ $# -gt 0 ]] || _die "Especificá un paquete: our-aur -S <paquete>"
+
+    if [[ $# -eq 1 ]]; then
+        _cmd_install_one "$1"
+        return
+    fi
+
+    # Multiple packages: share one container so earlier AUR packages satisfy
+    # makedepends of later ones (e.g. noctalia-qs needed by noctalia-shell).
+    local shared_name="batch-$$"
+    _create_build_container "${shared_name}"
+    _bootstrap_paru "${shared_name}"
+
+    local pkg
+    for pkg in "$@"; do
+        _cmd_install_one "${pkg}" "${shared_name}"
+    done
+
+    _destroy_build_container "${shared_name}"
+}
+
+_cmd_install_one() {
     local pkg="${1:-}"
+    local ext_container="${2:-}"  # optional: pre-created shared container
     [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -S <paquete>"
 
     _msg "=== Instalando '${pkg}' desde AUR ==="
@@ -443,55 +471,90 @@ _cmd_install() {
 
     # Verificar si ya está instalado
     local track_file="${DATA_DIR}/packages/${pkg}.json"
+    local skip_sysext=false
     if [[ -f "${track_file}" ]]; then
         local installed_ver
         installed_ver=$(python3 -c "import json; d=json.load(open('${track_file}')); print(d.get('version',''))" 2>/dev/null)
         if [[ "${installed_ver}" == "${aur_version}" ]]; then
-            _msg "'${pkg}' ya está instalado en la versión ${aur_version}. Nada que hacer."
-            return 0
+            if [[ -z "${ext_container}" ]]; then
+                # Single install: skip entirely
+                _msg "'${pkg}' ya está instalado en la versión ${aur_version}. Nada que hacer."
+                return 0
+            fi
+            # Batch install: still build in shared container so later packages can
+            # satisfy makedepends on this package — but skip sysext/tracking updates.
+            _msg "'${pkg}' ya instalado en host (${aur_version}). Construyendo en container para deps de batch..."
+            skip_sysext=true
+        else
+            _msg "Actualizando de ${installed_ver} → ${aur_version}"
         fi
-        _msg "Actualizando de ${installed_ver} → ${aur_version}"
     fi
 
-    # 2. Crear contenedor efímero
-    local container_name="build-$$"
-    _create_build_container "${container_name}"
+    # 2. Container: reuse shared one if provided, else create a fresh one
+    local container_name own_container=false
+    if [[ -n "${ext_container}" ]]; then
+        container_name="${ext_container}"
+    else
+        container_name="build-$$"
+        _create_build_container "${container_name}"
+        _bootstrap_paru "${container_name}"
+        own_container=true
+    fi
 
-    # 3. Bootstrap paru
-    _bootstrap_paru "${container_name}"
-
-    # 4. Registrar baseline de paquetes
+    # 3. Registrar baseline de paquetes
     local container="${BUILD_ROOT}/${container_name}"
-    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-$$.txt"
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-baseline-${pkg}-$$.txt"
 
-    # 5. Build
-    _build_in_container "${container_name}" "${pkg}"
+    # 4. Build
+    if [[ "${skip_sysext}" == "true" ]]; then
+        # Run build in a subshell so _die → exit 1 only kills the subshell,
+        # not the parent batch loop, and the shared container is preserved.
+        local _build_exit=0
+        ( _CLEANUP_CONTAINER=""; _build_in_container "${container_name}" "${pkg}" ) || _build_exit=$?
+        if [[ "${_build_exit}" -ne 0 ]]; then
+            _warn "Build de '${pkg}' en container compartido falló (exit ${_build_exit}) — continuando batch"
+            rm -f "/tmp/our-aur-baseline-${pkg}-$$.txt"
+            [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
+            return 1
+        fi
+    else
+        _build_in_container "${container_name}" "${pkg}"
+    fi
 
-    # 6. Detectar paquetes nuevos
-    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-$$.txt"
-    mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-$$.txt" "/tmp/our-aur-after-$$.txt")
+    # 5. Detectar paquetes nuevos
+    pacman --root="${container}" -Qq 2>/dev/null | sort > "/tmp/our-aur-after-${pkg}-$$.txt"
+    mapfile -t new_pkgs < <(comm -13 "/tmp/our-aur-baseline-${pkg}-$$.txt" "/tmp/our-aur-after-${pkg}-$$.txt")
+
+    # In batch mode with an already-installed package we built for dep resolution only —
+    # no new sysext or tracking needed; leave the container intact for the next package.
+    if [[ "${skip_sysext}" == "true" ]]; then
+        _msg "'${pkg}' disponible en container para deps. Sysext ya existente en host conservado."
+        rm -f "/tmp/our-aur-baseline-${pkg}-$$.txt" "/tmp/our-aur-after-${pkg}-$$.txt"
+        [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
+        return 0
+    fi
 
     if [[ ${#new_pkgs[@]} -eq 0 ]]; then
         _warn "No se detectaron paquetes nuevos tras el build. Puede que ya estuvieran instalados."
-        _destroy_build_container "${container_name}"
+        [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
         return 0
     fi
 
     _msg "Paquetes nuevos detectados: ${new_pkgs[*]}"
 
-    # 7. Crear sysext
+    # 6. Crear sysext
     _create_sysext "${pkg}" "${container_name}" "${new_pkgs[@]}"
 
-    # 8. Activar sysext
+    # 7. Activar sysext
     _sysext_refresh
 
-    # 9. Guardar tracking
+    # 8. Guardar tracking
     _save_tracking "${pkg}" "${aur_version}" "${new_pkgs[@]}"
 
-    # 10. Destruir contenedor
-    _destroy_build_container "${container_name}"
+    # 9. Destruir contenedor solo si lo creamos nosotros
+    [[ "${own_container}" == "true" ]] && _destroy_build_container "${container_name}"
 
-    # 11. Registrar en el manifiesto declarativo
+    # 10. Registrar en el manifiesto declarativo
     update_system_yaml_packages "add" "${pkg}"
 
     _msg "=== '${pkg}' instalado correctamente como extensión sysext ==="
@@ -550,6 +613,14 @@ _cmd_upgrade() {
 }
 
 _cmd_remove() {
+    [[ $# -gt 0 ]] || _die "Especificá un paquete: our-aur -R <paquete>"
+    local pkg
+    for pkg in "$@"; do
+        _cmd_remove_one "${pkg}"
+    done
+}
+
+_cmd_remove_one() {
     local pkg="${1:-}"
     [[ -n "${pkg}" ]] || _die "Especificá un paquete: our-aur -R <paquete>"
 

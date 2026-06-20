@@ -88,6 +88,7 @@ class State(Enum):
     LOCALE = auto()
     USER = auto()
     DESKTOP = auto()
+    DOTS_PACK = auto()
     SECURE_BOOT = auto()
     PARTITION = auto()
     FORMAT = auto()
@@ -111,6 +112,7 @@ _STATE_ORDER: list[State] = [
     State.LOCALE,
     State.USER,
     State.DESKTOP,
+    State.DOTS_PACK,
     State.SECURE_BOOT,
     State.PARTITION,
     State.FORMAT,
@@ -127,8 +129,9 @@ _STEP_RANGES: dict[State, tuple[int, int]] = {
     State.LOCALE: (10, 14),
     State.USER: (14, 17),
     State.DESKTOP: (17, 21),
-    State.SECURE_BOOT: (21, 23),
-    State.PARTITION: (23, 30),
+    State.DOTS_PACK: (21, 23),
+    State.SECURE_BOOT: (23, 25),
+    State.PARTITION: (25, 30),
     State.FORMAT: (30, 45),
     State.INSTALL: (45, 70),
     State.CONFIGURE: (70, 90),
@@ -143,6 +146,7 @@ _STEP_LABELS: dict[State, str] = {
     State.LOCALE: "Configuring language",
     State.USER: "Creating user",
     State.DESKTOP: "Selecting desktop",
+    State.DOTS_PACK: "Selecting dotfiles pack",
     State.SECURE_BOOT: "Configuring Secure Boot",
     State.PARTITION: "Selecting disk",
     State.FORMAT: "Preparing disk",
@@ -238,6 +242,7 @@ class Installer:
             State.LOCALE: self._handle_locale,
             State.USER: self._handle_user,
             State.DESKTOP: self._handle_desktop,
+            State.DOTS_PACK: self._handle_dots_pack,
             State.SECURE_BOOT: self._handle_secure_boot,
             State.PARTITION: self._handle_partition,
             State.FORMAT: self._handle_format,
@@ -335,13 +340,41 @@ class Installer:
             )
 
     def _handle_init(self) -> None:
-        """INIT — detect unattended mode or initialise TUI."""
+        """INIT — detect unattended mode or initialise TUI.
+
+        Bug B fix (2026-06-10): When an unattended config is detected AND a
+        TTY is available, the user is asked whether to use the config (silent
+        install) or proceed to the interactive TUI menu. If no TTY (true CI/E2E
+        boot), the config is used directly to preserve automation.
+        """
         config_path = self._config_path or find_unattended_config()
         if config_path:
             log.info("Unattended config found: %s", config_path)
-            self.config = load_config(config_path)
-            self.tui = None
-            return
+            # Ask user before going silent — only when stdin is a TTY AND the
+            # config did NOT come from the kernel cmdline (which means E2E/CI
+            # automation) AND OUROBOROS_FORCE_UNATTENDED is not set.
+            from installer.config import _config_from_cmdline, _config_from_labeled_media  # noqa: PLC0415
+            cmdline_path = _config_from_cmdline()
+            media_path   = _config_from_labeled_media()
+            is_automated = (
+                cmdline_path is not None
+                or media_path is not None
+                or bool(os.environ.get("OUROBOROS_FORCE_UNATTENDED"))
+                or not sys.stdin.isatty()
+            )
+            if not is_automated:
+                print(f"\n[unattended config detected at: {config_path}]")
+                try:
+                    answer = input("Use this config for silent install? [Y/n] (n = interactive menu): ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = "y"
+                if answer in ("n", "no"):
+                    log.info("User chose interactive mode — ignoring unattended config.")
+                    config_path = None
+            if config_path:
+                self.config = load_config(config_path)
+                self.tui = None
+                return
 
         # No config found — start interactive TUI
         self.tui = TUI(title="ouroborOS Installer")
@@ -409,16 +442,25 @@ class Installer:
         else:
             checks.append(("Internet connectivity", self._check_network))
 
+        # Connectivity is the ONLY non-fatal check — install works offline
+        # because all packages are available on the ISO's pacstrap cache.
+        _non_fatal_checks = {"Internet connectivity"}
+
         self._update_progress(State.PREFLIGHT, 0, "Iniciando verificación...")
 
         failed = []
+        warnings = []
         for i, (name, check_fn) in enumerate(checks):
             try:
                 check_fn()
                 log.info("Preflight check passed: %s", name)
             except InstallerError as exc:
-                log.warning("Preflight check failed: %s — %s", name, exc)
-                failed.append(f"{name}: {exc}")
+                if name in _non_fatal_checks:
+                    log.warning("Preflight warning (non-fatal): %s — %s", name, exc)
+                    warnings.append(f"{name}: {exc}")
+                else:
+                    log.warning("Preflight check failed: %s — %s", name, exc)
+                    failed.append(f"{name}: {exc}")
             self._update_progress(
                 State.PREFLIGHT,
                 int((i + 1) / len(checks) * 100),
@@ -427,6 +469,8 @@ class Installer:
 
         if failed:
             raise InstallerError("Preflight checks failed:\n" + "\n".join(failed))
+        if warnings:
+            log.warning("Continuing despite warnings: %s", "; ".join(warnings))
 
         # Thunderbolt auto-detect — silent, no UI, drives configure.sh
         try:
@@ -519,6 +563,8 @@ class Installer:
         if self.tui:
             profile = self.tui.show_desktop_selection()
             self.config.desktop.profile = profile
+            # F5: derive terminal + filemanager defaults from profile
+            self.config.desktop.apply_profile_defaults()
             dm_choice = self.tui.show_dm_selection(profile=profile)
             self.config.desktop.dm = dm_choice
             self.config.desktop.aur_packages = aur_packages_for(profile)
@@ -538,6 +584,74 @@ class Installer:
             self.config.desktop.kde_flavor,
         )
         self._update_progress(State.DESKTOP, 100)
+
+    def _handle_dots_pack(self) -> None:
+        """DOTS_PACK — optional dotfiles pack selection.
+
+        Skipped silently under any of these conditions:
+        1. Desktop profile is 'minimal'.
+        2. No packs are available for the selected profile.
+        3. Unattended mode and no pack was configured.
+        4. Running offline (packs require internet).
+        """
+        self._update_progress(State.DOTS_PACK, 0)
+
+        # Condition 1: minimal profile has no desktop, so no packs apply
+        if self.config.desktop.profile == "minimal":
+            log.info("DOTS_PACK: profile is minimal — skipping.")
+            self._update_progress(State.DOTS_PACK, 100)
+            return
+
+        # Condition 2: no packs available for this profile (only when manifest dir exists)
+        from installer.dots_profiles import MANIFEST_DIR, packs_for_profile  # noqa: PLC0415
+        if MANIFEST_DIR.exists():
+            available = packs_for_profile(self.config.desktop.profile)
+            if not available:
+                log.info("DOTS_PACK: no packs available for profile '%s' — skipping.", self.config.desktop.profile)
+                self._update_progress(State.DOTS_PACK, 100)
+                return
+
+        # Condition 3: unattended mode with no pack selected
+        if not self.tui and not self.config.dots_pack.pack:
+            log.info("DOTS_PACK: unattended mode, no pack configured — skipping.")
+            self._update_progress(State.DOTS_PACK, 100)
+            return
+
+        # Condition 4 removed: the TUI (show_dots_pack_selection) already handles
+        # offline mode — it shows packs with a warning tag "[offline]" and the
+        # state_machine's install step will skip package install when offline.
+        # Skipping here hid the entire menu from users who simply weren't online.
+
+        if self.tui:
+            result = self.tui.show_dots_pack_selection(self.config.desktop.profile)
+            self.config.dots_pack.pack = result.get("pack")
+            self.config.dots_pack.channel = result.get("channel", "stable")
+
+        # F4-02: auto-correct channel for git-only packs (C-03)
+        if self.config.dots_pack.pack:
+            from installer.dots_profiles import MANIFEST_DIR  # noqa: PLC0415
+            mf_path = MANIFEST_DIR / f"{self.config.dots_pack.pack}.yaml"
+            if mf_path.exists():
+                try:
+                    import yaml  # noqa: PLC0415
+                    with mf_path.open() as fh:
+                        mf_data = yaml.safe_load(fh) or {}
+                    variants = mf_data.get("variants") or {}
+                    if not variants.get("stable") and variants.get("git"):
+                        self.config.dots_pack.channel = "git"
+                        log.info(
+                            "DOTS_PACK: auto-corrected channel to 'git' for git-only pack '%s'.",
+                            self.config.dots_pack.pack,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("DOTS_PACK: could not read manifest for channel correction: %s", exc)
+
+        log.info(
+            "Dots pack: %s (channel: %s)",
+            self.config.dots_pack.pack or "none",
+            self.config.dots_pack.channel,
+        )
+        self._update_progress(State.DOTS_PACK, 100)
 
     @staticmethod
     def _detect_existing_os(esp_path: str = "/boot") -> list[str]:
@@ -793,13 +907,18 @@ class Installer:
         #     would strip the module)
         mkinitcpio_path = Path(target) / "etc" / "mkinitcpio.conf"
         mkinitcpio_path.parent.mkdir(parents=True, exist_ok=True)
+        # kms hook intentionally omitted: embeds all GPU firmware (~150-200 MB)
+        # making the initramfs too large to boot in QEMU. GPU modules load from
+        # rootfs after mount. configure.sh regenerates this with the same set.
         mkinitcpio_path.write_text(
             "MODULES=(btrfs)\n"
             "BINARIES=()\n"
             "FILES=()\n"
-            "HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)\n"
+            "HOOKS=(base udev microcode modconf keyboard keymap block encrypt btrfs filesystems fsck)\n"
+            "COMPRESSION=\"zstd\"\n"
+            "COMPRESSION_OPTIONS=(-19)\n"
         )
-        log.info("Pre-seeded mkinitcpio.conf with btrfs support (no autodetect).")
+        log.info("Pre-seeded mkinitcpio.conf with btrfs support (no autodetect, no kms).")
 
         packages = [
             "base",
@@ -831,7 +950,7 @@ class Installer:
             log.info("Skipped packages from config: %s", ", ".join(skip))
 
         # Add openssh only when explicitly enabled
-        if self.config.network.enable_ssh:
+        if self.config.security.enable_ssh:
             packages.append("openssh")
 
         # Add sbctl when Secure Boot is enabled
@@ -923,10 +1042,17 @@ class Installer:
                 text=True,
             ) as proc:
                 assert proc.stdout is not None
-                for line in proc.stdout:
-                    stripped = line.rstrip()
-                    if stripped:
-                        log.debug("[pacstrap] %s", stripped)
+                try:
+                    output, _ = proc.communicate(timeout=900)  # 15 min timeout
+                    for line in output.splitlines():
+                        stripped = line.rstrip()
+                        if stripped:
+                            log.debug("[pacstrap] %s", stripped)
+                except subprocess.TimeoutExpired:
+                    log.error("pacstrap timed out after 15 minutes - killing process")
+                    proc.kill()
+                    proc.wait()
+                    raise InstallerError("pacstrap timeout: process hung (likely mkinitcpio 'Generating module dependencies')")
             returncode = proc.returncode
 
             if returncode == 0:
@@ -1032,7 +1158,7 @@ class Installer:
                 "USER_PASSWORD": self.config.users[0].password_plaintext if self.config.users else "",
                 "USER_GROUPS": ",".join(self.config.users[0].groups) if self.config.users else "",
                 "USER_SHELL": self.config.users[0].shell if self.config.users else "/bin/bash",
-                "ENABLE_SSH": "1" if self.config.network.enable_ssh else "0",
+                "ENABLE_SSH": "1" if self.config.security.enable_ssh else "0",
                 "ENABLE_IWD": "1" if self.config.network.enable_iwd else "0",
                 "ENABLE_LUKS": "1" if self.config.disk.use_luks else "0",
                 "ENABLE_TPM2": "1" if self.config.security.tpm2_unlock else "0",
@@ -1044,6 +1170,9 @@ class Installer:
                 "DESKTOP_KDE_FLAVOR": self.config.desktop.kde_flavor,
                 "GPU_DRIVER": self.config.desktop.gpu_driver,
                 "DESKTOP_AUR_PACKAGES": " ".join(self.config.desktop.aur_packages),
+                # F5: persist installer-chosen terminal + filemanager to firstboot
+                "DESKTOP_PREFERRED_TERMINAL": self.config.desktop.preferred_terminal,
+                "DESKTOP_PREFERRED_FILEMANAGER": self.config.desktop.preferred_filemanager,
                 "HOMED_STORAGE": self.config.users[0].homed_storage if self.config.users else "subvolume",
                 "WIFI_SSID": self.config.network.wifi_ssid,
                 "WIFI_PASSPHRASE": self.config.network.wifi_passphrase,
@@ -1056,6 +1185,8 @@ class Installer:
                 "ROOT_PASSWORD": self.config.security.root_password,
                 "ISO_VERSION": _read_iso_version(),
                 "OFFLINE_MODE": "true" if (not self._has_internet() and self._detect_offline_cache()) else "false",
+                "DOTS_PACK": self.config.dots_pack.pack or "",
+                "DOTS_CHANNEL": self.config.dots_pack.channel,
             }
         )
 

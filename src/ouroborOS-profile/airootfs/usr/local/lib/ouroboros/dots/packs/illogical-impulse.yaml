@@ -1,0 +1,51 @@
+id: illogical-impulse
+name: illogical-impulse
+description: |
+  end-4's popular Hyprland rice built on Quickshell, widely recognized for
+  its polished aesthetic and active community. The setup script handles the
+  full dependency chain. On ouroborOS, installation requires temporarily
+  remounting / as writable to add an IgnoreGroup entry to /etc/pacman.conf —
+  our-dots will explicitly confirm this action before proceeding.
+
+credits:
+  author: end-4
+  homepage: https://ii.clsty.link/en/ii-qs/01setup/
+  repo: https://github.com/end-4/dots-hyprland
+  docs: https://ii.clsty.link/en/ii-qs/01setup/
+  license: (see project repository)
+
+compatibility:
+  immutable: critical
+  profiles: [hyprland]
+  note: Requires /etc/pacman.conf modification on the live system
+  warning: |
+    This pack requires modifying /etc/pacman.conf (adding IgnoreGroup=illogical-impulse)
+    on a read-only root filesystem. ouroborOS will temporarily remount / as writable
+    during the edit and restore read-only mode immediately after.
+  critical_actions:
+    - "Remount / as read-write (temporary)"
+    - "Add 'IgnoreGroup=illogical-impulse' to /etc/pacman.conf"
+    - "Remount / as read-only"
+    - "Install dependencies via our-pac and our-aur"
+    - "Clone dots-hyprland and run ./setup install as your user"
+
+variants:
+  git:
+    packages: [git]
+    aur: []
+    deploy: |
+      rm -rf /tmp/dots-hyprland
+      git clone --depth 1 https://github.com/end-4/dots-hyprland /tmp/dots-hyprland
+    post_deploy: |
+      mkdir -p "${HOME}/.config" "${HOME}/.local"
+      cp -rn /tmp/dots-hyprland/.config/. "${HOME}/.config/" 2>/dev/null || true
+      cp -rn /tmp/dots-hyprland/.local/. "${HOME}/.local/" 2>/dev/null || true
+    version_hint: "rolling (git)"
+
+uninstall:
+  packages: []
+  aur: []
+  post_remove: null
+  remove_config: false
+
+signature: null

@@ -51,6 +51,9 @@ set -euo pipefail
 : "${USER_PASSWORD:=''}"
 : "${ROOT_PASSWORD:=''}"
 : "${THUNDERBOLT_DETECTED:='0'}"
+: "${DOTS_PACK:=''}"
+: "${DOTS_CHANNEL:='stable'}"
+: "${LOG_FILE:='/tmp/ouroborOS-install.log'}"
 
 TARGET="$INSTALL_TARGET"
 
@@ -196,7 +199,12 @@ configure_initramfs() {
 MODULES=(btrfs)
 BINARIES=()
 FILES=()
-HOOKS=(base udev microcode modconf kms keyboard keymap consolefont block btrfs filesystems fsck)
+# kms is intentionally omitted: it embeds all GPU firmware from linux-firmware
+# (~150-200 MB) making the initramfs too large to boot in QEMU and wasting
+# ESP space. GPU modules load from rootfs after mount — no early KMS needed.
+HOOKS=(base udev microcode modconf keyboard keymap block encrypt btrfs filesystems fsck)
+COMPRESSION="zstd"
+COMPRESSION_OPTIONS=(-19)
 EOF
 
     in_chroot mkinitcpio -P
@@ -290,13 +298,17 @@ configure_bootloader() {
         return 1
     fi
 
-    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0 console=ttyS0,115200"
+    local kernel_params="root=UUID=${root_uuid} rootflags=subvol=@ ro loglevel=4 console=tty0"
 
     if [[ "$ENABLE_LUKS" == "1" ]]; then
         local luks_uuid=""
+        local luks_name=""
         if [[ -f "${TARGET}/etc/crypttab" ]]; then
             luks_uuid=$(awk '{print $2}' "${TARGET}/etc/crypttab" | sed 's/UUID=//')
-            kernel_params="rd.luks.uuid=${luks_uuid} ${kernel_params}"
+            luks_name=$(awk '{print $1}' "${TARGET}/etc/crypttab")
+            # mkinitcpio encrypt hook uses cryptdevice, not rd.luks.name (dracut)
+            # Format: cryptdevice=UUID=<luks_uuid>:<mapper_name>
+            kernel_params="cryptdevice=UUID=${luks_uuid}:${luks_name} rd.luks.uuid=${luks_uuid} ${kernel_params}"
         fi
     fi
 
@@ -563,12 +575,24 @@ configure_tpm2() {
 
     log_info "Enrolling LUKS partition ${LUKS_PARTITION} with TPM2 (PCR 7+14)..."
 
-    if ! arch-chroot "${TARGET}" \
+    # Check if TPM2 device is actually accessible from the host.
+    # Inside arch-chroot, /dev/tpm* may not be available, causing
+    # systemd-cryptenroll to hang indefinitely waiting for the device.
+    if [[ ! -e /dev/tpm0 ]] && [[ ! -e /dev/tpmrm0 ]]; then
+        log_warn "No TPM2 device found (/dev/tpm0, /dev/tpmrm0) — skipping enrollment."
+        log_warn "You can enroll manually after reboot:"
+        log_warn "  sudo ouroboros-secureboot tpm2-enroll"
+        return 0
+    fi
+
+    # Run with a 30-second timeout — if cryptenroll hangs (e.g. TPM2
+    # device exists but is unresponsive), abort gracefully.
+    if ! timeout --preserve-status 30 arch-chroot "${TARGET}" \
         systemd-cryptenroll \
             --tpm2-device=auto \
             --tpm2-pcrs=7+14 \
             "${LUKS_PARTITION}" 2>/dev/null; then
-        log_warn "systemd-cryptenroll failed — TPM2 may not be available in this environment."
+        log_warn "systemd-cryptenroll failed or timed out — TPM2 may not be available in this environment."
         log_warn "You can enroll manually after reboot:"
         log_warn "  sudo ouroboros-secureboot tpm2-enroll"
         return 0
@@ -953,6 +977,7 @@ STUB
         our-fido2
         our-flat
         our-aur
+        our-dots
         our-app
         our-box
         our-wall
@@ -974,6 +999,36 @@ STUB
         fi
     done
     unset _p3_tools _tool _src
+
+    # Copy our-dots manifests and catalog
+    # The our-dots tool requires YAML manifests to function (pack catalog).
+    # These live in /usr/local/lib/ouroboros/dots/ on the ISO and must be
+    # copied to the installed system; our-dots itself cannot work without them.
+    local _dots_src="/usr/local/lib/ouroboros/dots"
+    if [[ -d "${_dots_src}" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp -r "${_dots_src}" "${TARGET}/usr/local/lib/ouroboros/"
+        log_ok "our-dots manifests installed (pack catalog)."
+    else
+        log_warn "our-dots manifests not found at ${_dots_src} — our-dots will not work."
+    fi
+    unset _dots_src
+
+
+    # Copy our-dots manifests and catalog
+    # The our-dots tool requires YAML manifests to function (pack catalog).
+    # These live in /usr/local/lib/ouroboros/dots/ on the ISO and must be
+    # copied to the installed system; our-dots itself cannot work without them.
+    local _dots_src="/usr/local/lib/ouroboros/dots"
+    if [[ -d "${_dots_src}" ]]; then
+        mkdir -p "${TARGET}/usr/local/lib/ouroboros"
+        cp -r "${_dots_src}" "${TARGET}/usr/local/lib/ouroboros/"
+        log_ok "our-dots manifests installed (pack catalog)."
+    else
+        log_warn "our-dots manifests not found at ${_dots_src} — our-dots will not work."
+    fi
+    unset _dots_src
+
 
     # our-app XDG integration snippet — prepends the @var AppImage share dir to
     # XDG_DATA_DIRS so installed .desktop files / icons are visible without
@@ -1052,22 +1107,25 @@ STUB
 set -euo pipefail
 # ouroboros-post-upgrade — restore root immutability after a package transaction.
 #
-# Called by the 99-post-upgrade pacman hook (PostTransaction).
-#
+# Called by the zzz-post-upgrade pacman hook (PostTransaction).
+# No-op inside containers (systemd-nspawn, docker, etc.) or when / is not a
+# btrfs subvolume — pacstrap bootstraps containers using this hook too, and
+# the container root is never an immutable btrfs subvolume.
+if systemd-detect-virt --container &>/dev/null; then
+    exit 0
+fi
+if ! btrfs filesystem show / &>/dev/null 2>&1; then
+    exit 0
+fi
 # Strategy (belt-and-suspenders):
 #   1. btrfs property set ro=true: enforces immutability at the Btrfs subvolume
-#      level. This is the primary mechanism — it works even when other subvolumes
-#      from the same device are mounted rw (the mount-option ro alone is
-#      overridden by Btrfs superblock sharing).
-#   2. mount -o remount,ro: secondary VFS-layer enforcement. May fail if there
-#      are active SSH sessions or open file handles — that is expected and safe
-#      because btrfs property ro=true already protects the subvolume.
+#      level. This is the primary mechanism.
+#   2. mount -o remount,ro: secondary VFS-layer enforcement (best-effort).
 if btrfs property set / ro true 2>/dev/null; then
     echo "[ouroboros-post-upgrade] Root subvolume set read-only (Btrfs property)"
 else
     echo "[ouroboros-post-upgrade] WARNING: Could not set Btrfs ro property — root may not be immutable"
 fi
-# Best-effort VFS-layer remount (non-fatal)
 mount -o remount,ro / 2>/dev/null && echo "[ouroboros-post-upgrade] Root remounted ro (VFS)" || \
     echo "[ouroboros-post-upgrade] Root busy — Btrfs property protects immutability regardless"
 SCRIPT
@@ -1417,8 +1475,31 @@ GREETD_EOF
             echo "${DESKTOP_AUR_PACKAGES}" > "${TARGET}/var/lib/ouroborOS/firstboot-aur-packages.txt"
             log_ok "AUR packages queued for firstboot install: ${DESKTOP_AUR_PACKAGES}"
         fi
+
+        # F5: Persist installer-chosen terminal + filemanager for firstboot
+        # to materialise as ~/.config/hypr/hyprland.conf. The wizard AUR
+        # package would otherwise override these with foot/dolphin.
+        mkdir -p "${TARGET}/var/lib/ouroborOS"
+        cat > "${TARGET}/var/lib/ouroborOS/desktop-prefs.json" <<EOF
+{
+  "terminal": "${DESKTOP_PREFERRED_TERMINAL:-foot}",
+  "filemanager": "${DESKTOP_PREFERRED_FILEMANAGER:-thunar}"
+}
+EOF
+        log_ok "Hyprland defaults queued for firstboot: terminal=${DESKTOP_PREFERRED_TERMINAL:-foot}, filemanager=${DESKTOP_PREFERRED_FILEMANAGER:-thunar}"
     else
         log_warn "ouroboros-firstboot not found on live ISO — skipping."
+    fi
+
+    # ── Dotfiles pack ──────────────────────────────────────────────────────────────
+    if [[ -n "${DOTS_PACK:-}" ]]; then
+        log_info "Installing dotfiles pack: $DOTS_PACK (channel: ${DOTS_CHANNEL:-stable})"
+        CHANNEL_FLAG=""
+        [[ "${DOTS_CHANNEL:-stable}" == "git" ]] && CHANNEL_FLAG="--git"
+        arch-chroot "${TARGET}" env OUROBOROS_ALLOW_CRITICAL=1 \
+            our-dots -S "${DOTS_PACK}" ${CHANNEL_FLAG:+"${CHANNEL_FLAG}"} --noconfirm 2>&1 \
+            | tee -a "${LOG_FILE}" \
+            || log_warn "Dotfiles pack install failed (non-fatal — continuing)"
     fi
 
     # /var/lib/extensions — required by systemd-sysext and our-aur.

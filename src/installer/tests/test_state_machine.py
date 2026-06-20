@@ -87,7 +87,7 @@ class TestStateEnum:
     def test_all_expected_states_exist(self) -> None:
         expected = {
             "INIT", "NETWORK_SETUP", "PREFLIGHT", "LOCALE", "USER", "DESKTOP",
-            "SECURE_BOOT",
+            "DOTS_PACK", "SECURE_BOOT",
             "PARTITION", "FORMAT", "INSTALL", "CONFIGURE", "SNAPSHOT",
             "FINISH", "ERROR_RECOVERABLE", "FATAL",
         }
@@ -215,6 +215,7 @@ class TestInstallerRun:
             (State.LOCALE, "_handle_locale"),
             (State.USER, "_handle_user"),
             (State.DESKTOP, "_handle_desktop"),
+            (State.DOTS_PACK, "_handle_dots_pack"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -323,6 +324,7 @@ class TestInstallerRun:
             (State.LOCALE, "_handle_locale"),
             (State.USER, "_handle_user"),
             (State.DESKTOP, "_handle_desktop"),
+            (State.DOTS_PACK, "_handle_dots_pack"),
             (State.PARTITION, "_handle_partition"),
             (State.FORMAT, "_handle_format"),
             (State.INSTALL, "_handle_install"),
@@ -1788,3 +1790,78 @@ class TestHandleDesktop:
             mock_gpu.assert_not_called()
 
         assert installer.config.desktop.gpu_driver == "auto"
+
+
+# ---------------------------------------------------------------------------
+# _handle_dots_pack — DOTS_PACK state handler
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDotsPack:
+    def _make_installer(self) -> Installer:
+        inst = Installer()
+        inst.tui = None
+        inst._update_progress = MagicMock()
+        return inst
+
+    def test_skipped_when_profile_is_minimal(self) -> None:
+        """DOTS_PACK handler exits early when profile is minimal."""
+        installer = self._make_installer()
+        installer.config.desktop.profile = "minimal"
+        installer._handle_dots_pack()
+        assert installer.config.dots_pack.pack is None
+        assert installer.config.dots_pack.channel == "stable"
+
+    def test_no_tui_uses_config_directly(self) -> None:
+        """In unattended mode (no TUI), config.dots_pack is read as-is."""
+        installer = self._make_installer()
+        installer.config.desktop.profile = "hyprland"
+        installer.config.dots_pack.pack = "noctalia"
+        installer.config.dots_pack.channel = "git"
+        installer.tui = None
+        installer._handle_dots_pack()
+        assert installer.config.dots_pack.pack == "noctalia"
+        assert installer.config.dots_pack.channel == "git"
+
+    def test_tui_result_applied_to_config(self) -> None:
+        """TUI result is stored in config.dots_pack."""
+        installer = self._make_installer()
+        installer.config.desktop.profile = "hyprland"
+        mock_tui = MagicMock()
+        mock_tui.show_dots_pack_selection.return_value = {
+            "pack": "ml4w",
+            "channel": "stable",
+        }
+        installer.tui = mock_tui
+        installer._handle_dots_pack()
+        assert installer.config.dots_pack.pack == "ml4w"
+        assert installer.config.dots_pack.channel == "stable"
+        mock_tui.show_dots_pack_selection.assert_called_once_with("hyprland")
+
+    def test_tui_none_selection_clears_pack(self) -> None:
+        """Selecting 'none' in TUI sets pack to None."""
+        installer = self._make_installer()
+        installer.config.desktop.profile = "gnome"
+        mock_tui = MagicMock()
+        mock_tui.show_dots_pack_selection.return_value = {
+            "pack": None,
+            "channel": "stable",
+        }
+        installer.tui = mock_tui
+        installer._handle_dots_pack()
+        assert installer.config.dots_pack.pack is None
+
+    def test_dots_pack_state_in_state_order(self) -> None:
+        """DOTS_PACK must appear between DESKTOP and SECURE_BOOT in _STATE_ORDER."""
+        from installer.state_machine import _STATE_ORDER  # noqa: PLC0415
+        order = [s.name for s in _STATE_ORDER]
+        desktop_idx = order.index("DESKTOP")
+        dots_idx = order.index("DOTS_PACK")
+        secure_idx = order.index("SECURE_BOOT")
+        assert desktop_idx < dots_idx < secure_idx
+
+    def test_dots_pack_transition_to_secure_boot(self) -> None:
+        """After DOTS_PACK completes, the next state is SECURE_BOOT."""
+        from installer.state_machine import _STATE_ORDER  # noqa: PLC0415
+        dots_idx = _STATE_ORDER.index(State.DOTS_PACK)
+        assert _STATE_ORDER[dots_idx + 1] == State.SECURE_BOOT

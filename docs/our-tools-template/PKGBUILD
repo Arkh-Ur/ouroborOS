@@ -1,0 +1,64 @@
+# For users installing on standard Arch systems. NOT used by the ouroborOS ISO build pipeline.
+# Maintainer: Arkh-Ur <h.buddenberg@gmail.com>
+pkgname=OUR_TOOL_NAME
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="OUR_TOOL_DESC"
+arch=('any')
+url="https://github.com/Arkh-Ur/OUR_TOOL_NAME"
+license=('GPL-3.0-only')
+depends=(OUR_TOOL_DEPS)
+optdepends=(OUR_TOOL_OPTDEPS)
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+b2sums=('SKIP')  # TODO before publishing to AUR: run `updpkgsums` to populate real checksums
+
+package() {
+    cd "${pkgname}-${pkgver}"
+
+    # Main binary — Arch FHS: /usr/bin (not /usr/local/bin)
+    install -Dm755 "bin/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
+
+    # Shared library files (if any) — Arch FHS: /usr/lib/ouroboros
+    if [[ -d lib ]]; then
+        install -dm755 "${pkgdir}/usr/lib/ouroboros"
+        for f in lib/*.sh; do
+            [[ -f "$f" ]] && install -Dm755 "$f" "${pkgdir}/usr/lib/ouroboros/"
+        done
+    fi
+
+    # Shell completions
+    if [[ -f "completions/${pkgname}.bash" ]]; then
+        install -Dm644 "completions/${pkgname}.bash" \
+            "${pkgdir}/usr/share/bash-completion/completions/${pkgname}"
+    fi
+    if [[ -f "completions/${pkgname}.fish" ]]; then
+        install -Dm644 "completions/${pkgname}.fish" \
+            "${pkgdir}/usr/share/fish/vendor_completions.d/${pkgname}.fish"
+    fi
+    if [[ -f "completions/${pkgname}.zsh" ]]; then
+        install -Dm644 "completions/${pkgname}.zsh" \
+            "${pkgdir}/usr/share/zsh/site-functions/_${pkgname}"
+    fi
+
+    # Man page
+    if [[ -f "man/${pkgname}.1" ]]; then
+        install -Dm644 "man/${pkgname}.1" \
+            "${pkgdir}/usr/share/man/man1/${pkgname}.1"
+    fi
+
+    # pacman hook (if the tool installs one)
+    if [[ -d hooks ]]; then
+        install -dm755 "${pkgdir}/etc/pacman.d/hooks"
+        for f in hooks/*.hook; do
+            [[ -f "$f" ]] && install -Dm644 "$f" "${pkgdir}/etc/pacman.d/hooks/"
+        done
+    fi
+
+    # systemd units (if any)
+    if [[ -d units ]]; then
+        install -dm755 "${pkgdir}/usr/lib/systemd/system"
+        for f in units/*.service units/*.timer; do
+            [[ -f "$f" ]] && install -Dm644 "$f" "${pkgdir}/usr/lib/systemd/system/"
+        done
+    fi
+}

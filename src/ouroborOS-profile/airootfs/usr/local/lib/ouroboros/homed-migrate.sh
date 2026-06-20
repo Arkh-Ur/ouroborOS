@@ -102,6 +102,30 @@ rollback() {
             if [[ -d "${HOME_BACKUP}" ]]; then
                 mv "$HOME_BACKUP" "$HOME_DIR"
                 log_ok "Home directory restored from backup."
+
+            # 🆕 CRITICAL FIX: Recrear usuario clásico si se guardó info
+            if [[ -n "${CLASSIC_USER_SHELL:-}" ]]; then
+                log_info "Recreating classic user ${HOMED_USERNAME} (homectl create failed)..."
+                if useradd \
+                    --shell "$CLASSIC_USER_SHELL" \
+                    --create-home \
+                    "${HOMED_USERNAME}" 2>/dev/null; then
+                    log_ok "Classic user ${HOMED_USERNAME} recreated."
+                    # Restaurar grupos suplementarios
+                    if [[ -n "${CLASSIC_USER_GROUPS:-}" ]]; then
+                        usermod -a -G "$CLASSIC_USER_GROUPS" "${HOMED_USERNAME}" 2>/dev/null || true
+                        log_ok "Groups restored: ${CLASSIC_USER_GROUPS}"
+                    fi
+                    # Setear password
+                    if [[ -n "${HOMED_PASSWORD:-}" ]]; then
+                        echo "${HOMED_USERNAME}:${HOMED_PASSWORD}" | chpasswd 2>/dev/null || true
+                    fi
+                    log_ok "Classic user restoration complete. Login will work."
+                else
+                    log_error "Failed to recreate classic user ${HOMED_USERNAME}."
+                    log_error "System may be left without a valid user!"
+                fi
+            fi
             fi
             ;;
         *)
@@ -110,8 +134,8 @@ rollback() {
     esac
 
     log_error "Migration FAILED at step: ${step}. System left in pre-migration state."
-    log_warn "User '${HOMED_USERNAME}' remains as a classic /etc/passwd user."
-    log_warn "Home directory: /home/${HOMED_USERNAME} (unchanged, no data loss)."
+    log_warn "User '${HOMED_USERNAME}' recreated as classic /etc/passwd user."
+    log_warn "Home directory: /home/${HOMED_USERNAME} (restored, no data loss)."
     log_warn "Known issue: homectl create fails when /home is a Btrfs subvolume (@home)."
     log_warn "See: https://github.com/systemd/systemd/issues/15121"
     log_warn "The system is fully functional — login works normally as a classic user."
@@ -186,6 +210,17 @@ migrate() {
         rollback "before_backup"
     fi
 
+    # Check if user already exists as a systemd-homed identity
+    # If so, we cannot use "homectl create" — it will fail with "user exists in NSS".
+    # We use "homectl update" instead, or skip migration entirely if already homed.
+    if homectl list 2>/dev/null | grep -q "^${HOMED_USERNAME}"; then
+        log_warn "User '${HOMED_USERNAME}' is already a systemd-homed identity. Skipping migration."
+        log_ok "User '${HOMED_USERNAME}' remains as a homed-managed user (no action needed)."
+        rm -f "$FLAG_FILE" 2>/dev/null || true
+        systemctl disable ouroboros-homed-migration.service 2>/dev/null || true
+        exit 0
+    fi
+
     # Step 3: Create the homed identity with JSON identity (non-interactive)
     local homectl_args=(
         create "$HOMED_USERNAME"
@@ -206,6 +241,24 @@ migrate() {
     cat > "$identity_json" << IDENTITY_EOF
 {"userName":"${HOMED_USERNAME}","secret":{"password":["${HOMED_PASSWORD}"]}}
 IDENTITY_EOF
+
+    # Check if user exists as classic user in /etc/passwd
+    # homectl create fails if the username already exists in NSS database.
+    # We must remove the classic user entry first.
+    # IMPORTANT: Save user info for rollback in case homectl create fails.
+    if id "$HOMED_USERNAME" &>/dev/null; then
+        log_warn "Classic user '$HOMED_USERNAME' exists in /etc/passwd. Removing before homed create..."
+        # Save user info for potential rollback
+        CLASSIC_USER_SHELL=$(getent passwd "$HOMED_USERNAME" | cut -d: -f7)
+        CLASSIC_USER_GROUPS=$(id -Gn "$HOMED_USERNAME" 2>/dev/null | tr ' ' ',')
+        export CLASSIC_USER_SHELL CLASSIC_USER_GROUPS
+
+        userdel -r "$HOMED_USERNAME" 2>/dev/null || {
+            log_error "Failed to remove classic user '$HOMED_USERNAME'."
+            rollback "after_backup"
+        }
+        log_ok "Classic user '$HOMED_USERNAME' removed. Proceeding with homed create."
+    fi
 
     log_info "Creating systemd-homed identity (non-interactive)..."
     local homectl_out

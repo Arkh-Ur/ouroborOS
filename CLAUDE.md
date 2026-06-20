@@ -33,7 +33,7 @@ Este archivo proporciona contexto persistente a Claude Code sobre el proyecto ou
 - **Bootloader:** systemd-boot only (no GRUB, UEFI required)
 - **Networking:** systemd-networkd + iwd (no NetworkManager)
 - **Installer:** Python state machine + Rich TUI (primary) + Bash ops
-- **Status:** v0.5.7 — Phase 5 nearly complete. See `docs/PHASE_5_PLAN.md` for milestone tracker.
+- **Status:** v0.6.1 — Phase 5 complete, Phase 6 active (our-dots, GUI installer prep). See `docs/PHASE_6_PLAN.md` for milestone tracker.
 
 ---
 
@@ -54,14 +54,15 @@ ouroborOS/
 │   ├── installer/               ← Python installer
 │   │   ├── config.py            ← InstallerConfig + YAML loader + DesktopConfig + remote URL loader
 │   │   ├── desktop_profiles.py  ← Desktop profile package sets (5 profiles) + DM selection (gdm/sddm/plm/none)
-│   │   ├── state_machine.py     ← FSM with checkpoints (12 states: USER + DESKTOP + SECURE_BOOT before PARTITION)
+│   │   ├── state_machine.py     ← FSM with checkpoints (16 states: NETWORK_SETUP + DOTS_PACK added in v0.6)
+│   │   ├── dots_profiles.py     ← Dots pack profiles (8 packs) + channel/variant logic for DOTS_PACK state
 │   │   ├── tui.py               ← Rich TUI (primary) + whiptail fallback
 │   │   ├── main.py              ← CLI entrypoint
 │   │   ├── ops/                 ← Bash operations
 │   │   │   ├── disk.sh          ← Partitioning, Btrfs, fstab, LUKS
 │   │   │   ├── snapshot.sh      ← Btrfs snapshot management
-│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed, AUR queue)
-│   │   └── tests/               ← pytest test suite (347 tests, ≥93% coverage)
+│   │   │   └── configure.sh     ← Chroot post-install config (our-pac, DM enable, homed, AUR queue, our-dots)
+│   │   └── tests/               ← pytest test suite (771 tests, ≥70% coverage gate)
 │   └── ouroborOS-profile/       ← archiso profile
 │       ├── profiledef.sh
 │       ├── packages.x86_64
@@ -73,6 +74,9 @@ ouroborOS/
 ├── docs/                        ← Documentation only (no scripts)
 │   ├── PHASE_2_PLAN.md          ← Post-v0.1.0 development plan
 │   ├── PHASE_4_PLAN.md          ← Phase 4 plan (our-aur, our-flat, TPM2)
+│   ├── PHASE_5_PLAN.md          ← Phase 5 plan (system.yaml, homed, TPM2/FIDO2, OTA)
+│   ├── PHASE_6_PLAN.md          ← Phase 6 plan (our-dots, GUI installer prep) ← ACTIVE
+│   ├── man/                     ← Man pages (our-dots.1)
 │   ├── architecture/            ← System design decisions
 │   ├── installer/               ← Installer architecture
 │   ├── messages/                ← Project log and decisions
@@ -269,7 +273,7 @@ WORKSPACE=$(pwd) bash tests/scripts/run-pytest.sh
 
 See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
-**Phases 1-4 complete.** Phase 5 (v0.5.x) nearly complete — `system.yaml` declarative manifest, multi-user, OTA, homed, TPM2/FIDO2, GPG-signed ISOs. See [docs/PHASE_5_PLAN.md](./docs/PHASE_5_PLAN.md) for the milestone tracker. Phase 6 will introduce GUI installer and image-based OTA.
+**Phases 1-5 complete.** Phase 6 (v0.6.x) active — `our-dots` dotfiles pack manager (8 curated packs, CRITICAL flow, external repo system), GUI installer prep. See [docs/PHASE_6_PLAN.md](./docs/PHASE_6_PLAN.md) for the milestone tracker. Phase 7 will introduce image-based OTA.
 
 ---
 
@@ -277,8 +281,8 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 | File | Description |
 |------|-------------|
-| `docs/PHASE_2_PLAN.md` | Post-v0.1.0 development plan (our-pac, desktop profiles, our-container) |
 | `docs/PHASE_4_PLAN.md` | Phase 4 plan (our-aur, our-flat, TPM2, multi-language) |
+| `docs/PHASE_6_PLAN.md` | Phase 6 plan — our-dots, DOTS_PACK installer state (ACTIVE milestone tracker) |
 | `docs/architecture/overview.md` | System architecture, layer diagram, component table |
 | `docs/architecture/immutability-strategy.md` | Btrfs layout, fstab, snapshot flow |
 | `docs/architecture/installer-phases.md` | All installer states, actions, rollback |
@@ -291,6 +295,9 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 | `src/installer/state_machine.py` | FSM implementation with checkpoints |
 | `src/installer/config.py` | InstallerConfig + DesktopConfig dataclasses + YAML validation |
 | `src/installer/desktop_profiles.py` | Desktop profile package sets (5 profiles) |
+| `src/installer/dots_profiles.py` | Dots pack profiles (8 packs) + channel/variant selection for DOTS_PACK FSM state |
+| `src/ouroborOS-profile/airootfs/usr/local/bin/our-dots` | Dots pack manager CLI (~960 lines Bash): install/upgrade/uninstall curated config packs |
+| `src/ouroborOS-profile/airootfs/usr/local/lib/ouroboros/dots/packs/` | 8 bundled pack manifests (YAML): ml4w, omarchy, danklinux, illogical-impulse, caelestia, noctalia, ambxst, brain-shell |
 | `templates/install-config.yaml` | Default unattended install config template |
 | `docs/architecture/systemd-integration.md` | systemd integration design |
 | `src/ouroborOS-profile/profiledef.sh` | archiso profile definition |
@@ -301,6 +308,8 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 | `channels/stable.yaml` | OTA channel definition — version, ISO URL, signature |
 | `tests/scripts/` | CI scripts runnable locally via `WORKSPACE=$(pwd) bash tests/scripts/<name>.sh` |
 | `tests/qemu/` | Per-profile QEMU E2E test configs (minimal, gnome, kde, hyprland, offline) |
+| `tests/bash/test_our_dots.bats` | Bats unit tests for our-dots CLI (commands, pack install/uninstall, repo management) |
+| `tests/e2e/test_dots_e2e.sh` | E2E integration tests for all 8 dots packs on a live installed system |
 | `.github/workflows/build.yml` | ISO build + release pipeline (dual-repo) |
 
 ---
@@ -321,13 +330,15 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full roadmap.
 
 ## E2E Testing
 
-Full lifecycle test: build ISO → unattended install in QEMU → verify installed system.
+Full lifecycle test: build ISO → install in QEMU → verify installed system.
+For attended (manual) installs use `-display gtk`; for unattended CI use `-display none -vga virtio` with `--e2e-config`.
 
 ### Key Constraints
 - Always use `setsid` to launch QEMU (survives tool timeouts)
-- Always `fuser -k 2222/tcp` before launching (kill zombie QEMU)
+- Always `fuser -k 2225/tcp` before launching (kill zombie QEMU) — SSH port is 2225
 - Always use `-device e1000` (virtio-net hangs under sustained pacstrap load)
-- Always use `-display none -vga virtio` (never `-nographic`, disables VGA for VNC)
+- For unattended CI: `-display none -vga virtio` (never `-nographic`, disables VGA for VNC)
+- For attended (manual) install: `-display gtk` — user drives installer interactively
 - Build workdir and QEMU disk on `/home/` — `/tmp/` is tmpfs (~4 GB), build needs 6-8 GB
 - Use `ps aux | grep qemu` to find real PID (`$!` is wrong with setsid)
 - Serial log at `/tmp/ouroboros-serial-install.log`
@@ -337,9 +348,11 @@ Full lifecycle test: build ISO → unattended install in QEMU → verify install
 - SSH on installed system only listens on AF_UNIX socket by default (networkd DHCP in SLIRP needs investigation)
 - homed-migration rollback works correctly when create fails — user stays as classic `/etc/passwd` user
 
-### Installer States (12 total)
+### Installer States (16 total)
 ```
-INIT → PREFLIGHT → LOCALE → USER → DESKTOP → SECURE_BOOT → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
+INIT → NETWORK_SETUP → PREFLIGHT → LOCALE → USER → DESKTOP → DOTS_PACK → SECURE_BOOT
+     → PARTITION → FORMAT → INSTALL → CONFIGURE → SNAPSHOT → FINISH
+     → ERROR_RECOVERABLE | FATAL
 ```
 
 ### Password Plaintext Lifecycle
