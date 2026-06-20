@@ -353,10 +353,12 @@ class Installer:
             # Ask user before going silent — only when stdin is a TTY AND the
             # config did NOT come from the kernel cmdline (which means E2E/CI
             # automation) AND OUROBOROS_FORCE_UNATTENDED is not set.
-            from installer.config import _config_from_cmdline  # noqa: PLC0415
+            from installer.config import _config_from_cmdline, _config_from_labeled_media  # noqa: PLC0415
             cmdline_path = _config_from_cmdline()
+            media_path   = _config_from_labeled_media()
             is_automated = (
                 cmdline_path is not None
+                or media_path is not None
                 or bool(os.environ.get("OUROBOROS_FORCE_UNATTENDED"))
                 or not sys.stdin.isatty()
             )

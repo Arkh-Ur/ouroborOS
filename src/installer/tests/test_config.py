@@ -1192,3 +1192,82 @@ class TestHardwareConfig:
         result = cfg.to_system_yaml()
         assert "hardware" in result
         assert result["hardware"]["thunderbolt_detected"] is False
+
+
+# ---------------------------------------------------------------------------
+# _config_from_labeled_media tests
+# ---------------------------------------------------------------------------
+
+
+class TestConfigFromLabeledMedia:
+    """Tests for _config_from_labeled_media()."""
+
+    def test_no_device_returns_none(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        with patch("installer.config.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="", returncode=1)
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", tmp_path / "mnt"):
+                result = _config_from_labeled_media()
+        assert result is None
+
+    def test_blkid_not_found_returns_none(self, tmp_path: Path) -> None:
+        from installer.config import _config_from_labeled_media
+
+        with patch("installer.config.subprocess.run", side_effect=FileNotFoundError):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", tmp_path / "mnt"):
+                result = _config_from_labeled_media()
+        assert result is None
+
+    def test_mount_and_config_found(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        (mnt / "unattended.yaml").write_text("user:\n  username: test\n", encoding="utf-8")
+
+        blkid_result = MagicMock(stdout="/dev/sr1\n", returncode=0)
+        mount_result = MagicMock(returncode=0)
+
+        with patch("installer.config.subprocess.run", side_effect=[blkid_result, mount_result]):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=False):
+                    result = _config_from_labeled_media()
+
+        assert result is not None
+        assert result.name == "unattended.yaml"
+
+    def test_already_mounted_no_blkid_call(self, tmp_path: Path) -> None:
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        (mnt / "unattended.yaml").write_text("user:\n  username: test\n", encoding="utf-8")
+
+        with patch("installer.config.subprocess.run") as mock_run:
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=True):
+                    result = _config_from_labeled_media()
+
+        mock_run.assert_not_called()
+        assert result is not None
+
+    def test_mount_succeeds_but_no_config_file(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+        from installer.config import _config_from_labeled_media
+
+        mnt = tmp_path / "mnt"
+        mnt.mkdir()
+        # Mount point exists but unattended.yaml absent
+
+        blkid_result = MagicMock(stdout="/dev/sr1\n", returncode=0)
+        mount_result = MagicMock(returncode=0)
+
+        with patch("installer.config.subprocess.run", side_effect=[blkid_result, mount_result]):
+            with patch("installer.config.OUROBOROS_CFG_MOUNT", mnt):
+                with patch("pathlib.Path.is_mount", return_value=False):
+                    result = _config_from_labeled_media()
+
+        assert result is None

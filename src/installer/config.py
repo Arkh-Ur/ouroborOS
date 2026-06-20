@@ -662,6 +662,11 @@ def load_config_from_url(url: str) -> InstallerConfig:
     return load_config(Path(tmp.name))
 
 
+OUROBOROS_CFG_LABEL = "OUROBOROS_CFG"
+OUROBOROS_CFG_MOUNT = Path("/run/ouroboros-config")
+OUROBOROS_CFG_FILE  = "unattended.yaml"
+
+
 def _config_from_cmdline() -> Path | None:
     """Return config path from kernel cmdline, or None."""
     try:
@@ -674,6 +679,51 @@ def _config_from_cmdline() -> Path | None:
     except OSError:
         pass
     return None
+
+
+def _config_from_labeled_media() -> Path | None:
+    """Mount the first block device labeled OUROBOROS_CFG and return its config path.
+
+    Scans for a block device (USB, CDROM, partition) with LABEL=OUROBOROS_CFG.
+    If found, mounts it read-only to /run/ouroboros-config/ and returns
+    the path to unattended.yaml if present.
+
+    Safe to call as non-root — returns None if blkid is unavailable or fails.
+    Idempotent: if the mount point is already mounted, returns the config path
+    directly without attempting a second mount.
+    """
+    import subprocess  # noqa: PLC0415
+
+    # Idempotent: if already mounted, return config path directly
+    if OUROBOROS_CFG_MOUNT.is_mount():
+        config_path = OUROBOROS_CFG_MOUNT / OUROBOROS_CFG_FILE
+        return config_path if config_path.exists() else None
+
+    try:
+        result = subprocess.run(
+            ["blkid", "-t", f"LABEL={OUROBOROS_CFG_LABEL}", "-o", "device"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+    devices = result.stdout.strip().splitlines()
+    if not devices:
+        return None
+
+    device = devices[0]
+    OUROBOROS_CFG_MOUNT.mkdir(parents=True, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["mount", "-o", "ro", device, str(OUROBOROS_CFG_MOUNT)],
+            check=True, capture_output=True, timeout=10,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+
+    config_path = OUROBOROS_CFG_MOUNT / OUROBOROS_CFG_FILE
+    return config_path if config_path.exists() else None
 
 
 def find_unattended_config() -> Path | None:
@@ -693,7 +743,12 @@ def find_unattended_config() -> Path | None:
     if candidate:
         return candidate
 
-    # 2 & 3. Known temp paths
+    # 2. Labeled config media (device/ISO with LABEL=OUROBOROS_CFG containing unattended.yaml)
+    candidate = _config_from_labeled_media()
+    if candidate:
+        return candidate
+
+    # 3 & 4. Known temp paths
     for candidate in (
         Path("/tmp/ouroborOS-config.yaml"),
         Path("/run/ouroborOS-config.yaml"),
