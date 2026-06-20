@@ -10,7 +10,7 @@ license=('GPL-3.0-only')
 depends=(OUR_TOOL_DEPS)
 optdepends=(OUR_TOOL_OPTDEPS)
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
-b2sums=('SKIP')
+b2sums=('SKIP')  # TODO before publishing to AUR: run `updpkgsums` to populate real checksums
 
 package() {
     cd "${pkgname}-${pkgver}"
@@ -21,7 +21,9 @@ package() {
     # Shared library files (if any) — Arch FHS: /usr/lib/ouroboros
     if [[ -d lib ]]; then
         install -dm755 "${pkgdir}/usr/lib/ouroboros"
-        install -Dm755 lib/*.sh "${pkgdir}/usr/lib/ouroboros/"
+        for f in lib/*.sh; do
+            [[ -f "$f" ]] && install -Dm755 "$f" "${pkgdir}/usr/lib/ouroboros/"
+        done
     fi
 
     # Shell completions
@@ -47,13 +49,16 @@ package() {
     # pacman hook (if the tool installs one)
     if [[ -d hooks ]]; then
         install -dm755 "${pkgdir}/etc/pacman.d/hooks"
-        install -Dm644 hooks/*.hook "${pkgdir}/etc/pacman.d/hooks/"
+        for f in hooks/*.hook; do
+            [[ -f "$f" ]] && install -Dm644 "$f" "${pkgdir}/etc/pacman.d/hooks/"
+        done
     fi
 
     # systemd units (if any)
     if [[ -d units ]]; then
         install -dm755 "${pkgdir}/usr/lib/systemd/system"
-        install -Dm644 units/*.service "${pkgdir}/usr/lib/systemd/system/"
-        install -Dm644 units/*.timer   "${pkgdir}/usr/lib/systemd/system/"
+        for f in units/*.service units/*.timer; do
+            [[ -f "$f" ]] && install -Dm644 "$f" "${pkgdir}/usr/lib/systemd/system/"
+        done
     fi
 }
